@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=82", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scholar-vault"
+version = "0.1.0"
+description = "Local-first research source wiki and LLM-readable archive."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "MadMax" }
+]
+dependencies = [
+  "bibtexparser>=1.4.4",
+  "Jinja2>=3.1.6",
+  "pdfminer.six>=20260107",
+  "pypdf>=6.10.2",
+  "PyYAML>=6.0.3",
+  "RapidFuzz>=3.14.5",
+  "rich>=15.0.0",
+  "typer>=0.24.1",
+  "Unidecode>=1.4.0",
+  "python-slugify>=8.0.4",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.0.3",
+  "ruff>=0.15.11",
+]
+
+[project.scripts]
+scholar-vault = "scholar_vault.cli:main"
+
+[tool.setuptools]
+packages = ["scholar_vault"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

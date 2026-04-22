@@ -1,0 +1,9 @@
+# Topics Index
+
+{% if topic_cards %}
+{% for topic, cards in topic_cards -%}
+- [{{ topic }}](../topics/{{ topic_slug(topic) }}.md) (`{{ cards|length }}` papers)
+{% endfor %}
+{% else %}
+No topics inferred yet.
+{% endif %}

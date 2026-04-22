@@ -1,0 +1,43 @@
+# {{ card.title }}
+
+## Summary
+{{ card.summary }}
+
+## Why this source matters
+{% if card.why_this_source_matters %}
+{% for point in card.why_this_source_matters -%}
+- {% if point.label %}**{{ point.label }}**: {% endif %}{{ point.text }}
+{% endfor %}
+{% else %}
+- No rationale captured yet.
+{% endif %}
+
+## Files
+{% if card.pdf %}
+- PDF: [{{ card.pdf }}](../{{ card.pdf }})
+{% else %}
+- PDF: Missing
+{% endif %}
+
+## Links
+{% if card.links %}
+{% for link in card.links -%}
+- [{{ link.label }}]({{ link.url }}){% if link.kind %} (`{{ link.kind }}`){% endif %}{% if link.count %} count={{ link.count }}{% endif %}
+{% endfor %}
+{% elif card.url %}
+- [Primary URL]({{ card.url }})
+{% else %}
+- No links yet.
+{% endif %}
+
+## Provenance
+{% if card.discovered_in %}
+{% for item in card.discovered_in -%}
+- [{{ item }}](../{{ item }})
+{% endfor %}
+{% else %}
+- Created manually or imported without run provenance.
+{% endif %}
+
+## Notes
+{{ card.notes if card.notes else "No notes yet." }}

@@ -1,0 +1,6 @@
+# Lessons
+
+- Keep the paper card body sections parseable and stable. Rebuild depends on section headings, so cosmetic heading changes need matching parser updates.
+- Preserve existing Scholar Labs summaries and provenance when merging later BibTeX or DOI enrichment.
+- Idempotence is easiest when run slugs depend on export metadata and when merges happen before any new card slug is allocated.
+- This shell may not expose `python` directly. Use `conda run -n scholar-vault ...` for reliable verification in this repo.

@@ -1,0 +1,63 @@
+{
+  "schema_version": "0.2",
+  "source": "google_scholar_labs",
+  "exported_at": "2026-04-22T16:00:00+02:00",
+  "prompt": "retrieval augmented generation evaluation",
+  "results": [
+    {
+      "rank": 1,
+      "scholar_cid": "cid-001",
+      "title": "Evaluating Retrieval Augmented Generation Systems",
+      "authors_preview": "Jane Smith, Omar Lee",
+      "year": 2024,
+      "venue_preview": "Transactions on Language Systems",
+      "publisher_or_host": "ACM",
+      "summary": "This paper studies how to evaluate retrieval augmented generation systems across retrieval and answer quality.",
+      "rationale_points": [
+        {
+          "label": "Evaluation",
+          "text": "Provides an explicit framework for measuring retrieval and generation quality."
+        },
+        {
+          "label": "Benchmarks",
+          "text": "Includes practical benchmark suggestions that can seed future topic pages."
+        }
+      ],
+      "links": [
+        {
+          "label": "publication",
+          "url": "https://example.com/paper-1",
+          "kind": "html"
+        },
+        {
+          "label": "pdf",
+          "url": "https://example.com/paper-1.pdf",
+          "kind": "pdf"
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "scholar_cid": "cid-002",
+      "title": "Grounded Generation from Local Knowledge Stores",
+      "authors_preview": "Alicia Doe and Ken Park",
+      "year": 2023,
+      "venue_preview": "Proceedings of the Local-First AI Workshop",
+      "publisher_or_host": "arXiv",
+      "summary": "This source focuses on grounding generation in local knowledge bases and offline archives.",
+      "rationale_points": [
+        {
+          "label": "Local-first",
+          "text": "Explains local knowledge storage tradeoffs relevant to scholar-vault."
+        }
+      ],
+      "links": [
+        {
+          "label": "publication",
+          "url": "https://example.com/paper-2",
+          "kind": "html"
+        }
+      ]
+    }
+  ]
+}
