@@ -10,9 +10,11 @@
 ## Working Rules
 
 - Keep `papers/` cards as the canonical archive object. Treat runs, indexes, and exports as derived views.
+- For Scholar Labs imports, keep all candidate results on the run record and create canonical `papers/*.md` cards only for selected results by default.
 - Preserve raw inputs where practical. Scholar Labs exports copied into vault storage should stay immutable.
 - Keep `browser/scholar_labs_json_exporter.js` Scholar-specific. It depends on Google Scholar `gs_*` selectors and should not be generalized without testing on a real Scholar Labs results page.
 - Keep raw failed Scholar Labs exports for debugging, but do not import them into runs or paper cards.
+- Keep Scholar Labs PDF handling non-destructive: prefer copy-and-verify into `pdfs/`, leave staging files in place unless the command explicitly archives them, and record decisions in the run manifest.
 - If the exporter changes, verify these browser diagnostics on a live Scholar Labs results page before accepting the change:
   `document.querySelectorAll('div.gs_r[data-cid], div.gs_or[data-cid]').length`
   `document.querySelector('.gs_as_np_tq')?.innerText`

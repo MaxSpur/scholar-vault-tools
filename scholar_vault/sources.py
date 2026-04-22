@@ -10,7 +10,7 @@ import yaml
 from slugify import slugify
 from unidecode import unidecode
 
-from .models import RationalePoint, RunRecord, SourceCard
+from .models import ImportManifest, RationalePoint, RunRecord, SourceCard
 
 STOPWORDS = {
     "a",
@@ -350,3 +350,11 @@ def load_run_records(paths: VaultPaths) -> list[RunRecord]:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         runs.append(RunRecord.model_validate(data))
     return runs
+
+
+def load_import_manifests(paths: VaultPaths) -> list[ImportManifest]:
+    manifests: list[ImportManifest] = []
+    for path in sorted(paths.runs.glob("*/import-manifest.yaml")):
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        manifests.append(ImportManifest.model_validate(data))
+    return manifests

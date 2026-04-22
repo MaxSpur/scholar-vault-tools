@@ -5,6 +5,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SourceKind = Literal["scholar_labs", "pdf_drop", "bibtex_import", "doi_import", "manual"]
+RunResultStatus = Literal["selected", "candidate", "unmatched", "skipped"]
+RunPdfStatus = Literal["attached", "missing", "unmatched"]
+ManifestDecision = Literal["accepted", "rejected", "skipped", "unresolved"]
 
 
 class Link(BaseModel):
@@ -78,6 +81,16 @@ class ScholarLabsExport(BaseModel):
         return self
 
 
+class RunResultRecord(ScholarLabsResult):
+    status: RunResultStatus = "candidate"
+    pdf_status: RunPdfStatus = "missing"
+    paper_card: str | None = None
+    proposed_pdf: str | None = None
+    proposed_sha256: str | None = None
+    score: int | None = None
+    decision: ManifestDecision | None = None
+
+
 class SourceCard(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -137,9 +150,10 @@ class RunRecord(BaseModel):
     exported_at: str
     export_file: str
     raw_export_file: str
+    staging_folder: str = ""
     result_count: int
-    results: list[ScholarLabsResult] = Field(default_factory=list)
-    paper_slugs: list[str] = Field(default_factory=list)
+    include_without_pdf: bool = False
+    results: list[RunResultRecord] = Field(default_factory=list)
     matched_files: list[str] = Field(default_factory=list)
     unmatched_files: list[str] = Field(default_factory=list)
 
@@ -171,6 +185,8 @@ class PdfCandidate(BaseModel):
     year: int | None = None
     text_excerpt: str = ""
     metadata: dict[str, str | None] = Field(default_factory=dict)
+    sha256: str | None = None
+    size: int | None = None
 
 
 class MatchDecision(BaseModel):
@@ -180,3 +196,36 @@ class MatchDecision(BaseModel):
     score: int = 0
     decision: Literal["auto", "review", "skip"] = "skip"
     reason: str = ""
+
+
+class ImportManifestEntry(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    rank: int | None = None
+    scholar_cid: str | None = None
+    result_title: str | None = None
+    original_path: str | None = None
+    original_sha256: str | None = None
+    proposed_match: str | None = None
+    score: int | None = None
+    decision: ManifestDecision = "unresolved"
+    destination_path: str | None = None
+    copied: bool = False
+    moved: bool = False
+    archived_original_path: str | None = None
+    paper_card: str | None = None
+    paper_card_created: bool = False
+    card_preexisting: bool = False
+    card_before: dict[str, Any] | None = None
+    verified: bool = False
+    note: str | None = None
+
+
+class ImportManifest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    run_id: str
+    export_file: str
+    staging_folder: str
+    created_at: str
+    entries: list[ImportManifestEntry] = Field(default_factory=list)

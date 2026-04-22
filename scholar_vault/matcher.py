@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from pdfminer.high_level import extract_text
@@ -74,6 +75,8 @@ def build_pdf_candidate(path: Path) -> PdfCandidate:
     title = infer_pdf_title(path, metadata, text_excerpt)
     doi = infer_pdf_doi(metadata, text_excerpt)
     year = infer_pdf_year(metadata, text_excerpt)
+    sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    size = path.stat().st_size
     return PdfCandidate(
         path=str(path),
         title=title,
@@ -81,6 +84,8 @@ def build_pdf_candidate(path: Path) -> PdfCandidate:
         year=year,
         text_excerpt=text_excerpt[:4000],
         metadata=metadata,
+        sha256=sha256,
+        size=size,
     )
 
 

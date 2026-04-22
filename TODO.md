@@ -6,3 +6,4 @@
 - [x] Add matching, citekey, slug, and Markdown rendering coverage.
 - [x] Run verification commands and record any fixes from the first pass.
 - [x] Reject invalid Scholar Labs exports and keep failed raw exports for debugging without creating runs or paper cards.
+- [x] Switch Scholar Labs imports to selected-only paper creation with run manifests and non-destructive staging handling.

@@ -1,4 +1,4 @@
-from scholar_vault.models import Link, RationalePoint, RunRecord, ScholarLabsResult, SourceCard
+from scholar_vault.models import Link, RationalePoint, RunRecord, RunResultRecord, SourceCard
 from scholar_vault.render import render_paper_markdown, render_run_markdown
 
 
@@ -28,13 +28,23 @@ def test_render_paper_markdown_contains_required_sections() -> None:
     assert "[runs/2026-04-22_rag/index.md](../runs/2026-04-22_rag/index.md)" in rendered
 
 
-def test_render_run_markdown_links_canonical_card() -> None:
-    result = ScholarLabsResult(
+def test_render_run_markdown_separates_selected_and_candidate_results() -> None:
+    selected = RunResultRecord(
         rank=1,
         title="Evaluating Retrieval Augmented Generation Systems",
         authors_preview="Jane Smith",
         summary="Short summary.",
         rationale_points=[RationalePoint(label="Evaluation", text="Useful evaluation framing.")],
+        status="selected",
+        pdf_status="attached",
+        paper_card="papers/smith2024rag.md",
+    )
+    candidate = RunResultRecord(
+        rank=2,
+        title="Grounded Generation from Local Knowledge Stores",
+        authors_preview="Omar Lee",
+        status="candidate",
+        pdf_status="missing",
     )
     run = RunRecord(
         slug="2026-04-22_rag",
@@ -43,21 +53,23 @@ def test_render_run_markdown_links_canonical_card() -> None:
         exported_at="2026-04-22T10:00:00+02:00",
         export_file="/tmp/export.json",
         raw_export_file="raw/scholar-labs/run.json",
-        result_count=1,
-        results=[result],
-        paper_slugs=["smith2024rag"],
+        staging_folder="/tmp/staging",
+        result_count=2,
+        results=[selected, candidate],
     )
     card = SourceCard(
         slug="smith2024rag",
-        title=result.title,
+        title=selected.title,
         source_kind="scholar_labs",
         pdf="pdfs/smith2024rag.pdf",
     )
 
     rendered = render_run_markdown(run, {"smith2024rag": card})
 
+    assert "## Selected Papers" in rendered
+    assert "## Candidate And Unmatched Results" in rendered
     assert (
         "[Evaluating Retrieval Augmented Generation Systems](../../papers/smith2024rag.md)"
         in rendered
     )
-    assert "`papers/smith2024rag.md`" in rendered
+    assert "Grounded Generation from Local Knowledge Stores" in rendered

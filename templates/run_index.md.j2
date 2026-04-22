@@ -2,16 +2,18 @@
 
 {{ run.prompt }}
 
-## Results
+## Selected Papers
 
-{% for result in run.results %}
-## {{ result.rank }}. {% set slug = run.paper_slugs[loop.index0] if loop.index0 < run.paper_slugs|length else None %}{% if slug and slug in cards_by_slug %}[{{ result.title }}]({{ card_paths[slug] }}){% else %}{{ result.title }}{% endif %}
+{% set selected = run.results | selectattr("status", "equalto", "selected") | list %}
+{% if selected %}
+{% for result in selected %}
+## {{ result.rank }}. {% if result.paper_card %}[{{ result.title }}](../../{{ result.paper_card }}){% else %}{{ result.title }}{% endif %}
 
 - Authors: {{ result.authors_preview or "Unknown" }}
 - Year: {{ result.year or "Unknown" }}
 - Venue: {{ result.venue or "Unknown" }}
-- Canonical card: {% if slug and slug in cards_by_slug %}`papers/{{ slug }}.md`{% else %}Not linked{% endif %}
-- PDF: {% if slug and slug in cards_by_slug and cards_by_slug[slug].pdf %}`{{ cards_by_slug[slug].pdf }}`{% else %}Missing{% endif %}
+- Canonical card: {% if result.paper_card %}`{{ result.paper_card }}`{% else %}Not linked{% endif %}
+- PDF status: `{{ result.pdf_status }}`
 
 ### Summary
 {{ result.summary or "No summary provided." }}
@@ -35,3 +37,45 @@
 {% endif %}
 
 {% endfor %}
+{% else %}
+No selected papers in this run yet.
+{% endif %}
+
+## Candidate And Unmatched Results
+
+{% set remaining = run.results | rejectattr("status", "equalto", "selected") | list %}
+{% if remaining %}
+{% for result in remaining %}
+## {{ result.rank }}. {{ result.title }}
+
+- Status: `{{ result.status }}`
+- PDF status: `{{ result.pdf_status }}`
+- Canonical card: {% if result.paper_card %}`{{ result.paper_card }}`{% else %}Not linked{% endif %}
+- Proposed PDF: {% if result.proposed_pdf %}`{{ result.proposed_pdf }}`{% else %}None{% endif %}
+- Match score: {% if result.score is not none %}`{{ result.score }}`{% else %}None{% endif %}
+
+### Summary
+{{ result.summary or "No summary provided." }}
+
+### Why this source matters
+{% if result.rationale_points %}
+{% for point in result.rationale_points -%}
+- {% if point.label %}**{{ point.label }}**: {% endif %}{{ point.text }}
+{% endfor %}
+{% else %}
+- No rationale points captured.
+{% endif %}
+
+### Useful links
+{% if result.links %}
+{% for link in result.links -%}
+- [{{ link.label }}]({{ link.url }}){% if link.kind %} (`{{ link.kind }}`){% endif %}{% if link.count %} count={{ link.count }}{% endif %}
+{% endfor %}
+{% else %}
+- No visible links captured.
+{% endif %}
+
+{% endfor %}
+{% else %}
+No candidate or unmatched results.
+{% endif %}

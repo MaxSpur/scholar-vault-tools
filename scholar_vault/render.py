@@ -5,7 +5,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
-from .models import RunRecord, SourceCard
+from .models import ImportManifest, RunRecord, SourceCard
 from .sources import dump_frontmatter, topic_slug
 
 TEMPLATE_ROOT = Path(__file__).resolve().parent.parent / "templates"
@@ -55,44 +55,49 @@ def render_topic_page(topic: str, cards: list[SourceCard]) -> str:
     return "\n".join(lines)
 
 
-def render_missing_pdfs(cards: list[SourceCard]) -> str:
-    missing = [card for card in cards if card.pdf_status != "attached" or not card.pdf]
+def render_missing_pdfs(runs: list[RunRecord]) -> str:
+    missing = [
+        (run, result) for run in runs for result in run.results if result.pdf_status != "attached"
+    ]
     lines = ["# Missing PDFs", ""]
     if not missing:
-        lines.append("No papers are currently missing PDFs.")
+        lines.append("No candidate results are currently missing PDFs.")
         lines.append("")
         return "\n".join(lines)
-    for card in missing:
-        lines.append(f"- [{card.title}](../papers/{card.slug}.md)")
+    for run, result in missing:
+        run_link = f"../runs/{run.slug}/index.md"
+        if result.paper_card:
+            lines.append(
+                f"- [{result.title}]({run_link}) "
+                f"(`status={result.status}`, `paper_card={result.paper_card}`)"
+            )
+        else:
+            lines.append(
+                f"- [{result.title}]({run_link}) (`status={result.status}`, `paper_card=none`)"
+            )
     lines.append("")
     return "\n".join(lines)
 
 
-def render_unmatched_index(cards: list[SourceCard], raw_unmatched: list[str]) -> str:
-    needs_review = [
-        card
-        for card in cards
-        if card.citation_status == "partial" or card.pdf_status != "attached" or not card.title
+def render_unmatched_index(manifests: list[ImportManifest]) -> str:
+    lines = ["# Unmatched PDFs", ""]
+    rows = [
+        (manifest.run_id, entry)
+        for manifest in manifests
+        for entry in manifest.entries
+        if entry.original_path and entry.decision != "accepted"
     ]
-    lines = ["# Unmatched And Incomplete", ""]
-    lines.append("## Source cards needing review")
-    lines.append("")
-    if needs_review:
-        for card in needs_review:
+    if rows:
+        for run_id, entry in rows:
+            proposed = entry.proposed_match or "none"
+            score = entry.score if entry.score is not None else "n/a"
             lines.append(
-                f"- [{card.title or card.slug}](../papers/{card.slug}.md) "
-                f"(`citation_status={card.citation_status}`, `pdf_status={card.pdf_status}`)"
+                f"- `{entry.original_path}` "
+                f"(`run={run_id}`, `decision={entry.decision}`, `score={score}`, "
+                f"`proposed={proposed}`)"
             )
     else:
-        lines.append("No source cards currently need review.")
-    lines.append("")
-    lines.append("## Raw unmatched files")
-    lines.append("")
-    if raw_unmatched:
-        for item in raw_unmatched:
-            lines.append(f"- `{item}`")
-    else:
-        lines.append("No unmatched raw files.")
+        lines.append("No PDFs currently need a match.")
     lines.append("")
     return "\n".join(lines)
 
@@ -133,17 +138,28 @@ def render_llms_txt() -> str:
         "scholar-vault navigation\n"
         "- Canonical sources: papers/\n"
         "- Scholar Labs provenance: runs/\n"
+        "- Candidate results missing PDFs: _indexes/missing-pdfs.md\n"
+        "- Unmatched PDFs: _indexes/unmatched.md\n"
         "- Topics: topics/\n"
         "- Derived indexes: _indexes/\n"
         "- Exports: _exports/\n"
     )
 
 
-def render_llms_full(cards: list[SourceCard], runs: list[RunRecord]) -> str:
+def render_llms_full(
+    cards: list[SourceCard],
+    runs: list[RunRecord],
+    manifests: list[ImportManifest],
+) -> str:
     lines = ["scholar-vault overview", ""]
     lines.append("Runs:")
     for run in runs:
-        lines.append(f"- {run.date} | {run.prompt} | runs/{run.slug}/index.md")
+        selected = len([result for result in run.results if result.status == "selected"])
+        candidates = len([result for result in run.results if result.status != "selected"])
+        lines.append(
+            f"- {run.date} | {run.prompt} | runs/{run.slug}/index.md | "
+            f"selected={selected} candidate={candidates}"
+        )
     lines.append("")
     lines.append("Papers:")
     for card in cards:
@@ -156,6 +172,24 @@ def render_llms_full(cards: list[SourceCard], runs: list[RunRecord]) -> str:
         topics = ", ".join(card.topics) if card.topics else "none"
         lines.append(f"- {card.title} | papers/{card.slug}.md | topics: {topics} | pdf: {pdf}")
         lines.append(f"  summary: {summary}")
+    lines.append("")
+    lines.append("Candidate Results:")
+    for run in runs:
+        for result in run.results:
+            if result.status == "selected":
+                continue
+            lines.append(
+                f"- {result.title} | runs/{run.slug}/index.md | "
+                f"status={result.status} | pdf_status={result.pdf_status}"
+            )
+    lines.append("")
+    lines.append("Unmatched PDFs:")
+    for manifest in manifests:
+        for entry in manifest.entries:
+            if entry.original_path and entry.decision != "accepted":
+                lines.append(
+                    f"- {entry.original_path} | run={manifest.run_id} | decision={entry.decision}"
+                )
     lines.append("")
     return "\n".join(lines)
 
