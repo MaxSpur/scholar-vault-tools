@@ -55,7 +55,7 @@ scholar-labs-vault/
 
 1. Run a Google Scholar Labs search.
 2. Download selected PDFs into `~/Downloads/scholar-labs-staging`.
-3. Run the browser exporter in `browser/scholar_labs_json_exporter.js` on the Scholar Labs page to save a JSON export.
+3. Run the browser exporter in `browser/scholar_labs_json_exporter.js` on the Scholar Labs page to save a JSON export. This exporter is intentionally tied to Google Scholar `gs_*` selectors and should not be replaced with generic card scraping logic.
 4. Import the run:
 
 ```fish
@@ -67,6 +67,17 @@ The convenience alias behaves identically:
 ```fish
 scholar-vault import --vault ~/Documents/Research/scholar-labs-vault --export ~/Downloads/scholar-labs-exports/example.json --staging ~/Downloads/scholar-labs-staging
 ```
+
+## Scholar Labs Troubleshooting
+
+If the exporter produces `prompt: "Google Scholar"` and `results: []`, you are either not on a completed Scholar Labs results page or the DOM selectors are broken. Run these in the browser console:
+
+```js
+document.querySelectorAll('div.gs_r[data-cid], div.gs_or[data-cid]').length
+document.querySelector('.gs_as_np_tq')?.innerText
+```
+
+The first command should return a positive number, and the second should return the original Scholar Labs prompt.
 
 ## Direct PDF Workflow
 
@@ -104,6 +115,20 @@ Regenerate BibTeX only:
 ```fish
 scholar-vault bibtex --vault ~/Documents/Research/scholar-labs-vault
 ```
+
+Reset the vault to the same clean state produced by `init`:
+
+```fish
+scholar-vault reset --vault ~/Documents/Research/scholar-labs-vault
+```
+
+Skip the confirmation prompt:
+
+```fish
+scholar-vault reset --vault ~/Documents/Research/scholar-labs-vault --yes
+```
+
+`reset` only clears vault-managed state inside the vault itself. It does not touch your external download folders such as `~/Downloads/scholar-labs-staging` or `~/Downloads/scholar-labs-exports`.
 
 ## Generated Records
 

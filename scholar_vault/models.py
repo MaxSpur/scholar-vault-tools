@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SourceKind = Literal["scholar_labs", "pdf_drop", "bibtex_import", "doi_import", "manual"]
 
@@ -50,6 +50,32 @@ class ScholarLabsExport(BaseModel):
     exported_at: str
     prompt: str = ""
     results: list[ScholarLabsResult] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_export(self) -> ScholarLabsExport:
+        if self.source != "google_scholar_labs":
+            return self
+
+        prompt = self.prompt.strip()
+        if not prompt:
+            raise ValueError(
+                "Invalid Google Scholar Labs export: prompt is missing. "
+                "This usually means the browser exporter ran on the wrong page "
+                "or the Scholar-specific gs_* selectors are broken."
+            )
+        if prompt == "Google Scholar":
+            raise ValueError(
+                "Invalid Google Scholar Labs export: prompt is 'Google Scholar'. "
+                "This usually means the browser exporter ran on the wrong page "
+                "or the Scholar-specific gs_* selectors are broken."
+            )
+        if not self.results:
+            raise ValueError(
+                "Invalid Google Scholar Labs export: no results were found. "
+                "This usually means the browser exporter ran on the wrong page "
+                "or the Scholar-specific gs_* selectors are broken."
+            )
+        return self
 
 
 class SourceCard(BaseModel):

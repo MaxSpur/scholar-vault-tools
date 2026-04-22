@@ -5,6 +5,8 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from .bibtex import extract_pdf_paths, parse_bibtex_file, split_bibtex_authors, write_library_bib
 from .matcher import (
     best_pdf_match,
@@ -79,6 +81,28 @@ def _run_slug(export: ScholarLabsExport, export_path: Path) -> tuple[str, str]:
     date = exported_at.date().isoformat()
     prompt_slug = slugify_text(export.prompt or export_path.stem, max_length=60)
     return f"{date}_{prompt_slug}", date
+
+
+def _copy_invalid_export(paths: VaultPaths, export_file: Path, raw_text: str) -> str:
+    timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+    stem = slugify_text(export_file.stem, max_length=40)
+    failed_path = paths.raw_scholar_labs / f"invalid-{timestamp}-{stem}.json"
+    failed_path.write_text(raw_text, encoding="utf-8")
+    return ensure_relative(failed_path, paths.vault)
+
+
+def _load_validated_scholar_export(paths: VaultPaths, export_file: Path) -> ScholarLabsExport:
+    raw_text = export_file.read_text(encoding="utf-8")
+    try:
+        return ScholarLabsExport.model_validate_json(raw_text)
+    except ValidationError as exc:
+        failed_copy = _copy_invalid_export(paths, export_file, raw_text)
+        details = "; ".join(error["msg"] for error in exc.errors()) or "validation failed"
+        raise ValueError(
+            "Invalid Google Scholar Labs export. This likely means the browser exporter "
+            "ran on the wrong page or its Scholar-specific gs_* selectors are broken. "
+            f"The raw failed export was copied to {failed_copy}. Details: {details}"
+        ) from exc
 
 
 def _prefer_existing(value: str | None) -> bool:
@@ -352,6 +376,19 @@ def _rebuild_indexes(paths: VaultPaths) -> None:
         _write_run(paths, run, list(cards_by_slug.values()))
 
 
+def _clear_directory(path: Path) -> int:
+    removed = 0
+    if not path.exists():
+        return removed
+    for child in path.iterdir():
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+        removed += 1
+    return removed
+
+
 def initialize_vault(vault: Path | str) -> VaultPaths:
     paths = VaultPaths.from_root(vault)
     paths.ensure()
@@ -379,6 +416,36 @@ def initialize_vault(vault: Path | str) -> VaultPaths:
     return paths
 
 
+def reset_vault(vault: Path | str) -> dict[str, int]:
+    paths = VaultPaths.from_root(vault)
+    if not paths.vault.exists():
+        raise ValueError(f"Vault does not exist: {paths.vault}")
+
+    removed = 0
+    for path in (
+        paths.raw_scholar_labs,
+        paths.raw_inbox,
+        paths.raw_staging,
+        paths.raw_unmatched,
+        paths.raw_imported,
+        paths.pdfs,
+        paths.papers,
+        paths.runs,
+        paths.topics,
+        paths.indexes,
+        paths.exports,
+    ):
+        removed += _clear_directory(path)
+
+    for file_path in (paths.vault / "llms.txt", paths.vault / "llms-full.txt"):
+        if file_path.exists():
+            file_path.unlink()
+            removed += 1
+
+    initialize_vault(paths.vault)
+    return {"removed": removed}
+
+
 def import_scholar_labs_run(
     vault: Path | str,
     export_path: Path | str,
@@ -389,7 +456,7 @@ def import_scholar_labs_run(
     paths = initialize_vault(vault)
     export_file = Path(export_path).expanduser().resolve()
     staging_dir = Path(staging_path).expanduser().resolve()
-    export = ScholarLabsExport.model_validate_json(export_file.read_text(encoding="utf-8"))
+    export = _load_validated_scholar_export(paths, export_file)
     run_slug, run_date = _run_slug(export, export_file)
     raw_export_file = paths.raw_scholar_labs / f"{run_slug}.json"
     if not raw_export_file.exists():

@@ -1,6 +1,9 @@
 (() => {
   "use strict";
 
+  // Scholar-specific exporter. This depends on Google Scholar `gs_*` selectors.
+  // Do not replace this with generic article/main/card scraping logic without
+  // testing on a real Scholar Labs results page first.
   const schemaVersion = "0.2";
 
   const clean = (value) =>
@@ -37,39 +40,21 @@
     const lowerLabel = clean(label).toLowerCase();
     const lowerUrl = clean(url).toLowerCase();
 
+    if (lowerLabel.includes("cached html") || lowerLabel.includes("view as html")) {
+      return "cached_html";
+    }
     if (lowerLabel.includes("cited by")) return "cited_by";
     if (lowerLabel.includes("version")) return "all_versions";
     if (lowerLabel.includes("related")) return "related";
-    if (lowerLabel.includes("cached")) return "cached";
-    if (lowerLabel.includes("view as html")) return "cached_html";
     if (lowerLabel.includes("full view")) return "full_view";
+    if (lowerLabel.includes("cached")) return "cached";
     if (lowerLabel.includes("pdf") || lowerUrl.includes(".pdf")) return "pdf";
     if (lowerLabel.includes("html")) return "html";
 
     return "html";
   };
 
-  const getFirstNonemptyPrompt = () => {
-    const promptCandidates = Array.from(document.querySelectorAll(".gs_as_np_tq"))
-      .map((node) => clean(node.innerText || node.textContent || ""))
-      .filter((value) => value.length > 20);
-
-    if (promptCandidates.length > 0) {
-      return promptCandidates[0];
-    }
-
-    const textareaValue = clean(document.querySelector("textarea")?.value || "");
-    if (textareaValue.length > 20) return textareaValue;
-
-    const visibleInputValue = clean(
-      Array.from(document.querySelectorAll("input"))
-        .map((input) => input.value || input.getAttribute("value") || "")
-        .find((value) => clean(value).length > 20) || ""
-    );
-    if (visibleInputValue.length > 20) return visibleInputValue;
-
-    return "";
-  };
+  const getPrompt = () => clean(document.querySelector(".gs_as_np_tq")?.innerText || "");
 
   const getResultCards = () => {
     return Array.from(document.querySelectorAll("div.gs_r[data-cid], div.gs_or[data-cid]"))
@@ -128,15 +113,21 @@
   const parseMetadataLine = (metadataText) => {
     const line = clean(metadataText);
 
-    const yearMatch = line.match(/\b(19|20)\d{2}\b/);
-    const year = yearMatch ? Number.parseInt(yearMatch[0], 10) : null;
-
     // Google Scholar format is usually:
     // Authors - Venue, Year - Host
     const parts = line.split(/\s+-\s+/).map(clean).filter(Boolean);
+    const yearMatch = line.match(/\b(19|20)\d{2}\b/);
+    const year = yearMatch ? Number.parseInt(yearMatch[0], 10) : null;
 
-    const authorsPreview = parts[0] || line || null;
-    const venuePreview = parts.length >= 2 ? parts[1] : null;
+    const authorsPreview = parts[0] || null;
+    const venueSource = parts.length >= 2 ? parts[1] : "";
+    const venuePreview =
+      clean(
+        venueSource
+          .replace(/\b(19|20)\d{2}\b/g, "")
+          .replace(/\s*,\s*,/g, ", ")
+          .replace(/\s*,\s*$/g, "")
+      ) || null;
     const publisherOrHost = parts.length >= 3 ? parts.slice(2).join(" - ") : null;
 
     return {
@@ -213,7 +204,7 @@
     return links;
   };
 
-  const prompt = getFirstNonemptyPrompt();
+  const prompt = getPrompt();
 
   const cards = getResultCards();
   const results = [];
@@ -256,7 +247,26 @@
     });
   }
 
-  if (!prompt || results.length === 0) {
+  const invalidPrompt = !prompt || prompt === "Google Scholar";
+
+  if (invalidPrompt || results.length === 0) {
+    console.warn("[Scholar Labs Export] Invalid Scholar Labs page for export.", {
+      prompt,
+      invalidPrompt,
+      resultCount: results.length,
+      bodyClass: document.body.className,
+      gsPromptCount: document.querySelectorAll(".gs_as_np_tq").length,
+      gsResultCount: document.querySelectorAll("div.gs_r[data-cid], div.gs_or[data-cid]")
+        .length,
+      diagnostics: {
+        resultCards:
+          "document.querySelectorAll('div.gs_r[data-cid], div.gs_or[data-cid]').length",
+        promptText: "document.querySelector('.gs_as_np_tq')?.innerText",
+      },
+      title: document.title,
+      url: window.location.href,
+    });
+
     console.warn("[Scholar Labs Export] Failed to extract expected data.", {
       prompt,
       resultCount: results.length,
@@ -267,10 +277,19 @@
       url: window.location.href,
     });
 
+    console.log(
+      "[Scholar Labs Export] Browser diagnostics:\n" +
+        "document.querySelectorAll('div.gs_r[data-cid], div.gs_or[data-cid]').length\n" +
+        "document.querySelector('.gs_as_np_tq')?.innerText"
+    );
+
     alert(
-      "Scholar Labs exporter found no results or no prompt.\n\n" +
-      "Make sure you are on a completed Scholar Labs results page, not the Scholar home page.\n\n" +
-      "Open the browser console for diagnostic counts."
+      "Scholar Labs exporter found an invalid results page.\n\n" +
+      "If the prompt is missing or equals 'Google Scholar', or if no results were found, " +
+      "you are probably not on a completed Scholar Labs results page or the gs_* selectors broke.\n\n" +
+      "Run these in the browser console:\n" +
+      "document.querySelectorAll('div.gs_r[data-cid], div.gs_or[data-cid]').length\n" +
+      "document.querySelector('.gs_as_np_tq')?.innerText"
     );
 
     return;

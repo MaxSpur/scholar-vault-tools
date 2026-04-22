@@ -14,6 +14,7 @@ from .importer import (
     import_scholar_labs_run,
     initialize_vault,
     rebuild_vault,
+    reset_vault,
 )
 
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
@@ -34,6 +35,10 @@ ExportArg = Annotated[
 StagingArg = Annotated[
     Path,
     typer.Option(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+]
+YesArg = Annotated[
+    bool,
+    typer.Option("--yes", help="Reset without confirmation."),
 ]
 
 
@@ -110,6 +115,21 @@ def rebuild_command(vault: VaultArg) -> None:
 def bibtex_command(vault: VaultArg) -> None:
     output = export_bibtex(vault)
     console.print(f"Wrote {output}")
+
+
+@app.command("reset")
+def reset_command(vault: VaultArg, yes: YesArg = False) -> None:
+    resolved = Path(vault).expanduser().resolve()
+    if not yes and not _confirm(
+        f"Reset vault at {resolved}? This removes imported papers, runs, PDFs, "
+        "raw copies inside the vault, derived indexes, and exports."
+    ):
+        raise typer.Exit(code=1)
+
+    summary = reset_vault(vault)
+    console.print(
+        f"Reset vault at {resolved}. Removed {summary['removed']} vault-managed items."
+    )
 
 
 def main() -> None:

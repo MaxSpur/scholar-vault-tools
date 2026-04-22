@@ -11,6 +11,11 @@
 
 - Keep `papers/` cards as the canonical archive object. Treat runs, indexes, and exports as derived views.
 - Preserve raw inputs where practical. Scholar Labs exports copied into vault storage should stay immutable.
+- Keep `browser/scholar_labs_json_exporter.js` Scholar-specific. It depends on Google Scholar `gs_*` selectors and should not be generalized without testing on a real Scholar Labs results page.
+- Keep raw failed Scholar Labs exports for debugging, but do not import them into runs or paper cards.
+- If the exporter changes, verify these browser diagnostics on a live Scholar Labs results page before accepting the change:
+  `document.querySelectorAll('div.gs_r[data-cid], div.gs_or[data-cid]').length`
+  `document.querySelector('.gs_as_np_tq')?.innerText`
 - Prefer updating existing cards over creating parallel records. Match by DOI, Scholar CID, citekey, or normalized title before making a new card.
 - Preserve existing summaries and provenance during enrichment imports.
 - Keep generated Markdown Obsidian-safe: YAML frontmatter, plain links, no plugin-only syntax.
