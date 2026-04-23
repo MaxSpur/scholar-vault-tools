@@ -7,3 +7,4 @@
 - The Scholar Labs browser exporter is DOM-specific. Treat `prompt == "Google Scholar"` or `results == []` as a broken export, not as an empty but valid import.
 - For Scholar Labs, the run is the place to keep all candidate results. `papers/` should default to selected/attached sources only, otherwise Obsidian and LLM navigation get noisy fast.
 - If a workflow is meant to empty matched PDFs out of staging, make that explicit in the command name. The lower-level importer should stay safe by default, and the user-facing Labs convenience command can opt into verified copy-then-archive behavior.
+- When moving user-facing input files for workflow hygiene, update all provenance paths that future commands use. Archiving a used JSON export is only useful if `resume` still points at the moved file.

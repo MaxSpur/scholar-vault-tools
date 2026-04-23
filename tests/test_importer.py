@@ -185,6 +185,62 @@ def test_import_labs_archives_matched_pdfs_and_leaves_unmatched_in_staging(
     assert (vault / accepted[0]["archived_original_path"]).exists()
 
 
+def test_import_labs_archives_used_export_json_and_updates_run_metadata(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_fixture_copy("sample_scholar_labs_export.json", exports / "sample.json")
+    _write_pdf_with_title(
+        staging / "match.pdf",
+        "Evaluating Retrieval Augmented Generation Systems",
+    )
+
+    summary = import_scholar_labs_run(
+        vault,
+        export_path,
+        staging,
+        commit=True,
+        archive_matched=True,
+        archive_export=True,
+    )
+    run_id = str(summary["run"])
+    archived_export = Path(str(summary["export_archived"]))
+    run_yaml = _run_yaml(vault, run_id)
+    manifest = _manifest_yaml(vault, run_id)
+
+    assert not export_path.exists()
+    assert archived_export.parent == exports / "used"
+    assert archived_export.name.startswith(f"{run_id}__")
+    assert archived_export.exists()
+    assert run_yaml["export_file"] == str(archived_export)
+    assert manifest["export_file"] == str(archived_export)
+
+
+def test_dry_run_does_not_archive_used_export_json(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_fixture_copy("sample_scholar_labs_export.json", exports / "sample.json")
+
+    summary = import_scholar_labs_run(
+        vault,
+        export_path,
+        staging,
+        dry_run=True,
+        archive_matched=True,
+        archive_export=True,
+    )
+
+    assert export_path.exists()
+    assert summary["export_archived"] == ""
+
+
 def test_accepted_match_copies_pdf_and_manifest_records_it(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     staging = tmp_path / "staging"

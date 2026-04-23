@@ -65,6 +65,13 @@ IncludeWithoutPdfArg = Annotated[
         help="Create candidate paper cards for results that do not have matched PDFs.",
     ),
 ]
+ArchiveExportArg = Annotated[
+    bool,
+    typer.Option(
+        "--archive-export/--keep-export",
+        help="Move a successfully used Scholar Labs JSON export into a sibling used/ folder.",
+    ),
+]
 SelectedOnlyArg = Annotated[
     bool,
     typer.Option("--selected-only", help="Keep only paper cards that have attached PDFs."),
@@ -87,6 +94,8 @@ def _print_run_summary(summary: dict[str, int | str]) -> None:
         f"{summary['matched']} matched PDFs, {summary['unmatched']} unmatched PDFs, "
         f"and {summary['archived']} matched staging PDFs archived."
     )
+    if summary.get("export_archived"):
+        console.print(f"Archived used export JSON to {summary['export_archived']}.")
 
 
 @app.command("init")
@@ -103,6 +112,7 @@ def import_run_command(
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
+    archive_export: ArchiveExportArg = False,
 ) -> None:
     summary = import_scholar_labs_run(
         vault,
@@ -112,6 +122,7 @@ def import_run_command(
         commit=commit,
         include_without_pdf=include_without_pdf,
         archive_matched=False,
+        archive_export=archive_export,
         confirm=_confirm,
     )
     _print_run_summary(summary)
@@ -125,6 +136,7 @@ def import_labs_command(
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
+    archive_export: ArchiveExportArg = True,
 ) -> None:
     summary = import_scholar_labs_run(
         vault,
@@ -134,6 +146,7 @@ def import_labs_command(
         commit=commit,
         include_without_pdf=include_without_pdf,
         archive_matched=True,
+        archive_export=archive_export,
         confirm=_confirm,
     )
     _print_run_summary(summary)
@@ -147,6 +160,7 @@ def import_alias_command(
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
+    archive_export: ArchiveExportArg = True,
 ) -> None:
     summary = import_scholar_labs_run(
         vault,
@@ -156,6 +170,7 @@ def import_alias_command(
         commit=commit,
         include_without_pdf=include_without_pdf,
         archive_matched=True,
+        archive_export=archive_export,
         confirm=_confirm,
     )
     _print_run_summary(summary)

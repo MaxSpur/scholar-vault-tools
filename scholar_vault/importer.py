@@ -566,6 +566,14 @@ def _archive_matched_pdf(paths: VaultPaths, run_id: str, source_pdf: Path) -> st
     return ensure_relative(destination, paths.vault)
 
 
+def _archive_used_export(export_file: Path, run_id: str) -> tuple[Path, bool]:
+    if export_file.parent.name == "used":
+        return export_file, False
+    destination = _archive_path(export_file.parent / "used", f"{run_id}__{export_file.name}")
+    shutil.move(str(export_file), str(destination))
+    return destination.resolve(), True
+
+
 def _build_manifest_entry(
     result: ScholarLabsResult,
     match: MatchDecision | None,
@@ -648,6 +656,7 @@ def import_scholar_labs_run(
     commit: bool = False,
     include_without_pdf: bool = False,
     archive_matched: bool = False,
+    archive_export: bool = False,
     confirm: ConfirmCallback | None = None,
 ) -> dict[str, int | str]:
     if dry_run and commit:
@@ -671,9 +680,7 @@ def import_scholar_labs_run(
     cards = load_source_cards(paths)
     existing_manifest = _load_manifest(paths, run_slug)
     existing_results = (
-        {_result_key(result): result for result in existing_run.results}
-        if existing_run
-        else {}
+        {_result_key(result): result for result in existing_run.results} if existing_run else {}
     )
     existing_entries = (
         {
@@ -756,10 +763,14 @@ def import_scholar_labs_run(
                     run_status = "unmatched"
                     pdf_status = "unmatched"
             elif interactive:
-                accepted = confirm(
-                    f"Accept match {Path(proposal.candidate.path).name} -> {result.title} "
-                    f"(score={proposal.score})?"
-                ) if confirm is not None else proposal.decision == "auto"
+                accepted = (
+                    confirm(
+                        f"Accept match {Path(proposal.candidate.path).name} -> {result.title} "
+                        f"(score={proposal.score})?"
+                    )
+                    if confirm is not None
+                    else proposal.decision == "auto"
+                )
                 if accepted:
                     decision = "accepted"
                 else:
@@ -844,9 +855,7 @@ def import_scholar_labs_run(
                 status=run_status,
                 pdf_status=pdf_status,
                 paper_card=paper_card,
-                proposed_pdf=(
-                    proposal.candidate.path if proposal and proposal.candidate else None
-                ),
+                proposed_pdf=(proposal.candidate.path if proposal and proposal.candidate else None),
                 proposed_sha256=(
                     proposal.candidate.sha256 if proposal and proposal.candidate else None
                 ),
@@ -910,12 +919,24 @@ def import_scholar_labs_run(
     if log_entries:
         _write_log(paths, "import-labs" if archive_matched else "import-run", log_entries)
     _rebuild_indexes(paths)
+
+    archived_export_path = ""
+    if archive_export and not dry_run:
+        archived_export, archived = _archive_used_export(export_file, run_slug)
+        if archived:
+            archived_export_path = str(archived_export)
+            manifest.export_file = archived_export_path
+            run_record.export_file = archived_export_path
+            _write_manifest(paths, manifest)
+            _write_run(paths, run_record, load_source_cards(paths))
+
     return {
         "papers": len([result for result in run_results if result.paper_card]),
         "selected": len([result for result in run_results if result.status == "selected"]),
         "matched": len([result for result in run_results if result.pdf_status == "attached"]),
         "unmatched": len(sorted(set(unmatched_files))),
         "archived": len(sorted(set(archived_files))),
+        "export_archived": archived_export_path,
         "run": run_slug,
     }
 
@@ -942,6 +963,7 @@ def resume_run(
         commit=commit,
         include_without_pdf=run.include_without_pdf,
         archive_matched=run.archive_matched_from_staging,
+        archive_export=run.archive_matched_from_staging,
         confirm=confirm,
     )
 
@@ -1254,9 +1276,7 @@ def import_bibtex(vault: Path | str, bib_path: Path | str) -> dict[str, int]:
             url=entry.get("url"),
             source_kind="bibtex_import",
             topics=[
-                token.strip()
-                for token in (entry.get("keywords") or "").split(",")
-                if token.strip()
+                token.strip() for token in (entry.get("keywords") or "").split(",") if token.strip()
             ],
             citation_status="complete" if title and authors and entry.get("year") else "partial",
             summary="No summary yet.",

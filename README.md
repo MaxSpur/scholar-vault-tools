@@ -75,6 +75,7 @@ Default Scholar Labs behavior is now selected-only:
 - Canonical `papers/*.md` cards are created only for results with matched PDFs.
 - Candidate results stay on the run page unless you explicitly opt in with `--include-without-pdf`.
 - `import-labs` copies accepted PDFs into `pdfs/`, verifies them, and then archives the matched originals out of staging into `raw/imported/`, leaving only unmatched PDFs in staging.
+- After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder, for example `~/Downloads/scholar-labs-exports/used/<run-id>__example.json`. The run metadata is updated so `resume` still knows where the export went.
 - `import-run` is the lower-level transactional variant. It copies accepted PDFs into `pdfs/` but leaves staging untouched unless you later run `clean-staging`.
 
 Dry-run the import without creating paper cards or copying PDFs:
@@ -93,6 +94,12 @@ Also create candidate paper cards for results without matched PDFs:
 
 ```fish
 scholar-vault import-labs --vault ~/Documents/Research/scholar-labs-vault --export ~/Downloads/scholar-labs-exports/example.json --staging ~/Downloads/scholar-labs-staging --include-without-pdf
+```
+
+Keep the original JSON export in place instead of moving it to `used/`:
+
+```fish
+scholar-vault import-labs --vault ~/Documents/Research/scholar-labs-vault --export ~/Downloads/scholar-labs-exports/example.json --staging ~/Downloads/scholar-labs-staging --keep-export
 ```
 
 ## Scholar Labs Troubleshooting
