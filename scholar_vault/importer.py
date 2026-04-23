@@ -95,12 +95,18 @@ def _run_slug(export: ScholarLabsExport, export_path: Path) -> tuple[str, str]:
     return f"{date}_{prompt_slug}", date
 
 
-def _run_ref_from_parts(run_id: str, date: str, title: str | None, prompt: str) -> str:
-    return run_note_path(run_id, date, title, prompt)
+def _run_ref_from_parts(
+    run_id: str,
+    date: str,
+    title: str | None,
+    prompt: str,
+    note_file: str | None = None,
+) -> str:
+    return run_note_path(run_id, date, title, prompt, note_file)
 
 
 def _run_ref(run: RunRecord) -> str:
-    return _run_ref_from_parts(run.slug, run.date, run.title, run.prompt)
+    return _run_ref_from_parts(run.slug, run.date, run.title, run.prompt, run.note_file)
 
 
 def _legacy_run_ref(run_id: str) -> str:
@@ -498,9 +504,10 @@ def _load_manifest(paths: VaultPaths, run_id: str) -> ImportManifest | None:
 def _write_run(paths: VaultPaths, run: RunRecord, cards: list[SourceCard]) -> None:
     run_dir = paths.runs / run.slug
     run_dir.mkdir(parents=True, exist_ok=True)
+    note_name = run_note_filename(run.date, run.title, run.prompt, run.note_file)
+    run.note_file = note_name
     write_yaml(run_dir / "index.yaml", run.model_dump(exclude_none=True))
     cards_by_slug = {card.slug: card for card in cards}
-    note_name = run_note_filename(run.date, run.title, run.prompt)
     note_path = run_dir / note_name
     write_text(note_path, render_run_markdown(run, cards_by_slug))
     for markdown_path in run_dir.glob("*.md"):
@@ -809,7 +816,8 @@ def import_scholar_labs_run(
         title or (existing_run.title if existing_run else None),
         export.prompt,
     )
-    run_ref = _run_ref_from_parts(run_slug, run_date, run_title, export.prompt)
+    run_note_file = existing_run.note_file if existing_run and title is None else None
+    run_ref = _run_ref_from_parts(run_slug, run_date, run_title, export.prompt, run_note_file)
     if existing_run and not dry_run and not commit and confirm is not None:
         if not confirm(f"Run {run_slug} already exists. Resume and update it?"):
             raise ValueError(f"Run {run_slug} already exists.")
@@ -1069,6 +1077,7 @@ def import_scholar_labs_run(
         date=run_date,
         prompt=export.prompt,
         title=run_title,
+        note_file=run_note_file,
         exported_at=export.exported_at,
         export_file=str(export_file),
         raw_export_file=ensure_relative(raw_export_file, paths.vault),
@@ -1159,6 +1168,7 @@ def rename_run(vault: Path | str, run_id: str, title: str) -> dict[str, str]:
 
     old_ref = _run_ref(run)
     run.title = run_display_title(title, run.prompt)
+    run.note_file = None
     new_ref = _run_ref(run)
     cards = load_source_cards(paths)
     for card in cards:

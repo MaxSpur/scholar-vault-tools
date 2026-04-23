@@ -103,6 +103,7 @@ def _run_note_path(vault: Path, run_id: str) -> str:
         run_yaml["date"],
         run_yaml.get("title"),
         run_yaml["prompt"],
+        run_yaml.get("note_file"),
     )
 
 
@@ -275,7 +276,7 @@ def test_import_run_accepts_short_title_for_obsidian_graph(tmp_path: Path) -> No
     run_markdown = (vault / note).read_text(encoding="utf-8")
 
     assert run_yaml["title"] == "Urban Mobility Sources"
-    assert note.endswith("/2026-04-22_urban-mobility-sources.md")
+    assert note.endswith("/Urban Mobility Sources.md")
     assert "title: Urban Mobility Sources" in run_markdown
     assert "# Scholar Labs Run: Urban Mobility Sources" in run_markdown
 
@@ -297,11 +298,35 @@ def test_rename_run_updates_note_and_card_references(tmp_path: Path) -> None:
     cards = load_source_cards(initialize_vault(vault))
 
     assert old_note != new_note
-    assert new_note.endswith("/2026-04-22_renamed-run.md")
+    assert new_note.endswith("/Renamed Run.md")
     assert not (vault / old_note).exists()
     assert (vault / new_note).exists()
     assert cards[0].discovered_in == [new_note]
     assert cards[0].summary_sources[0].run == new_note
+
+
+def test_rebuild_preserves_manual_obsidian_run_note_filename(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_export(exports / "sample.json", 1)
+
+    summary = import_scholar_labs_run(vault, export_path, staging, commit=True)
+    run_id = str(summary["run"])
+    original_note = vault / _run_note_path(vault, run_id)
+    manual_note = original_note.parent / "Broad Proposal Support Search (Mobidec Postdoc).md"
+    original_note.rename(manual_note)
+
+    rebuild_vault(vault)
+
+    note = _run_note_path(vault, run_id)
+    run_yaml = _run_yaml(vault, run_id)
+    assert note.endswith("/Broad Proposal Support Search (Mobidec Postdoc).md")
+    assert (vault / note).exists()
+    assert run_yaml["title"] == "Broad Proposal Support Search (Mobidec Postdoc)"
+    assert run_yaml["note_file"] == "Broad Proposal Support Search (Mobidec Postdoc).md"
 
 
 def test_rebuild_migrates_legacy_run_index_links_and_files(tmp_path: Path) -> None:
@@ -388,9 +413,7 @@ def test_rebuild_shortens_previous_long_generated_run_note_names(tmp_path: Path)
     rebuild_vault(vault)
 
     note = _run_note_path(vault, run_id)
-    assert note.endswith(
-        "/2026-04-23_collaborative-immersive-analytics-data-visualization-virtual.md"
-    )
+    assert note.endswith("/Collaborative Immersive Analytics Data Visualization Virtual.md")
     assert (vault / note).exists()
     assert not (run_dir / f"{run_id}.md").exists()
 

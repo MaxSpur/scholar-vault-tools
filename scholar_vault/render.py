@@ -13,7 +13,7 @@ ENVIRONMENT = Environment(loader=FileSystemLoader(str(TEMPLATE_ROOT)), autoescap
 
 
 def run_markdown_path(run: RunRecord) -> str:
-    return run_note_path(run.slug, run.date, run.title, run.prompt)
+    return run_note_path(run.slug, run.date, run.title, run.prompt, run.note_file)
 
 
 def markdown_link(path: str, label: str) -> str:
@@ -43,6 +43,7 @@ def render_run_markdown(run: RunRecord, cards_by_slug: dict[str, SourceCard]) ->
             "type": "scholar_labs_run",
             "run_id": run.slug,
             "title": title,
+            "note_file": run.note_file,
             "date": run.date,
             "prompt": run.prompt,
             "result_count": run.result_count,
@@ -100,12 +101,12 @@ def render_missing_pdfs(runs: list[RunRecord]) -> str:
         run_link = f"../{run_markdown_path(run)}"
         if result.paper_card:
             lines.append(
-                f"- [{result.title}]({run_link}) "
+                f"- [{result.title}](<{run_link}>) "
                 f"(`status={result.status}`, `paper_card={result.paper_card}`)"
             )
         else:
             lines.append(
-                f"- [{result.title}]({run_link}) (`status={result.status}`, `paper_card=none`)"
+                f"- [{result.title}](<{run_link}>) (`status={result.status}`, `paper_card=none`)"
             )
     lines.append("")
     return "\n".join(lines)

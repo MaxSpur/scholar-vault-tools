@@ -2,7 +2,7 @@
 
 {% if runs %}
 {% for run in runs -%}
-- [{{ run.date }} {{ run_display_title(run.title, run.prompt) }}](../{{ run_markdown_path(run) }}) (`{{ run.result_count }}` results)
+- [{{ run_display_title(run.title, run.prompt) }}](<../{{ run_markdown_path(run) }}>) (`{{ run.date }}`, `{{ run.result_count }}` results)
 {% endfor %}
 {% else %}
 No Scholar Labs runs have been imported yet.

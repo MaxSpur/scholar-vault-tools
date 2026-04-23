@@ -221,22 +221,46 @@ def run_display_title(title: str | None, prompt: str) -> str:
 
 def run_note_stem(date: str, title: str | None, prompt: str) -> str:
     display_title = run_display_title(title, prompt)
-    title_slug = slugify_text(display_title, max_length=60)
-    return f"{date}_{title_slug}" if date else title_slug
+    return sanitize_filename(display_title, max_length=80)
 
 
-def run_note_filename(date: str, title: str | None, prompt: str) -> str:
+def sanitize_filename(value: str, *, max_length: int = 120) -> str:
+    cleaned = re.sub(r"[\x00-\x1f/\\:]+", " - ", value or "").strip()
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = cleaned.strip(". ")
+    if len(cleaned) > max_length:
+        cleaned = cleaned[:max_length].rstrip(" .-_")
+    return cleaned or "Untitled"
+
+
+def run_note_filename(
+    date: str,
+    title: str | None,
+    prompt: str,
+    note_file: str | None = None,
+) -> str:
+    if note_file:
+        cleaned = sanitize_filename(Path(note_file).name)
+        return cleaned if cleaned.endswith(".md") else f"{cleaned}.md"
     return f"{run_note_stem(date, title, prompt)}.md"
 
 
-def run_note_path(run_slug: str, date: str, title: str | None, prompt: str) -> str:
-    return f"runs/{run_slug}/{run_note_filename(date, title, prompt)}"
+def run_note_path(
+    run_slug: str,
+    date: str,
+    title: str | None,
+    prompt: str,
+    note_file: str | None = None,
+) -> str:
+    return f"runs/{run_slug}/{run_note_filename(date, title, prompt, note_file)}"
 
 
 def humanize_run_note_stem(stem: str, date: str | None = None) -> str:
     cleaned = stem
     if date and cleaned.startswith(date):
         cleaned = cleaned[len(date) :].lstrip("-_ ")
+    if " " in cleaned:
+        return cleaned.strip()
     return " ".join(_format_title_token(token) for token in re.split(r"[-_]+", cleaned) if token)
 
 
@@ -461,22 +485,25 @@ def _apply_run_markdown_title(run: RunRecord, run_dir: Path) -> RunRecord:
     if not markdown_files:
         return run
 
-    expected_stem = run_note_stem(run.date, run.title, run.prompt)
+    generated_slug_style = re.compile(r"^\d{4}-\d{2}-\d{2}_[a-z0-9-]+$")
     matching_note: Path | None = None
     for note in markdown_files:
         frontmatter, _ = read_frontmatter_markdown(note)
         if frontmatter.get("type") == "scholar_labs_run" and frontmatter.get("run_id") == run.slug:
             matching_note = note
-            if note.stem != expected_stem and note.stem != run.slug:
+            manually_named = note.stem != run.slug and not generated_slug_style.match(note.stem)
+            if manually_named:
                 run.title = humanize_run_note_stem(note.stem, run.date)
-                return run
-            if isinstance(frontmatter.get("title"), str) and frontmatter["title"].strip():
+                run.note_file = note.name
+            elif isinstance(frontmatter.get("title"), str) and frontmatter["title"].strip():
                 run.title = frontmatter["title"].strip()
-                return run
+            return run
     if matching_note is None and len(markdown_files) == 1:
         note = markdown_files[0]
-        if note.stem != expected_stem and note.stem != run.slug:
+        if note.stem != run.slug:
             run.title = humanize_run_note_stem(note.stem, run.date)
+            if not generated_slug_style.match(note.stem):
+                run.note_file = note.name
     return run
 
 

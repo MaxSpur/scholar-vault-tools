@@ -44,7 +44,7 @@ def test_render_paper_markdown_contains_required_sections() -> None:
     assert "[pdfs/smith2024rag.pdf](../pdfs/smith2024rag.pdf)" in rendered
     assert (
         "[runs/2026-04-22_rag/2026-04-22_rag.md]"
-        "(../runs/2026-04-22_rag/2026-04-22_rag.md)" in rendered
+        "(<../runs/2026-04-22_rag/2026-04-22_rag.md>)" in rendered
     )
 
 

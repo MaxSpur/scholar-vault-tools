@@ -190,6 +190,7 @@ class RunRecord(BaseModel):
     date: str
     prompt: str
     title: str | None = None
+    note_file: str | None = None
     source: str = "google_scholar_labs"
     exported_at: str
     export_file: str

@@ -24,8 +24,8 @@
 ## Canonical Data Model
 
 - Canonical source record: `papers/<slug>.md`
-- Scholar Labs provenance record: `runs/<run_id>/<date>_<short-title>.md` for Obsidian plus `index.yaml` for machine-readable state.
-- Run IDs remain stable and prompt-derived for idempotence. Run note filenames use the `title` field, either supplied through `--title`, inferred from the prompt, or changed later with `rename-run`.
+- Scholar Labs provenance record: `runs/<run_id>/<Short Title.md>` for Obsidian plus `index.yaml` for machine-readable state.
+- Run IDs remain stable and prompt-derived for idempotence. Run note filenames use `note_file` when present, otherwise the `title` field supplied through `--title`, inferred from the prompt, changed with `rename-run`, or edited directly through an Obsidian filename rename.
 - Raw inputs: `raw/`
 - Raw citation cache: `raw/metadata/<citekey>/`
 - Derived indexes and exports: `_indexes/`, `_exports/`, `llms.txt`, `llms-full.txt`

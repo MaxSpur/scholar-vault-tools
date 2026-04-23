@@ -141,12 +141,12 @@ Default Scholar Labs behavior is now selected-only:
 - After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder without renaming it, for example `~/Downloads/scholar-labs-exports/used/example.json`. The run metadata is updated so `resume` and `rerun` still know where the export went.
 - `import-run` is the lower-level transactional variant. It copies accepted PDFs into `pdfs/` but leaves staging untouched unless you later run `clean-staging`.
 
-Run notes are written as `runs/<run_id>/<date>_<short-title>.md` instead of
-`index.md`. This gives Obsidian Graph meaningful run/prompt nodes. Each run
-note has frontmatter `type: scholar_labs_run`, `title`, and tag
-`scholar-vault/run`, so Graph groups can color prompts separately from paper
-cards. If you do not provide a title, `scholar-vault` infers a short title from
-the prompt topic.
+Run notes are written as `runs/<run_id>/<Short Title.md>` instead of
+`index.md`. This gives Obsidian Graph and the file sidebar meaningful run/prompt
+nodes. Each run note has frontmatter `type: scholar_labs_run`, `title`,
+`note_file`, and tag `scholar-vault/run`, so Graph groups can color prompts
+separately from paper cards. If you do not provide a title, `scholar-vault`
+infers a short title from the prompt topic.
 
 Dry-run the import without creating paper cards or copying PDFs:
 
@@ -283,10 +283,12 @@ Rename an existing run note for Obsidian Graph:
 scholar-vault rename-run --vault ~/Documents/Research/scholar-labs-vault --run 2026-04-22_example-prompt --title "Immersive Analytics Sources"
 ```
 
-You can also edit the generated run note's `title:` frontmatter in Obsidian,
-then run `scholar-vault rebuild`. Do not manually rename the generated run
-Markdown file as the primary workflow; rebuild uses `index.yaml` and the
-frontmatter title to regenerate the canonical note filename and links.
+You can also rename the generated run note directly in Obsidian. On the next
+`scholar-vault rebuild`, the tool records that exact filename in
+`runs/<run_id>/index.yaml` as `note_file` and updates paper-card links such as
+`discovered_in` and `summary_sources`. Editing only the `title:` property also
+works, but the filename is what Obsidian Graph and the sidebar display most
+prominently.
 
 Undo a run using its import manifest:
 
@@ -336,7 +338,7 @@ scholar-vault reset --vault ~/Documents/Research/scholar-labs-vault --yes
 
 - `papers/*.md`: canonical source cards for selected papers by default.
 - `papers/*.md` frontmatter field `summary_sources`: run-specific Scholar Labs summaries linked back to the run note that produced them.
-- `runs/<run_id>/<date>_<short-title>.md`: Obsidian-friendly per-run provenance pages that keep all Scholar Labs candidate results.
+- `runs/<run_id>/<Short Title.md>`: Obsidian-friendly per-run provenance pages that keep all Scholar Labs candidate results.
 - `runs/*/index.yaml`: machine-readable run records used by `resume`, `rerun`, and rebuilds.
 - `runs/*/import-manifest.yaml`: transactional record of proposed matches, decisions, copied PDFs, and created cards.
 - `raw/metadata/<citekey>/`: cached citation provider responses and generated citation artifacts.
