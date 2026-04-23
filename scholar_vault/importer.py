@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 from collections.abc import Callable
 from datetime import datetime
@@ -557,6 +558,23 @@ def _cards_to_csl_json(cards: list[SourceCard]) -> list[dict]:
     return exported
 
 
+def _normalize_attached_pdf_filename(paths: VaultPaths, card: SourceCard) -> bool:
+    if not card.pdf:
+        return False
+    pdf_path = paths.vault / card.pdf
+    if not pdf_path.exists() or pdf_path.suffix == ".pdf":
+        return False
+    match = re.match(r"(.+)\.pdf-(\d+)$", pdf_path.name, flags=re.IGNORECASE)
+    if not match:
+        return False
+    destination = pdf_path.with_name(f"{match.group(1)}-{match.group(2)}.pdf")
+    if destination.exists():
+        return False
+    pdf_path.rename(destination)
+    card.pdf = ensure_relative(destination, paths.vault)
+    return True
+
+
 def _rebuild_indexes(paths: VaultPaths) -> None:
     runs = load_run_records(paths)
     run_refs = {run.slug: _run_ref(run) for run in runs}
@@ -574,9 +592,18 @@ def _rebuild_indexes(paths: VaultPaths) -> None:
         if normalized_sources != card.summary_sources:
             card.summary_sources = normalized_sources
             cards_changed = True
-    if cards_changed:
-        for card in cards:
-            _save_card(paths, card)
+        if _normalize_attached_pdf_filename(paths, card):
+            cards_changed = True
+    for card in cards:
+        rendered = render_paper_markdown(card)
+        paper_path = paths.papers / f"{card.slug}.md"
+        should_write = (
+            cards_changed
+            or not paper_path.exists()
+            or paper_path.read_text(encoding="utf-8") != rendered
+        )
+        if should_write:
+            write_text(paper_path, rendered)
 
     manifests = load_import_manifests(paths)
     topic_cards = group_cards_by_topic(cards)

@@ -272,6 +272,187 @@ def test_doi_csl_promotes_canonical_venue_and_metadata(tmp_path: Path) -> None:
     assert card.citation_input_fingerprint == card_fingerprint(card)
 
 
+def test_preprint_doi_can_upgrade_to_published_version_with_venue(tmp_path: Path) -> None:
+    paths = VaultPaths.from_root(tmp_path / "vault")
+    paths.ensure()
+    card = SourceCard(
+        slug="saffo2023unravelingdesignspaceimmersiveanalytics",
+        citekey="saffo2023unravelingdesignspaceimmersiveanalytics",
+        title="Unraveling the Design Space of Immersive Analytics: A Systematic Review",
+        authors=["David Saffo", "Sara Di Bartolomeo"],
+        year=2023,
+        venue="… on Visualization and …, 2023",
+        doi="10.31219/osf.io/2e9x4",
+        citation_status="verified",
+    )
+    osf_csl = {
+        "title": card.title,
+        "DOI": "10.31219/osf.io/2e9x4",
+        "issued": {"date-parts": [[2023, 8, 7]]},
+        "author": [{"given": "David", "family": "Saffo"}],
+    }
+    ieee_csl = {
+        "title": card.title,
+        "DOI": "10.1109/tvcg.2023.3327368",
+        "container-title": "IEEE Transactions on Visualization and Computer Graphics",
+        "issued": {"date-parts": [[2024, 1]]},
+        "URL": "https://doi.org/10.1109/tvcg.2023.3327368",
+        "author": [
+            {"given": "David", "family": "Saffo"},
+            {"given": "Sara", "family": "Di Bartolomeo"},
+        ],
+    }
+    crossref_search = {
+        "message": {
+            "items": [
+                {
+                    "DOI": "10.31219/osf.io/2e9x4",
+                    "title": [card.title],
+                    "author": [{"given": "David", "family": "Saffo"}],
+                    "published-print": {"date-parts": [[2023]]},
+                    "type": "posted-content",
+                },
+                {
+                    "DOI": "10.1109/tvcg.2023.3327368",
+                    "title": [card.title],
+                    "author": [
+                        {"given": "David", "family": "Saffo"},
+                        {"given": "Sara", "family": "Di Bartolomeo"},
+                    ],
+                    "published-print": {"date-parts": [[2024]]},
+                    "container-title": [
+                        "IEEE Transactions on Visualization and Computer Graphics"
+                    ],
+                    "type": "journal-article",
+                    "URL": "https://doi.org/10.1109/tvcg.2023.3327368",
+                },
+            ]
+        }
+    }
+
+    def fake_json(url: str, cache_path: Path, refresh: bool) -> dict | None:
+        del url, refresh
+        if cache_path.name == "crossref-search.json":
+            return crossref_search
+        return None
+
+    def fake_text(url: str, cache_path: Path, refresh: bool, headers: dict[str, str]) -> str | None:
+        del cache_path, refresh
+        if headers.get("Accept") == "application/x-bibtex":
+            return "@article{saffo2023, title={Unraveling the Design Space}}"
+        if headers.get("Accept") == "application/vnd.citationstyles.csl+json":
+            return json.dumps(ieee_csl if "10.1109" in url else osf_csl)
+        return None
+
+    result = enrich_card(
+        paths,
+        card,
+        EnrichmentOptions(refresh=True),
+        fetch_json=fake_json,
+        fetch_text=fake_text,
+    )
+
+    assert result.status == "verified"
+    assert card.doi == "10.1109/tvcg.2023.3327368"
+    assert card.venue == "IEEE Transactions on Visualization and Computer Graphics"
+    assert card.enrichment_status == "complete"
+    assert card.enrichment_missing == []
+
+
+def test_incomplete_enrichment_marks_preview_venue() -> None:
+    card = SourceCard(
+        slug="preview",
+        citekey="preview",
+        title="Preview Venue Paper",
+        authors=["Jane Smith"],
+        year=2024,
+        venue="IEEE Transactions on …, 2024",
+        doi="10.1145/example",
+        citation_status="generated",
+    )
+
+    def fake_text(url: str, cache_path: Path, refresh: bool, headers: dict[str, str]) -> str | None:
+        del url, cache_path, refresh
+        if headers.get("Accept") == "application/vnd.citationstyles.csl+json":
+            return json.dumps(
+                {
+                    "title": card.title,
+                    "DOI": card.doi,
+                    "issued": {"date-parts": [[2024]]},
+                    "author": [{"given": "Jane", "family": "Smith"}],
+                }
+            )
+        return "@misc{preview, title={Preview Venue Paper}}"
+
+    result = enrich_card(
+        VaultPaths.from_root(Path("/tmp/nonexistent-vault")),
+        card,
+        EnrichmentOptions(refresh=True),
+        fetch_json=lambda *_args: None,
+        fetch_text=fake_text,
+    )
+
+    assert result.changed is True
+    assert card.enrichment_status == "incomplete"
+    assert card.enrichment_missing == ["venue"]
+    assert card.citation_skip_reason == "incomplete metadata: venue"
+
+
+def test_enrichment_refresh_flag_overrides_verified_skip() -> None:
+    card = SourceCard(
+        slug="refresh",
+        citekey="refresh",
+        title="Refresh Paper",
+        citation_status="verified",
+        enrichment_refresh=True,
+    )
+
+    assert should_skip_card(card, EnrichmentOptions()) is None
+
+
+def test_enrichment_refresh_flag_forces_provider_cache_refresh(tmp_path: Path) -> None:
+    paths = VaultPaths.from_root(tmp_path / "vault")
+    paths.ensure()
+    card = SourceCard(
+        slug="refresh",
+        citekey="refresh",
+        title="Refresh Paper",
+        authors=["Jane Smith"],
+        year=2024,
+        doi="10.1145/example",
+        citation_status="verified",
+        enrichment_refresh=True,
+    )
+    refresh_values: list[bool] = []
+
+    def fake_text(url: str, cache_path: Path, refresh: bool, headers: dict[str, str]) -> str | None:
+        del url, cache_path
+        refresh_values.append(refresh)
+        if headers.get("Accept") == "application/vnd.citationstyles.csl+json":
+            return json.dumps(
+                {
+                    "title": "Refresh Paper",
+                    "DOI": "10.1145/example",
+                    "issued": {"date-parts": [[2024]]},
+                    "author": [{"given": "Jane", "family": "Smith"}],
+                    "container-title": "Journal of Refresh Testing",
+                }
+            )
+        return "@article{refresh, title={Refresh Paper}}"
+
+    result = enrich_card(
+        paths,
+        card,
+        EnrichmentOptions(),
+        fetch_json=lambda *_args: None,
+        fetch_text=fake_text,
+    )
+
+    assert result.status == "verified"
+    assert refresh_values and all(refresh_values)
+    assert card.enrichment_refresh is False
+
+
 def test_idempotent_second_run_skips_unchanged_generated_card() -> None:
     card = SourceCard(
         slug="smith2024rag",

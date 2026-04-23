@@ -223,6 +223,14 @@ def render_llms_full(
         topics = ", ".join(card.topics) if card.topics else "none"
         lines.append(f"- {card.title} | papers/{card.slug}.md | topics: {topics} | pdf: {pdf}")
         lines.append(
+            f"  enrichment: status={card.enrichment_status}"
+            + (
+                f" missing={', '.join(card.enrichment_missing)}"
+                if card.enrichment_missing
+                else ""
+            )
+        )
+        lines.append(
             f"  abstract: status={card.abstract_status}"
             + (f" source={card.abstract_source}" if card.abstract_source else "")
         )

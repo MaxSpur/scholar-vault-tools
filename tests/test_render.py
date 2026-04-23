@@ -35,6 +35,8 @@ def test_render_paper_markdown_contains_required_sections() -> None:
             RationalePoint(label="Evaluation", text="Useful evaluation framing.")
         ],
         links=[Link(label="publication", url="https://example.com", kind="html")],
+        enrichment_status="incomplete",
+        enrichment_missing=["venue"],
     )
 
     rendered = render_paper_markdown(card)
@@ -42,6 +44,7 @@ def test_render_paper_markdown_contains_required_sections() -> None:
     assert "## Abstract" in rendered
     assert "## Quick access" in rendered
     assert "[Open local PDF](../pdfs/smith2024rag.pdf)" in rendered
+    assert "Metadata: `incomplete` (missing venue)" in rendered
     assert "[10.1145/example](https://doi.org/10.1145/example)" in rendered
     assert "## Scholar Labs summary" in rendered
     assert "### Run-specific Scholar Labs summaries" in rendered
@@ -93,6 +96,8 @@ def test_render_run_markdown_separates_selected_and_candidate_results() -> None:
         topics=["Retrieval", "Evaluation"],
         source_kind="scholar_labs",
         pdf="pdfs/smith2024rag.pdf",
+        enrichment_status="incomplete",
+        enrichment_missing=["venue"],
     )
 
     rendered = render_run_markdown(run, {"smith2024rag": card})
@@ -111,5 +116,6 @@ def test_render_run_markdown_separates_selected_and_candidate_results() -> None:
     assert "Venue: Journal of Local Knowledge Stores" in rendered
     assert "[10.1145/example](https://doi.org/10.1145/example)" in rendered
     assert "Topics: Retrieval, Evaluation" in rendered
+    assert "Metadata: `incomplete` (missing venue)" in rendered
     assert "[pdfs/smith2024rag.pdf](../../pdfs/smith2024rag.pdf)" in rendered
     assert "Grounded Generation from Local Knowledge Stores" in rendered

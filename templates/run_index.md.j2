@@ -17,6 +17,7 @@
 - Venue: {{ (card.venue if card else result.venue) or "Unknown" }}
 - DOI: {% if card and card.doi %}[{{ card.doi }}]({{ doi_url(card.doi) }}){% else %}Missing{% endif %}
 - Topics: {% if card and card.topics %}{{ card.topics | join(", ") }}{% else %}None{% endif %}
+- Metadata: {% if card %}`{{ card.enrichment_status }}`{% if card.enrichment_missing %} (missing {{ card.enrichment_missing | join(", ") }}){% endif %}{% else %}Unknown{% endif %}
 - Canonical card: {% if result.paper_card %}[{{ result.paper_card }}](../../{{ result.paper_card }}){% else %}Not linked{% endif %}
 - PDF: {% if card and card.pdf %}[{{ card.pdf }}](../../{{ card.pdf }}){% else %}Missing{% endif %}
 - PDF status: `{{ result.pdf_status }}`

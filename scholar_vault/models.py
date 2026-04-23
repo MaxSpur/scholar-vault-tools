@@ -149,6 +149,9 @@ class SourceCard(BaseModel):
     citation_retries: int = 0
     citation_skip_reason: str | None = None
     metadata_lock: bool = False
+    enrichment_status: str = "missing"
+    enrichment_missing: list[str] = Field(default_factory=list)
+    enrichment_refresh: bool = False
     abstract: str | None = None
     abstract_status: AbstractStatus = "missing"
     abstract_source: str | None = None
@@ -193,6 +196,9 @@ class SourceCard(BaseModel):
             "citation_retries": self.citation_retries,
             "citation_skip_reason": self.citation_skip_reason,
             "metadata_lock": self.metadata_lock,
+            "enrichment_status": self.enrichment_status,
+            "enrichment_missing": self.enrichment_missing,
+            "enrichment_refresh": self.enrichment_refresh,
             "abstract": self.abstract,
             "abstract_status": self.abstract_status,
             "abstract_source": self.abstract_source,

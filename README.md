@@ -266,6 +266,8 @@ Rebuild derived indexes and exports from the canonical paper cards:
 scholar-vault rebuild --vault ~/Documents/Research/scholar-labs-vault
 ```
 
+`rebuild` also rerenders generated paper and run Markdown from the current templates, so existing paper cards get new generated sections such as `## Quick access`.
+
 Regenerate BibTeX only:
 
 ```fish
@@ -292,9 +294,9 @@ scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault -
 scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --dry-run
 ```
 
-`enrich-citations` processes canonical `papers/*.md` cards only. It tries local DOI detection first, then cached provider lookups from Crossref, OpenAlex, Europe PMC, DataCite, and DOI content negotiation. Raw provider responses are cached under `raw/metadata/<citekey>/`.
+`enrich-citations` processes canonical `papers/*.md` cards only. It tries local DOI detection first, then cached provider lookups from Crossref, OpenAlex, Europe PMC, DataCite, and DOI content negotiation. Raw provider responses are cached under `raw/metadata/<citekey>/`. When a known DOI resolves to a preprint or repository record with incomplete venue metadata, enrichment may search for a strong published-version match and promote the published DOI and venue instead.
 
-The command writes these frontmatter fields: `doi_status`, `doi_source`, `doi_confidence`, `citation_status`, `citation_source`, `citation_last_checked`, `citation_enriched_at`, `citation_input_fingerprint`, `citation_retries`, `citation_skip_reason`, and `metadata_lock`.
+The command writes these frontmatter fields: `doi_status`, `doi_source`, `doi_confidence`, `citation_status`, `citation_source`, `citation_last_checked`, `citation_enriched_at`, `citation_input_fingerprint`, `citation_retries`, `citation_skip_reason`, `metadata_lock`, `enrichment_status`, `enrichment_missing`, and `enrichment_refresh`.
 
 Interpretation:
 
@@ -305,8 +307,9 @@ Interpretation:
 - `verified`: DOI metadata and title/author/year consistency checks were strong.
 - `ambiguous`: providers returned plausible but conflicting or weak candidates.
 - `unresolved`: no acceptable DOI or citation metadata was found.
+- `incomplete`: citation metadata was generated, but canonical fields such as `venue`, `authors`, `year`, or `doi` are still missing or still look like Scholar preview strings.
 
-Set `metadata_lock: true` in a paper card to prevent automatic metadata overwrites. Use `--refresh` to reprocess generated or verified records, `--retry-failed` to retry unresolved records past the retry limit, and `--force` only when you intentionally want to process locked metadata.
+Set `metadata_lock: true` in a paper card to prevent automatic metadata overwrites. Use `--refresh` to reprocess generated or verified records, `--retry-failed` to retry unresolved records past the retry limit, and `--force` only when you intentionally want to process locked metadata. To mark one card for another normal enrichment attempt from Obsidian, set `enrichment_refresh: true` in that paper card and run `scholar-vault enrich-citations`; the flag is cleared after processing.
 
 Abstract enrichment is opt-in through the same command:
 

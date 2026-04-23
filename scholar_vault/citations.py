@@ -132,11 +132,12 @@ def abstract_fingerprint(card: SourceCard) -> str:
 
 def should_skip_card(card: SourceCard, options: EnrichmentOptions) -> str | None:
     fingerprint = card_fingerprint(card)
+    requested_refresh = options.refresh or card.enrichment_refresh
     if options.citekey and card.citekey != options.citekey:
         return "citekey filter"
     if card.metadata_lock and not options.force:
         return "metadata_lock"
-    if card.citation_status == "verified" and not options.refresh:
+    if card.citation_status == "verified" and not requested_refresh:
         return "citation verified"
     if (
         options.only == "missing-doi"
@@ -154,14 +155,14 @@ def should_skip_card(card: SourceCard, options: EnrichmentOptions) -> str | None
     if (
         card.citation_status in GENERATED_CITATION_STATUSES
         and card.citation_input_fingerprint == fingerprint
-        and not options.refresh
+        and not requested_refresh
     ):
         return "fingerprint unchanged"
     if (
         card.citation_status == "unresolved"
         and card.citation_retries >= MAX_RETRIES
         and not options.retry_failed
-        and not options.refresh
+        and not requested_refresh
     ):
         return "retry limit reached"
     return None
@@ -169,6 +170,7 @@ def should_skip_card(card: SourceCard, options: EnrichmentOptions) -> str | None
 
 def should_skip_abstract_card(card: SourceCard, options: EnrichmentOptions) -> str | None:
     fingerprint = abstract_fingerprint(card)
+    requested_refresh = options.refresh_abstracts or card.enrichment_refresh
     if options.citekey and card.citekey != options.citekey:
         return "citekey filter"
     if card.metadata_lock and not options.force:
@@ -181,21 +183,21 @@ def should_skip_abstract_card(card: SourceCard, options: EnrichmentOptions) -> s
         options.only == "missing-abstract"
         and card.abstract
         and card.abstract_status in {"resolved", "verified"}
-        and not options.refresh_abstracts
+        and not requested_refresh
     ):
         return "abstract present"
     if (
         card.abstract_status in {"resolved", "verified"}
         and card.abstract
         and card.abstract_input_fingerprint == fingerprint
-        and not options.refresh_abstracts
+        and not requested_refresh
     ):
         return "abstract fingerprint unchanged"
     if (
         card.abstract_status in {"ambiguous", "unresolved"}
         and card.abstract_input_fingerprint == fingerprint
         and not options.retry_failed
-        and not options.refresh_abstracts
+        and not requested_refresh
     ):
         return "abstract previously failed"
     return None
@@ -737,12 +739,78 @@ def _is_scholar_citation_url(value: str | None) -> bool:
     )
 
 
+def _metadata_missing_fields(card: SourceCard) -> list[str]:
+    missing: list[str] = []
+    if not normalize_doi(card.doi):
+        missing.append("doi")
+    if not card.authors and not parse_people(card.authors_preview):
+        missing.append("authors")
+    if not card.year:
+        missing.append("year")
+    if _is_preview_venue(card.venue):
+        missing.append("venue")
+    return missing
+
+
+def _update_enrichment_completeness(card: SourceCard) -> None:
+    missing = _metadata_missing_fields(card)
+    card.enrichment_missing = missing
+    if card.metadata_lock:
+        card.enrichment_status = "manual_lock"
+    elif card.citation_status == "ambiguous" or card.doi_status == "ambiguous":
+        card.enrichment_status = "ambiguous"
+    elif missing:
+        card.enrichment_status = "incomplete"
+    elif card.citation_status in GENERATED_CITATION_STATUSES:
+        card.enrichment_status = "complete"
+    else:
+        card.enrichment_status = "missing"
+
+
 def _candidate_is_consistent(card: SourceCard, candidate: CitationCandidate) -> bool:
     if not candidate.title:
         return False
     if card.doi and candidate.doi and normalize_doi(card.doi) != normalize_doi(candidate.doi):
         return False
     return candidate.score >= 88
+
+
+def _is_published_metadata_candidate(candidate: CitationCandidate) -> bool:
+    work_type = ((candidate.raw or {}).get("type") or "").casefold()
+    if work_type in {"posted-content", "preprint"}:
+        return False
+    if work_type and work_type not in {
+        "journal-article",
+        "proceedings-article",
+        "book-chapter",
+        "monograph",
+    }:
+        return False
+    return bool(candidate.doi and candidate.venue and not _is_preview_venue(candidate.venue))
+
+
+def _published_version_candidate(
+    card: SourceCard,
+    candidates: list[CitationCandidate],
+) -> CitationCandidate | None:
+    viable = [
+        candidate
+        for candidate in candidates
+        if _is_published_metadata_candidate(candidate)
+        and candidate.score >= 88
+        and score_title_match(card.title, candidate.title) >= 95
+    ]
+    if not viable:
+        return None
+    current_doi = normalize_doi(card.doi)
+    for candidate in viable:
+        if current_doi and normalize_doi(candidate.doi) == current_doi:
+            return candidate
+    return max(viable, key=lambda candidate: (candidate.score, len(candidate.venue or "")))
+
+
+def _should_search_for_published_version(card: SourceCard) -> bool:
+    return bool(card.doi and _is_preview_venue(card.venue))
 
 
 def _promote_metadata_from_candidate(card: SourceCard, candidate: CitationCandidate) -> bool:
@@ -802,7 +870,13 @@ def _finalize_citation_success(
     card.citation_enriched_at = checked_at
     card.citation_last_checked = checked_at
     card.citation_input_fingerprint = card_fingerprint(card)
-    card.citation_skip_reason = None
+    _update_enrichment_completeness(card)
+    card.citation_skip_reason = (
+        f"incomplete metadata: {', '.join(card.enrichment_missing)}"
+        if card.enrichment_missing
+        else None
+    )
+    card.enrichment_refresh = False
 
 
 def _http_json(url: str, cache_path: Path, refresh: bool) -> dict[str, Any] | list[Any] | None:
@@ -912,8 +986,9 @@ def enrich_abstract_card(
         return EnrichmentResult(card.citekey or card.slug, "skipped", skip_reason, skipped=True)
 
     checked_at = now_iso()
+    requested_refresh = options.refresh_abstracts or card.enrichment_refresh
     cache_refresh = (
-        options.refresh_abstracts
+        requested_refresh
         or options.retry_failed
         or card.abstract_input_fingerprint != abstract_fingerprint(card)
     )
@@ -989,6 +1064,7 @@ def enrich_abstract_card(
         card.abstract_status = "ambiguous"
         card.abstract_last_checked = checked_at
         card.abstract_input_fingerprint = abstract_fingerprint(card)
+        card.enrichment_refresh = False
         return EnrichmentResult(
             card.citekey or card.slug,
             "ambiguous",
@@ -1000,17 +1076,21 @@ def enrich_abstract_card(
         if _existing_abstract_blocks_candidate(
             card,
             best,
-            refresh=options.refresh_abstracts,
+            refresh=requested_refresh,
         ):
             card.abstract_last_checked = checked_at
             card.abstract_input_fingerprint = abstract_fingerprint(card)
+            changed = card.enrichment_refresh
+            card.enrichment_refresh = False
             return EnrichmentResult(
                 card.citekey or card.slug,
                 "skipped",
                 "existing abstract has equal or stronger provenance",
+                changed=changed,
                 skipped=True,
             )
         _accept_abstract_candidate(card, best, checked_at=checked_at)
+        card.enrichment_refresh = False
         return EnrichmentResult(
             card.citekey or card.slug,
             card.abstract_status,
@@ -1021,6 +1101,7 @@ def enrich_abstract_card(
     card.abstract_status = "unresolved"
     card.abstract_last_checked = checked_at
     card.abstract_input_fingerprint = abstract_fingerprint(card)
+    card.enrichment_refresh = False
     return EnrichmentResult(
         card.citekey or card.slug,
         "unresolved",
@@ -1047,7 +1128,10 @@ def enrich_card(
 
     fingerprint = card_fingerprint(card)
     cache_refresh = (
-        options.refresh or options.retry_failed or card.citation_input_fingerprint != fingerprint
+        options.refresh
+        or card.enrichment_refresh
+        or options.retry_failed
+        or card.citation_input_fingerprint != fingerprint
     )
     checked_at = now_iso()
     work_dir = metadata_dir(paths, card)
@@ -1107,6 +1191,8 @@ def enrich_card(
             card.citation_last_checked = checked_at
             card.citation_input_fingerprint = fingerprint
             card.citation_skip_reason = f"ambiguous {best.source} candidate score={best.score}"
+            _update_enrichment_completeness(card)
+            card.enrichment_refresh = False
             return EnrichmentResult(
                 card.citekey or card.slug,
                 "ambiguous",
@@ -1136,6 +1222,44 @@ def enrich_card(
                     _promote_metadata_from_candidate(card, csl_candidate)
             except json.JSONDecodeError:
                 pass
+
+        if _should_search_for_published_version(card):
+            crossref_payload = fetch_json(
+                _crossref_url(card),
+                work_dir / "crossref-search.json",
+                cache_refresh,
+            )
+            if isinstance(crossref_payload, dict):
+                search_candidates = crossref_candidates(crossref_payload, card)
+                candidates.extend(search_candidates)
+                published = _published_version_candidate(card, search_candidates)
+                if published:
+                    card.doi = published.doi
+                    card.doi_status = "resolved"
+                    card.doi_source = f"{published.source}:published-version"
+                    card.doi_confidence = max(card.doi_confidence or 0.0, published.score / 100)
+                    _promote_metadata_from_candidate(card, published)
+                    raw_bibtex = fetch_text(
+                        f"https://doi.org/{urllib.parse.quote(card.doi)}",
+                        work_dir / "citation.bib",
+                        True,
+                        {"Accept": "application/x-bibtex"},
+                    )
+                    refreshed_csl_json = fetch_text(
+                        f"https://doi.org/{urllib.parse.quote(card.doi)}",
+                        work_dir / "citation.csl.json",
+                        True,
+                        {"Accept": "application/vnd.citationstyles.csl+json"},
+                    )
+                    if refreshed_csl_json:
+                        try:
+                            refreshed_csl = json.loads(refreshed_csl_json)
+                            refreshed_candidate = _csl_candidate(refreshed_csl, card)
+                            if refreshed_candidate:
+                                candidates.append(refreshed_candidate)
+                                _promote_metadata_from_candidate(card, refreshed_candidate)
+                        except json.JSONDecodeError:
+                            pass
         if raw_bibtex or card.title:
             _finalize_citation_success(card, checked_at=checked_at, candidates=candidates)
             return EnrichmentResult(
@@ -1161,7 +1285,13 @@ def enrich_card(
                 card.citation_enriched_at = checked_at
                 card.citation_last_checked = checked_at
                 card.citation_input_fingerprint = card_fingerprint(card)
-                card.citation_skip_reason = None
+                _update_enrichment_completeness(card)
+                card.citation_skip_reason = (
+                    f"incomplete metadata: {', '.join(card.enrichment_missing)}"
+                    if card.enrichment_missing
+                    else None
+                )
+                card.enrichment_refresh = False
                 return EnrichmentResult(
                     card.citekey or card.slug,
                     "generated",
@@ -1175,6 +1305,8 @@ def enrich_card(
     card.citation_input_fingerprint = fingerprint
     card.citation_retries += 1
     card.citation_skip_reason = "no acceptable DOI or citation metadata found"
+    _update_enrichment_completeness(card)
+    card.enrichment_refresh = False
     return EnrichmentResult(
         card.citekey or card.slug,
         "unresolved",

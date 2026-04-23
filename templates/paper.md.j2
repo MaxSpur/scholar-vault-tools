@@ -12,6 +12,9 @@
 {% if card.url %}
 - Primary URL: [{{ card.url }}]({{ card.url }})
 {% endif %}
+{% if card.enrichment_status and card.enrichment_status != "missing" %}
+- Metadata: `{{ card.enrichment_status }}`{% if card.enrichment_missing %} (missing {{ card.enrichment_missing | join(", ") }}){% endif %}
+{% endif %}
 
 ## Abstract
 {{ card.abstract if card.abstract else "No abstract yet." }}

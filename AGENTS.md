@@ -31,8 +31,12 @@
 - `import-labs` may omit `--export`; in that case it imports the newest top-level `.json` in the configured exports folder and ignores files already moved into `used/`.
 - `enrich-citations` must process canonical `papers/*.md` cards only. Do not enrich run candidates directly.
 - Citation enrichment should preserve Scholar Labs summaries, rationale, provenance, and topics. Respect `metadata_lock: true`, `citation_status: verified`, fingerprints, and retry limits unless the user passes the explicit override flags.
+- Treat `enrichment_refresh: true` on a paper card as a user-requested one-card retry. It should bypass normal citation/abstract skip logic, refresh provider caches for that card, and clear after processing.
+- Mark generated but incomplete metadata with `enrichment_status: incomplete` and list missing fields in `enrichment_missing`, especially when `venue` is still a Scholar preview string.
+- When a DOI points to a preprint/repository record with incomplete venue metadata, enrichment may promote a strong published-version match if title/author/year checks are strong enough.
 - Abstract enrichment is part of `enrich-citations` but only runs when `--abstracts`, `--only missing-abstract`, or `--refresh-abstracts` is passed. Treat abstracts as separate metadata from Scholar Labs summaries.
 - Preserve non-empty manual abstracts and `abstract_lock: true` records unless the user explicitly passes `--force`. Use `--refresh-abstracts` for deliberate provider upgrades such as replacing `pdf_extracted` with Crossref.
 - Keep raw citation provider responses under `raw/metadata/<citekey>/` and use cached responses before making repeated remote requests.
 - Keep generated Markdown Obsidian-safe: YAML frontmatter, plain links, no plugin-only syntax.
+- Rebuild should rerender existing generated paper cards from the current template, not only indexes. Template-only improvements such as `## Quick access` must apply to existing cards.
 - Maintain idempotence for import commands and rebuilds.

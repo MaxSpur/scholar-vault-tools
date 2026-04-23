@@ -14,8 +14,11 @@
 - For "last run" behavior, use manifest `created_at` rather than run page mtimes. Rebuilds can rewrite run pages and make filesystem mtimes misleading.
 - Citation enrichment needs explicit state. Fingerprints, retry counts, `metadata_lock`, and raw provider caches prevent repeatedly hitting APIs or overwriting curated metadata by accident.
 - DOI enrichment should promote canonical provider metadata back onto paper cards when the match is strong. Otherwise DOI discovery succeeds but Scholar preview fields like `IEEE Transactions on …, 2024` remain in the canonical record.
+- DOI records can point to preprints rather than final publications. If a preprint DOI lacks a real venue, search for a strong published-version DOI before accepting incomplete venue metadata as final.
 - Keep abstracts separate from Scholar Labs summaries. Abstract enrichment needs its own source, confidence, lock, and fingerprint fields so provider text does not overwrite the reason a source was added.
 - Long-running metadata provider lookups need visible CLI progress. A command that appears idle during enrichment is hard to trust even when it is working correctly.
 - Obsidian Graph uses Markdown file basenames, so generated run notes should not be named `index.md`. Use meaningful run filenames and keep machine state in `index.yaml`.
 - Keep run IDs and Obsidian run-note titles separate. The run ID is for idempotence and manifests; the short title is for human navigation and Graph labels.
 - If a user renames a generated run note in Obsidian, preserve that filename through `note_file`; do not slugify it back into a machine-looking name during rebuild.
+- Rebuild must rerender generated paper Markdown when templates change. Metadata-only rebuilds leave old body layout problems such as missing Quick access sections in existing cards.
+- PyYAML parses unquoted timestamp scalars into `datetime`/`date` objects. Normalize frontmatter-loaded date values back to ISO strings before Pydantic model validation.

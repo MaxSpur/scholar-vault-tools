@@ -17,5 +17,8 @@
 - [x] Add short Obsidian-facing run titles, `--title`, and `rename-run` while keeping stable run IDs.
 - [x] Add user-level default paths and make `import-labs` select the newest unused Scholar Labs export JSON automatically.
 - [x] Run citation and abstract enrichment automatically after selected Scholar Labs matches and show progress in long-running import/enrichment commands.
+- [x] Rerender existing paper cards during rebuild so template improvements like Quick access apply retroactively.
+- [x] Add card-level `enrichment_refresh` retry flag plus `enrichment_status` / `enrichment_missing` diagnostics for incomplete citation metadata.
+- [x] Promote strong published-version metadata when an existing DOI points to a preprint record without a proper venue.
 - [ ] Add review workflow for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

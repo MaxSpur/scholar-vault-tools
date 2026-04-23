@@ -4,7 +4,9 @@ import json
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 import yaml
 from slugify import slugify
@@ -352,7 +354,13 @@ def build_pdf_filename(
     )
     safe_stem = slugify_text(stem, max_length=100)
     name = f"{safe_stem}.pdf"
-    return ensure_unique(name, existing_names)
+    used = {item for item in existing_names if item}
+    if name not in used:
+        return name
+    counter = 2
+    while f"{safe_stem}-{counter}.pdf" in used:
+        counter += 1
+    return f"{safe_stem}-{counter}.pdf"
 
 
 def infer_topics(prompt: str, rationale_points: Sequence[RationalePoint]) -> list[str]:
@@ -418,9 +426,21 @@ def read_frontmatter_markdown(path: Path) -> tuple[dict, str]:
     match = FRONTMATTER_RE.match(text)
     if not match:
         return {}, text
-    frontmatter = yaml.safe_load(match.group(1)) or {}
+    frontmatter = _normalize_yaml_loaded_scalars(yaml.safe_load(match.group(1)) or {})
     body = match.group(2)
     return frontmatter, body
+
+
+def _normalize_yaml_loaded_scalars(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, list):
+        return [_normalize_yaml_loaded_scalars(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalize_yaml_loaded_scalars(item) for key, item in value.items()}
+    return value
 
 
 def parse_sections(body: str) -> dict[str, str]:

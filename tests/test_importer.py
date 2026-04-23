@@ -330,6 +330,68 @@ def test_rebuild_preserves_manual_obsidian_run_note_filename(tmp_path: Path) -> 
     assert run_yaml["note_file"] == "Broad Proposal Support Search (Mobidec Postdoc).md"
 
 
+def test_rebuild_rerenders_existing_paper_cards_with_latest_template(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    card = SourceCard(
+        slug="quick-access",
+        citekey="quickaccess",
+        title="Quick Access Paper",
+        pdf="pdfs/quick-access.pdf",
+        pdf_status="attached",
+        summary="A summary.",
+    )
+    _write_pdf_with_title(paths.pdfs / "quick-access.pdf", "Quick Access Paper")
+    stale = render_without_quick_access(card)
+    (paths.papers / "quick-access.md").write_text(stale, encoding="utf-8")
+
+    rebuild_vault(vault)
+
+    rendered = (paths.papers / "quick-access.md").read_text(encoding="utf-8")
+    assert "## Quick access" in rendered
+    assert "[Open local PDF](../pdfs/quick-access.pdf)" in rendered
+
+
+def render_without_quick_access(card: SourceCard) -> str:
+    return (
+        "---\n"
+        + yaml.safe_dump(card.frontmatter(), sort_keys=False)
+        + "---\n\n"
+        + f"# {card.title}\n\n"
+        + "## Abstract\nNo abstract yet.\n\n"
+        + f"## Scholar Labs summary\n{card.summary}\n\n"
+        + "## Why this source matters\n- No rationale captured yet.\n\n"
+        + "## Files\n"
+        + f"- PDF: [{card.pdf}](../{card.pdf})\n\n"
+        + "## Notes\nNo notes yet.\n"
+    )
+
+
+def test_rebuild_migrates_pdf_collision_suffix_before_extension(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    bad_pdf = paths.pdfs / "paper.pdf-2"
+    _write_pdf_with_title(bad_pdf, "Paper")
+    card = SourceCard(
+        slug="paper",
+        citekey="paper",
+        title="Paper",
+        pdf="pdfs/paper.pdf-2",
+        pdf_status="attached",
+    )
+
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    _save_card(paths, card)
+
+    rebuild_vault(vault)
+    migrated = load_source_cards(initialize_vault(vault))[0]
+
+    assert migrated.pdf == "pdfs/paper-2.pdf"
+    assert not bad_pdf.exists()
+    assert (paths.pdfs / "paper-2.pdf").exists()
+
+
 def test_rebuild_migrates_legacy_run_index_links_and_files(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     paths = initialize_vault(vault)
