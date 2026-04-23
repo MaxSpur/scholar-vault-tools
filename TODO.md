@@ -8,4 +8,5 @@
 - [x] Reject invalid Scholar Labs exports and keep failed raw exports for debugging without creating runs or paper cards.
 - [x] Switch Scholar Labs imports to selected-only paper creation with run manifests and non-destructive staging handling.
 - [x] Split the explicit Scholar Labs workflow into `import-labs`, with matched PDFs archived out of staging after verified copy and unmatched PDFs left in place.
-- [x] Archive successfully used Scholar Labs JSON exports into an exports-folder `used/` subfolder while keeping run resume metadata valid.
+- [x] Move successfully used Scholar Labs JSON exports unchanged into an exports-folder `used/` subfolder while keeping run resume metadata valid.
+- [x] Add a `rerun` shortcut for rescanning an existing run after more PDFs are added to staging.

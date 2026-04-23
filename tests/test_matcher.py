@@ -20,6 +20,23 @@ def test_best_pdf_match_autoselects_high_scores() -> None:
     assert decision.score == 100
 
 
+def test_best_pdf_match_uses_filename_when_pdf_title_is_journal_header() -> None:
+    candidate = PdfCandidate(
+        path="/tmp/Personal_Augmented_Reality_for_Informati.pdf",
+        title="IEEE TRANSACTIONS ON VISUALIZATION AND COMPUTER GRAPHICS",
+        text_excerpt="PersonalAugmentedRealityforInformationVisualizationonLargeInteractiveDisplays",
+    )
+
+    decision = best_pdf_match(
+        "Personal augmented reality for information visualization on large interactive displays",
+        [candidate],
+    )
+
+    assert decision.decision == "auto"
+    assert decision.score >= 90
+    assert decision.reason in {"filename", "text"}
+
+
 def test_match_candidate_to_existing_card_by_title() -> None:
     candidate = PdfCandidate(
         path="/tmp/example.pdf",

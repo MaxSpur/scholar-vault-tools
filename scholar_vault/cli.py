@@ -239,6 +239,28 @@ def resume_command(
     _print_run_summary(summary)
 
 
+@app.command("rerun")
+def rerun_command(
+    vault: VaultArg,
+    run: RunIdArg,
+    dry_run: DryRunArg = False,
+    commit: CommitArg = False,
+) -> None:
+    summary = resume_run(vault, run, dry_run=dry_run, commit=commit, confirm=_confirm)
+    _print_run_summary(summary)
+
+
+@app.command("re-run")
+def re_run_command(
+    vault: VaultArg,
+    run: RunIdArg,
+    dry_run: DryRunArg = False,
+    commit: CommitArg = False,
+) -> None:
+    summary = resume_run(vault, run, dry_run=dry_run, commit=commit, confirm=_confirm)
+    _print_run_summary(summary)
+
+
 @app.command("undo")
 def undo_command(vault: VaultArg, run: RunIdArg) -> None:
     summary = undo_run(vault, run)

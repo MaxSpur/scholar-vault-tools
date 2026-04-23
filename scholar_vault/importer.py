@@ -566,10 +566,10 @@ def _archive_matched_pdf(paths: VaultPaths, run_id: str, source_pdf: Path) -> st
     return ensure_relative(destination, paths.vault)
 
 
-def _archive_used_export(export_file: Path, run_id: str) -> tuple[Path, bool]:
+def _archive_used_export(export_file: Path) -> tuple[Path, bool]:
     if export_file.parent.name == "used":
         return export_file, False
-    destination = _archive_path(export_file.parent / "used", f"{run_id}__{export_file.name}")
+    destination = _archive_path(export_file.parent / "used", export_file.name)
     shutil.move(str(export_file), str(destination))
     return destination.resolve(), True
 
@@ -922,7 +922,7 @@ def import_scholar_labs_run(
 
     archived_export_path = ""
     if archive_export and not dry_run:
-        archived_export, archived = _archive_used_export(export_file, run_slug)
+        archived_export, archived = _archive_used_export(export_file)
         if archived:
             archived_export_path = str(archived_export)
             manifest.export_file = archived_export_path

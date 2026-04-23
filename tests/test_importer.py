@@ -12,6 +12,7 @@ from scholar_vault.importer import (
     import_scholar_labs_run,
     initialize_vault,
     reset_vault,
+    resume_run,
     undo_run,
 )
 from scholar_vault.models import RunRecord, RunResultRecord, ScholarLabsResult, SourceCard
@@ -214,7 +215,7 @@ def test_import_labs_archives_used_export_json_and_updates_run_metadata(
 
     assert not export_path.exists()
     assert archived_export.parent == exports / "used"
-    assert archived_export.name.startswith(f"{run_id}__")
+    assert archived_export.name == export_path.name
     assert archived_export.exists()
     assert run_yaml["export_file"] == str(archived_export)
     assert manifest["export_file"] == str(archived_export)
@@ -239,6 +240,39 @@ def test_dry_run_does_not_archive_used_export_json(tmp_path: Path) -> None:
 
     assert export_path.exists()
     assert summary["export_archived"] == ""
+
+
+def test_rerun_updates_existing_run_with_newly_staged_matches(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_export(exports / "sample.json", 3)
+    _write_pdf_with_title(staging / "paper-1.pdf", "Result Paper 1")
+
+    first = import_scholar_labs_run(
+        vault,
+        export_path,
+        staging,
+        commit=True,
+        archive_matched=True,
+        archive_export=True,
+    )
+    run_id = str(first["run"])
+
+    _write_pdf_with_title(staging / "paper-2.pdf", "Result Paper 2")
+    _write_pdf_with_title(staging / "paper-3.pdf", "Result Paper 3")
+
+    second = resume_run(vault, run_id, commit=True)
+    cards = load_source_cards(initialize_vault(vault))
+    run_yaml = _run_yaml(vault, run_id)
+
+    assert first["selected"] == 1
+    assert second["selected"] == 3
+    assert len(cards) == 3
+    assert len([result for result in run_yaml["results"] if result["status"] == "selected"]) == 3
+    assert list(staging.glob("*.pdf")) == []
 
 
 def test_accepted_match_copies_pdf_and_manifest_records_it(tmp_path: Path) -> None:

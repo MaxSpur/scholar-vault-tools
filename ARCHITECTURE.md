@@ -5,7 +5,7 @@
 - `scholar_vault/cli.py`: Typer CLI entrypoint and command wiring.
 - `scholar_vault/models.py`: typed records for exports, paper cards, runs, logs, and PDF candidates.
 - `scholar_vault/sources.py`: vault path management, slug and citekey utilities, Markdown parsing, and frontmatter helpers.
-- `scholar_vault/matcher.py`: PDF extraction, metadata inference, and fuzzy matching helpers.
+- `scholar_vault/matcher.py`: PDF extraction, metadata inference, and fuzzy matching helpers using DOI, extracted title, filename, and compact first-page text evidence.
 - `scholar_vault/importer.py`: end-to-end workflows for `init`, import commands, rebuilds, and derived exports.
 - `scholar_vault/render.py`: Jinja-backed Markdown rendering for cards, run pages, indexes, topics, and LLM summary files.
 - `scholar_vault/bibtex.py`: BibTeX parsing and export helpers.
@@ -15,7 +15,7 @@
 
 ## CLI Workflows
 
-- `import-labs`: Scholar Labs convenience flow. It keeps all JSON results on the run record, creates canonical paper cards only for selected results by default, archives matched PDFs out of staging only after the verified vault copy exists, and moves used browser-export JSON into a sibling `used/` folder after successful non-dry-run imports.
+- `import-labs`: Scholar Labs convenience flow. It keeps all JSON results on the run record, creates canonical paper cards only for selected results by default, archives matched PDFs out of staging only after the verified vault copy exists, and moves used browser-export JSON unchanged into a sibling `used/` folder after successful non-dry-run imports.
 - `import-run`: lower-level transactional Scholar Labs import. It uses the same matching and manifest logic but leaves staging untouched unless another command archives files later.
 - `import-pdf`, `import-bibtex`, and `import-doi`: non-Scholar-Labs ingestion paths that still converge on canonical `papers/*.md` cards.
 

@@ -75,7 +75,7 @@ Default Scholar Labs behavior is now selected-only:
 - Canonical `papers/*.md` cards are created only for results with matched PDFs.
 - Candidate results stay on the run page unless you explicitly opt in with `--include-without-pdf`.
 - `import-labs` copies accepted PDFs into `pdfs/`, verifies them, and then archives the matched originals out of staging into `raw/imported/`, leaving only unmatched PDFs in staging.
-- After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder, for example `~/Downloads/scholar-labs-exports/used/<run-id>__example.json`. The run metadata is updated so `resume` still knows where the export went.
+- After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder without renaming it, for example `~/Downloads/scholar-labs-exports/used/example.json`. The run metadata is updated so `resume` and `rerun` still know where the export went.
 - `import-run` is the lower-level transactional variant. It copies accepted PDFs into `pdfs/` but leaves staging untouched unless you later run `clean-staging`.
 
 Dry-run the import without creating paper cards or copying PDFs:
@@ -154,6 +154,12 @@ Resume a previous run using the export and staging folder already recorded in `r
 
 ```fish
 scholar-vault resume --vault ~/Documents/Research/scholar-labs-vault --run 2026-04-22_example-prompt
+```
+
+Rerun a previous Scholar Labs import after adding more PDFs to the staging folder:
+
+```fish
+scholar-vault rerun --vault ~/Documents/Research/scholar-labs-vault --run 2026-04-22_example-prompt --commit
 ```
 
 Undo a run using its import manifest:

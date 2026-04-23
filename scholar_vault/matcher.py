@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 
 from pdfminer.high_level import extract_text
@@ -100,6 +101,54 @@ def score_title_match(left: str | None, right: str | None) -> int:
     return int(round(max(exact, token_set, partial)))
 
 
+def _compact_title(text: str | None) -> str:
+    return re.sub(r"[^a-z0-9]+", "", normalize_title(text))
+
+
+def _candidate_title_variants(candidate: PdfCandidate) -> list[tuple[str, str]]:
+    variants: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def add(label: str, value: str | None) -> None:
+        cleaned = (value or "").strip()
+        key = normalize_title(cleaned)
+        if not key or key in seen:
+            return
+        seen.add(key)
+        variants.append((label, cleaned))
+
+    add("title", candidate.title)
+    add("filename", Path(candidate.path).stem.replace("_", " ").replace("-", " "))
+
+    for line in candidate.text_excerpt.splitlines()[:30]:
+        cleaned = line.strip()
+        if 12 <= len(cleaned) <= 220:
+            add("text", cleaned)
+
+    return variants
+
+
+def _best_candidate_title_score(
+    expected_title: str,
+    candidate: PdfCandidate,
+) -> tuple[int, str]:
+    best_score = 0
+    best_reason = "title"
+    for reason, variant in _candidate_title_variants(candidate):
+        score = score_title_match(expected_title, variant)
+        if score > best_score:
+            best_score = score
+            best_reason = reason
+
+    compact_expected = _compact_title(expected_title)
+    compact_excerpt = _compact_title(candidate.text_excerpt)
+    if compact_expected and compact_expected in compact_excerpt and best_score < 95:
+        best_score = 95
+        best_reason = "text"
+
+    return best_score, best_reason
+
+
 def decide_pdf_match(
     expected_title: str,
     candidate: PdfCandidate,
@@ -112,12 +161,12 @@ def decide_pdf_match(
         and normalize_doi(expected_doi) == normalize_doi(candidate.doi)
     ):
         return MatchDecision(candidate=candidate, score=100, decision="auto", reason="doi")
-    score = score_title_match(expected_title, candidate.title)
+    score, reason = _best_candidate_title_score(expected_title, candidate)
     if score >= 90:
-        return MatchDecision(candidate=candidate, score=score, decision="auto", reason="title")
+        return MatchDecision(candidate=candidate, score=score, decision="auto", reason=reason)
     if score >= 70:
-        return MatchDecision(candidate=candidate, score=score, decision="review", reason="title")
-    return MatchDecision(candidate=candidate, score=score, decision="skip", reason="title")
+        return MatchDecision(candidate=candidate, score=score, decision="review", reason=reason)
+    return MatchDecision(candidate=candidate, score=score, decision="skip", reason=reason)
 
 
 def best_pdf_match(
@@ -146,7 +195,7 @@ def match_candidate_to_cards(
     best_score = 0
     best_card: SourceCard | None = None
     for card in cards:
-        score = score_title_match(candidate.title, card.title)
+        score, _reason = _best_candidate_title_score(card.title, candidate)
         if score > best_score:
             best_card = card
             best_score = score
