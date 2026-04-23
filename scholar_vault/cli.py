@@ -10,6 +10,7 @@ from .importer import (
     attach_pdf,
     clean_staging,
     cleanup_run_selected_only,
+    enrich_citations,
     export_bibtex,
     import_bibtex,
     import_doi,
@@ -85,6 +86,26 @@ SelectedOnlyArg = Annotated[
     typer.Option("--selected-only", help="Keep only paper cards that have attached PDFs."),
 ]
 CitekeyArg = Annotated[str, typer.Option(...)]
+OptionalCitekeyArg = Annotated[str | None, typer.Option("--citekey")]
+OnlyArg = Annotated[
+    str,
+    typer.Option(
+        "--only",
+        help="Limit enrichment: all, missing-doi, or missing-bibtex.",
+    ),
+]
+RefreshArg = Annotated[
+    bool,
+    typer.Option("--refresh", help="Reprocess generated or verified citation metadata."),
+]
+RetryFailedArg = Annotated[
+    bool,
+    typer.Option("--retry-failed", help="Retry unresolved records that hit the retry limit."),
+]
+ForceArg = Annotated[
+    bool,
+    typer.Option("--force", help="Process locked metadata records."),
+]
 YesArg = Annotated[
     bool,
     typer.Option("--yes", help="Reset without confirmation."),
@@ -221,6 +242,33 @@ def rebuild_command(vault: VaultArg) -> None:
 def bibtex_command(vault: VaultArg) -> None:
     output = export_bibtex(vault)
     console.print(f"Wrote {output}")
+
+
+@app.command("enrich-citations")
+def enrich_citations_command(
+    vault: VaultArg,
+    citekey: OptionalCitekeyArg = None,
+    only: OnlyArg = "all",
+    refresh: RefreshArg = False,
+    retry_failed: RetryFailedArg = False,
+    dry_run: DryRunArg = False,
+    force: ForceArg = False,
+) -> None:
+    summary = enrich_citations(
+        vault,
+        citekey=citekey,
+        only=only,
+        refresh=refresh,
+        retry_failed=retry_failed,
+        dry_run=dry_run,
+        force=force,
+    )
+    console.print(
+        f"Enriched citations: processed={summary['processed']}, changed={summary['changed']}, "
+        f"skipped={summary['skipped']}, generated={summary['generated']}, "
+        f"verified={summary['verified']}, ambiguous={summary['ambiguous']}, "
+        f"unresolved={summary['unresolved']}."
+    )
 
 
 @app.command("reset")

@@ -22,5 +22,8 @@
   `document.querySelector('.gs_as_np_tq')?.innerText`
 - Prefer updating existing cards over creating parallel records. Match by DOI, Scholar CID, citekey, or normalized title before making a new card.
 - Preserve existing summaries and provenance during enrichment imports.
+- `enrich-citations` must process canonical `papers/*.md` cards only. Do not enrich run candidates directly.
+- Citation enrichment should preserve Scholar Labs summaries, rationale, provenance, and topics. Respect `metadata_lock: true`, `citation_status: verified`, fingerprints, and retry limits unless the user passes the explicit override flags.
+- Keep raw citation provider responses under `raw/metadata/<citekey>/` and use cached responses before making repeated remote requests.
 - Keep generated Markdown Obsidian-safe: YAML frontmatter, plain links, no plugin-only syntax.
 - Maintain idempotence for import commands and rebuilds.

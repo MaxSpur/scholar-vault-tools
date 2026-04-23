@@ -8,6 +8,15 @@ SourceKind = Literal["scholar_labs", "pdf_drop", "bibtex_import", "doi_import", 
 RunResultStatus = Literal["selected", "candidate", "unmatched", "skipped"]
 RunPdfStatus = Literal["attached", "missing", "unmatched"]
 ManifestDecision = Literal["accepted", "rejected", "skipped", "unresolved"]
+DoiStatus = Literal["missing", "detected", "resolved", "verified", "ambiguous", "unresolved"]
+CitationStatus = Literal[
+    "missing",
+    "generated",
+    "verified",
+    "ambiguous",
+    "unresolved",
+    "manual_lock",
+]
 
 
 class Link(BaseModel):
@@ -111,7 +120,17 @@ class SourceCard(BaseModel):
     topics: list[str] = Field(default_factory=list)
     status: str = "active"
     pdf_status: str = "missing"
-    citation_status: str = "partial"
+    doi_status: DoiStatus = "missing"
+    doi_source: str | None = None
+    doi_confidence: float | None = None
+    citation_status: str = "missing"
+    citation_source: str | None = None
+    citation_last_checked: str | None = None
+    citation_enriched_at: str | None = None
+    citation_input_fingerprint: str | None = None
+    citation_retries: int = 0
+    citation_skip_reason: str | None = None
+    metadata_lock: bool = False
     links: list[Link] = Field(default_factory=list)
     summary: str = "No summary yet."
     why_this_source_matters: list[RationalePoint] = Field(default_factory=list)
@@ -135,7 +154,17 @@ class SourceCard(BaseModel):
             "topics": self.topics,
             "status": self.status,
             "pdf_status": self.pdf_status,
+            "doi_status": self.doi_status,
+            "doi_source": self.doi_source,
+            "doi_confidence": self.doi_confidence,
             "citation_status": self.citation_status,
+            "citation_source": self.citation_source,
+            "citation_last_checked": self.citation_last_checked,
+            "citation_enriched_at": self.citation_enriched_at,
+            "citation_input_fingerprint": self.citation_input_fingerprint,
+            "citation_retries": self.citation_retries,
+            "citation_skip_reason": self.citation_skip_reason,
+            "metadata_lock": self.metadata_lock,
             "links": [link.model_dump(exclude_none=True) for link in self.links],
         }
 

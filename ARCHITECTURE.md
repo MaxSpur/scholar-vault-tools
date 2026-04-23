@@ -9,6 +9,7 @@
 - `scholar_vault/importer.py`: end-to-end workflows for `init`, import commands, rebuilds, and derived exports.
 - `scholar_vault/render.py`: Jinja-backed Markdown rendering for cards, run pages, indexes, topics, and LLM summary files.
 - `scholar_vault/bibtex.py`: BibTeX parsing and export helpers.
+- `scholar_vault/citations.py`: DOI detection, provider response caching, citation enrichment, candidate scoring, and BibTeX normalization.
 - `templates/`: Markdown body templates for the generated paper, run, and index documents.
 - `browser/`: browser-side exporter for visible Google Scholar Labs results.
 - `tests/`: regression coverage for naming, parsing, matching, rendering, and idempotence.
@@ -18,12 +19,14 @@
 - `import-labs`: Scholar Labs convenience flow. It keeps all JSON results on the run record, creates canonical paper cards only for selected results by default, archives matched PDFs out of staging only after the verified vault copy exists, and moves used browser-export JSON unchanged into a sibling `used/` folder after successful non-dry-run imports.
 - `import-run`: lower-level transactional Scholar Labs import. It uses the same matching and manifest logic but leaves staging untouched unless another command archives files later.
 - `import-pdf`, `import-bibtex`, and `import-doi`: non-Scholar-Labs ingestion paths that still converge on canonical `papers/*.md` cards.
+- `enrich-citations`: canonical-card-only DOI and citation metadata enrichment. It uses local DOI detection, cached provider lookups, DOI content negotiation, and fingerprint-based idempotence.
 
 ## Canonical Data Model
 
 - Canonical source record: `papers/<slug>.md`
 - Scholar Labs provenance record: `runs/<date>_<prompt-slug>/index.md` and `index.yaml`
 - Raw inputs: `raw/`
+- Raw citation cache: `raw/metadata/<citekey>/`
 - Derived indexes and exports: `_indexes/`, `_exports/`, `llms.txt`, `llms-full.txt`
 
 ## Merge Strategy

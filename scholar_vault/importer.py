@@ -9,6 +9,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from .bibtex import extract_pdf_paths, parse_bibtex_file, split_bibtex_authors, write_library_bib
+from .citations import EnrichmentOptions, enrich_cards
 from .matcher import (
     best_pdf_match,
     build_pdf_candidate,
@@ -230,9 +231,6 @@ def _new_card_from_result(
         existing_keys=[card.citekey for card in existing_cards if card.citekey],
     )
     slug = build_card_slug(citekey, result.title, [card.slug for card in existing_cards])
-    citation_status = (
-        "complete" if result.title and authors and result.year and result.venue else "partial"
-    )
     return SourceCard(
         slug=slug,
         citekey=citekey,
@@ -248,7 +246,8 @@ def _new_card_from_result(
         topics=infer_topics(prompt, result.rationale_points),
         status="active",
         pdf_status="missing",
-        citation_status=citation_status,
+        doi_status="missing",
+        citation_status="missing",
         links=result.links,
         summary=clean_markdown_text(result.summary) or "No summary yet.",
         why_this_source_matters=result.rationale_points,
@@ -284,13 +283,13 @@ def _merge_cards(existing: SourceCard, incoming: SourceCard) -> SourceCard:
         existing.pdf_status = "attached"
     if incoming.status == "candidate" and existing.status != "active":
         existing.status = "candidate"
-    existing.citation_status = (
-        "complete"
-        if "complete" in {existing.citation_status, incoming.citation_status}
-        else incoming.citation_status
-        if incoming.citation_status == "preview"
-        else existing.citation_status
-    )
+    if existing.citation_status in {"partial", "complete", "preview"}:
+        existing.citation_status = "missing"
+    if incoming.citation_status in {"generated", "verified"} and existing.citation_status not in {
+        "verified",
+        "manual_lock",
+    }:
+        existing.citation_status = incoming.citation_status
     return existing
 
 
@@ -310,7 +309,7 @@ def _prepare_card_for_result(
     if include_without_pdf:
         incoming.status = "candidate"
         incoming.pdf_status = "missing"
-        incoming.citation_status = "preview"
+        incoming.citation_status = "missing"
     existing = _find_existing_card(
         cards,
         scholar_cid=result.scholar_cid,
@@ -513,6 +512,7 @@ def reset_vault(vault: Path | str) -> dict[str, int]:
         paths.raw_staging,
         paths.raw_unmatched,
         paths.raw_imported,
+        paths.raw_metadata,
         paths.pdfs,
         paths.papers,
         paths.runs,
@@ -797,7 +797,7 @@ def import_scholar_labs_run(
             card.pdf_status = "attached"
             card.status = "active"
             if card.citation_status == "preview":
-                card.citation_status = "partial"
+                card.citation_status = "missing"
             source_pdf = Path(proposal.candidate.path)
             if archive_matched and source_pdf.exists():
                 archived_original_path = _archive_matched_pdf(paths, run_slug, source_pdf)
@@ -1222,13 +1222,19 @@ def import_pdf_dropins(
                 source_kind="pdf_drop",
                 status="active",
                 pdf_status="missing",
-                citation_status="partial",
+                doi_status="detected" if candidate.doi else "missing",
+                doi_source="pdf" if candidate.doi else None,
+                doi_confidence=0.95 if candidate.doi else None,
+                citation_status="missing",
                 summary="No summary yet.",
             )
             cards.append(card)
 
         if candidate.doi and not card.doi:
             card.doi = normalize_doi(candidate.doi)
+            card.doi_status = "detected"
+            card.doi_source = "pdf"
+            card.doi_confidence = 0.95
         if candidate.year and not card.year:
             card.year = candidate.year
         if not card.title and candidate.title:
@@ -1241,7 +1247,8 @@ def import_pdf_dropins(
                 original_sha256=candidate.sha256 or _file_sha256(pdf_path),
             )
         card.pdf_status = "attached"
-        card.citation_status = "complete" if card.title and card.year and card.doi else "partial"
+        if card.citation_status in {"partial", "complete", "preview"}:
+            card.citation_status = "missing"
         _save_card(paths, card)
         imported += 1
         log_entries.append(
@@ -1294,7 +1301,11 @@ def import_bibtex(vault: Path | str, bib_path: Path | str) -> dict[str, int]:
             topics=[
                 token.strip() for token in (entry.get("keywords") or "").split(",") if token.strip()
             ],
-            citation_status="complete" if title and authors and entry.get("year") else "partial",
+            doi_status="detected" if normalize_doi(entry.get("doi")) else "missing",
+            doi_source="bibtex" if normalize_doi(entry.get("doi")) else None,
+            doi_confidence=0.9 if normalize_doi(entry.get("doi")) else None,
+            citation_status="generated" if title and authors and entry.get("year") else "missing",
+            citation_source="bibtex" if title and authors and entry.get("year") else None,
             summary="No summary yet.",
             notes=entry.get("note", "").strip(),
             links=(
@@ -1351,7 +1362,10 @@ def import_doi(vault: Path | str, doi: str) -> dict[str, int]:
             title=f"DOI import {normalized_doi}",
             doi=normalized_doi,
             source_kind="doi_import",
-            citation_status="partial",
+            doi_status="detected",
+            doi_source="manual",
+            doi_confidence=1.0,
+            citation_status="missing",
             pdf_status="missing",
             summary="No summary yet.",
         )
@@ -1370,3 +1384,47 @@ def export_bibtex(vault: Path | str) -> Path:
     paths = initialize_vault(vault)
     cards = load_source_cards(paths)
     return write_library_bib(cards, paths.exports / "library.bib")
+
+
+def enrich_citations(
+    vault: Path | str,
+    *,
+    citekey: str | None = None,
+    only: str = "all",
+    refresh: bool = False,
+    retry_failed: bool = False,
+    dry_run: bool = False,
+    force: bool = False,
+) -> dict[str, int]:
+    if only not in {"all", "missing-doi", "missing-bibtex"}:
+        raise ValueError("--only must be one of: missing-doi, missing-bibtex")
+
+    paths = initialize_vault(vault)
+    cards = load_source_cards(paths)
+    options = EnrichmentOptions(
+        only=only,  # type: ignore[arg-type]
+        citekey=citekey,
+        refresh=refresh,
+        retry_failed=retry_failed,
+        dry_run=dry_run,
+        force=force,
+    )
+    results = enrich_cards(paths, cards, options)
+    if citekey and all(result.skipped and result.message == "citekey filter" for result in results):
+        raise ValueError(f"No paper card found for citekey: {citekey}")
+
+    if not dry_run:
+        for card, result in zip(cards, results, strict=False):
+            if result.changed:
+                _save_card(paths, card)
+        _rebuild_indexes(paths)
+
+    return {
+        "processed": len([result for result in results if not result.skipped]),
+        "changed": len([result for result in results if result.changed]),
+        "skipped": len([result for result in results if result.skipped]),
+        "generated": len([result for result in results if result.status == "generated"]),
+        "verified": len([result for result in results if result.status == "verified"]),
+        "ambiguous": len([result for result in results if result.status == "ambiguous"]),
+        "unresolved": len([result for result in results if result.status == "unresolved"]),
+    }

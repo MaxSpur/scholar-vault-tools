@@ -40,6 +40,8 @@ def _escape_bibtex(value: str) -> str:
 
 
 def card_to_bibtex(card: SourceCard) -> str | None:
+    if card.citation_status not in {"generated", "verified"}:
+        return None
     if not card.title:
         return None
     entry_type = "article" if card.venue else "misc"
@@ -82,8 +84,29 @@ def card_to_bibtex(card: SourceCard) -> str | None:
     return "\n".join(lines)
 
 
+def _split_bibtex_entries(text: str) -> dict[str, str]:
+    entries: dict[str, str] = {}
+    chunks = re.split(r"\n(?=@)", text.strip())
+    for chunk in chunks:
+        match = re.match(r"@\s*[^{]+\{\s*([^,\s]+)", chunk.strip())
+        if match:
+            entries[match.group(1)] = chunk.strip()
+    return entries
+
+
 def write_library_bib(cards: list[SourceCard], path: Path) -> Path:
-    entries = [entry for card in cards if (entry := card_to_bibtex(card))]
+    existing_entries = (
+        _split_bibtex_entries(path.read_text(encoding="utf-8")) if path.exists() else {}
+    )
+    current_keys = {card.citekey or card.slug for card in cards}
+    entries_by_key = {
+        key: entry for key, entry in existing_entries.items() if key in current_keys
+    }
+    for card in cards:
+        key = card.citekey or card.slug
+        if entry := card_to_bibtex(card):
+            entries_by_key[key] = entry
+    entries = [entries_by_key[key] for key in sorted(entries_by_key)]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n\n".join(entries).rstrip() + "\n", encoding="utf-8")
     return path

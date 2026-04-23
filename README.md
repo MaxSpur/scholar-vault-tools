@@ -34,6 +34,7 @@ scholar-labs-vault/
     staging/
     unmatched/
     imported/
+    metadata/
   pdfs/
   papers/
   runs/
@@ -150,6 +151,39 @@ Regenerate BibTeX only:
 scholar-vault bibtex --vault ~/Documents/Research/scholar-labs-vault
 ```
 
+Enrich canonical paper cards with DOI and citation metadata:
+
+```fish
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault
+```
+
+Useful enrichment variants:
+
+```fish
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --citekey smith2024rag
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-doi
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-bibtex
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --refresh
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --retry-failed
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --dry-run
+```
+
+`enrich-citations` processes canonical `papers/*.md` cards only. It tries local DOI detection first, then cached provider lookups from Crossref, OpenAlex, Europe PMC, DataCite, and DOI content negotiation. Raw provider responses are cached under `raw/metadata/<citekey>/`.
+
+The command writes these frontmatter fields: `doi_status`, `doi_source`, `doi_confidence`, `citation_status`, `citation_source`, `citation_last_checked`, `citation_enriched_at`, `citation_input_fingerprint`, `citation_retries`, `citation_skip_reason`, and `metadata_lock`.
+
+Interpretation:
+
+- `missing`: no DOI or generated citation has been found yet.
+- `detected`: DOI was found locally in frontmatter, URLs, PDF metadata, or PDF text.
+- `resolved`: a remote provider or DOI lookup accepted the DOI.
+- `generated`: BibTeX/CSL metadata was generated but has not been manually verified.
+- `verified`: DOI metadata and title/author/year consistency checks were strong.
+- `ambiguous`: providers returned plausible but conflicting or weak candidates.
+- `unresolved`: no acceptable DOI or citation metadata was found.
+
+Set `metadata_lock: true` in a paper card to prevent automatic metadata overwrites. Use `--refresh` to reprocess generated or verified records, `--retry-failed` to retry unresolved records past the retry limit, and `--force` only when you intentionally want to process locked metadata.
+
 Resume a previous run using the export and staging folder already recorded in `runs/<run_id>/index.yaml`:
 
 ```fish
@@ -217,6 +251,7 @@ scholar-vault reset --vault ~/Documents/Research/scholar-labs-vault --yes
 - `papers/*.md`: canonical source cards for selected papers by default.
 - `runs/*/index.md`: per-run provenance pages that keep all Scholar Labs candidate results.
 - `runs/*/import-manifest.yaml`: transactional record of proposed matches, decisions, copied PDFs, and created cards.
+- `raw/metadata/<citekey>/`: cached citation provider responses and generated citation artifacts.
 - `topics/*.md`: simple topic pages derived from prompt keywords and rationale labels.
 - `_indexes/*.md`: navigation and maintenance views.
 - `llms.txt` and `llms-full.txt`: short and expanded agent navigation summaries.

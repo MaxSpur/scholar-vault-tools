@@ -11,3 +11,4 @@
 - [x] Move successfully used Scholar Labs JSON exports unchanged into an exports-folder `used/` subfolder while keeping run resume metadata valid.
 - [x] Add a `rerun` shortcut for rescanning an existing run after more PDFs are added to staging.
 - [x] Make `rerun` default to the latest recorded run when `--run` is omitted.
+- [x] Add canonical-card DOI and BibTeX enrichment with cached provider responses, skip rules, fingerprints, and generated-only BibTeX export.

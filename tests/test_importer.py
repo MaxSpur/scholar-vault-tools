@@ -455,7 +455,7 @@ def test_cleanup_run_selected_only_archives_candidate_only_cards(tmp_path: Path)
         discovered_in=[run_ref],
         pdf_status="missing",
         status="candidate",
-        citation_status="preview",
+        citation_status="missing",
     )
     _write_pdf_with_title(paths.pdfs / "attached-card.pdf", "Attached Card")
     write_yaml(

@@ -11,3 +11,4 @@
 - Prefer moving used exports into a folder over renaming them. Scholar Labs prompt-derived JSON names can already be long enough to approach filesystem limits.
 - PDF title metadata and first extracted text lines are often journal headers, especially for IEEE papers. Match against filename and compact no-space title text as fallbacks before declaring a staged PDF unmatched.
 - For "last run" behavior, use manifest `created_at` rather than run page mtimes. Rebuilds can rewrite run pages and make filesystem mtimes misleading.
+- Citation enrichment needs explicit state. Fingerprints, retry counts, `metadata_lock`, and raw provider caches prevent repeatedly hitting APIs or overwriting curated metadata by accident.

@@ -57,6 +57,7 @@ class VaultPaths:
     raw_staging: Path
     raw_unmatched: Path
     raw_imported: Path
+    raw_metadata: Path
     pdfs: Path
     papers: Path
     runs: Path
@@ -78,6 +79,7 @@ class VaultPaths:
             raw_staging=raw / "staging",
             raw_unmatched=raw / "unmatched",
             raw_imported=raw / "imported",
+            raw_metadata=raw / "metadata",
             pdfs=root / "pdfs",
             papers=root / "papers",
             runs=root / "runs",
@@ -95,6 +97,7 @@ class VaultPaths:
             self.raw_staging,
             self.raw_unmatched,
             self.raw_imported,
+            self.raw_metadata,
             self.pdfs,
             self.papers,
             self.runs,
