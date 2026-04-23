@@ -141,10 +141,12 @@ Default Scholar Labs behavior is now selected-only:
 - After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder without renaming it, for example `~/Downloads/scholar-labs-exports/used/example.json`. The run metadata is updated so `resume` and `rerun` still know where the export went.
 - `import-run` is the lower-level transactional variant. It copies accepted PDFs into `pdfs/` but leaves staging untouched unless you later run `clean-staging`.
 
-Run notes are written as `runs/<run_id>/<run_id>.md` instead of `index.md`.
-This gives Obsidian Graph meaningful run/prompt nodes. Each run note has
-frontmatter `type: scholar_labs_run` and tag `scholar-vault/run`, so Graph
-groups can color prompts separately from paper cards.
+Run notes are written as `runs/<run_id>/<date>_<short-title>.md` instead of
+`index.md`. This gives Obsidian Graph meaningful run/prompt nodes. Each run
+note has frontmatter `type: scholar_labs_run`, `title`, and tag
+`scholar-vault/run`, so Graph groups can color prompts separately from paper
+cards. If you do not provide a title, `scholar-vault` infers a short title from
+the prompt topic.
 
 Dry-run the import without creating paper cards or copying PDFs:
 
@@ -156,6 +158,12 @@ Auto-commit only high-confidence matches:
 
 ```fish
 scholar-vault import-labs --vault ~/Documents/Research/scholar-labs-vault --export ~/Downloads/scholar-labs-exports/example.json --staging ~/Downloads/scholar-labs-staging --commit
+```
+
+Set a short Obsidian run title during import:
+
+```fish
+scholar-vault import-labs --vault ~/Documents/Research/scholar-labs-vault --export ~/Downloads/scholar-labs-exports/example.json --staging ~/Downloads/scholar-labs-staging --commit --title "Immersive Analytics Sources"
 ```
 
 Also create candidate paper cards for results without matched PDFs:
@@ -269,6 +277,17 @@ Rerun a specific run if needed:
 scholar-vault rerun --vault ~/Documents/Research/scholar-labs-vault --run 2026-04-22_example-prompt --commit
 ```
 
+Rename an existing run note for Obsidian Graph:
+
+```fish
+scholar-vault rename-run --vault ~/Documents/Research/scholar-labs-vault --run 2026-04-22_example-prompt --title "Immersive Analytics Sources"
+```
+
+You can also edit the generated run note's `title:` frontmatter in Obsidian,
+then run `scholar-vault rebuild`. Do not manually rename the generated run
+Markdown file as the primary workflow; rebuild uses `index.yaml` and the
+frontmatter title to regenerate the canonical note filename and links.
+
 Undo a run using its import manifest:
 
 ```fish
@@ -317,7 +336,7 @@ scholar-vault reset --vault ~/Documents/Research/scholar-labs-vault --yes
 
 - `papers/*.md`: canonical source cards for selected papers by default.
 - `papers/*.md` frontmatter field `summary_sources`: run-specific Scholar Labs summaries linked back to the run note that produced them.
-- `runs/<run_id>/<run_id>.md`: Obsidian-friendly per-run provenance pages that keep all Scholar Labs candidate results.
+- `runs/<run_id>/<date>_<short-title>.md`: Obsidian-friendly per-run provenance pages that keep all Scholar Labs candidate results.
 - `runs/*/index.yaml`: machine-readable run records used by `resume`, `rerun`, and rebuilds.
 - `runs/*/import-manifest.yaml`: transactional record of proposed matches, decisions, copied PDFs, and created cards.
 - `raw/metadata/<citekey>/`: cached citation provider responses and generated citation artifacts.

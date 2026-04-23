@@ -23,7 +23,8 @@
 - Prefer updating existing cards over creating parallel records. Match by DOI, Scholar CID, citekey, or normalized title before making a new card.
 - Preserve existing summaries and provenance during enrichment imports.
 - Preserve run-specific Scholar Labs summaries in `summary_sources` on paper cards. Do not overwrite a paper's primary `Summary` just because a later run produced different Scholar Labs text.
-- Generate run Markdown as `runs/<run_id>/<run_id>.md`, not `index.md`, so Obsidian Graph shows meaningful prompt/run nodes. Keep `runs/<run_id>/index.yaml` as the machine-readable run record.
+- Generate run Markdown as `runs/<run_id>/<date>_<short-title>.md`, not `index.md`, so Obsidian Graph shows meaningful prompt/run nodes. Keep `runs/<run_id>/index.yaml` as the machine-readable run record.
+- Keep run IDs stable for idempotence. Use the run `title` field, `--title`, or `rename-run` to change Obsidian-facing run note names.
 - `enrich-citations` must process canonical `papers/*.md` cards only. Do not enrich run candidates directly.
 - Citation enrichment should preserve Scholar Labs summaries, rationale, provenance, and topics. Respect `metadata_lock: true`, `citation_status: verified`, fingerprints, and retry limits unless the user passes the explicit override flags.
 - Keep raw citation provider responses under `raw/metadata/<citekey>/` and use cached responses before making repeated remote requests.

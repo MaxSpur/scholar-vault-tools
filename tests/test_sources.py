@@ -1,4 +1,4 @@
-from scholar_vault.sources import build_citekey, parse_people, slugify_text
+from scholar_vault.sources import build_citekey, infer_run_title, parse_people, slugify_text
 
 
 def test_slug_generation_normalizes_text() -> None:
@@ -20,3 +20,12 @@ def test_parse_people_handles_comma_and_and() -> None:
         "Omar Lee",
         "Ken Park",
     ]
+
+
+def test_infer_run_title_uses_prompt_topic_phrase() -> None:
+    prompt = (
+        "Find peer-reviewed papers that would support a postdoctoral research proposal "
+        "on collaborative immersive geovisual analytics for multimodal urban mobility data."
+    )
+
+    assert infer_run_title(prompt) == "Collaborative Immersive Geovisual Analytics Multimodal Urban"

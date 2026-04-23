@@ -31,6 +31,43 @@ STOPWORDS = {
     "with",
 }
 
+RUN_TITLE_STOPWORDS = STOPWORDS | {
+    "abstract",
+    "about",
+    "articles",
+    "cited",
+    "context",
+    "could",
+    "evidence",
+    "example",
+    "examples",
+    "find",
+    "foundational",
+    "google",
+    "key",
+    "labs",
+    "literature",
+    "paper",
+    "papers",
+    "peer",
+    "prioritize",
+    "proposal",
+    "recent",
+    "research",
+    "reviewed",
+    "scholar",
+    "search",
+    "source",
+    "sources",
+    "state",
+    "still",
+    "support",
+    "survey",
+    "that",
+    "used",
+    "would",
+}
+
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n?(.*)$", re.DOTALL)
 SECTION_RE = re.compile(r"^##\s+(.+?)\n", re.MULTILINE)
 DOI_RE = re.compile(r"\b(10\.\d{4,9}/[-._;()/:A-Z0-9]+)\b", re.IGNORECASE)
@@ -129,6 +166,78 @@ def parse_people(text: str | None) -> list[str]:
 def slugify_text(text: str, *, max_length: int = 80) -> str:
     candidate = slugify(text or "untitled", lowercase=True, separator="-", max_length=max_length)
     return candidate or "untitled"
+
+
+def _format_title_token(token: str) -> str:
+    normalized = token.strip("-_ ")
+    if not normalized:
+        return ""
+    if normalized.isupper() and len(normalized) <= 4:
+        return normalized
+    if normalized.casefold() in {"ar", "vr", "xr", "od", "gps", "llm"}:
+        return normalized.upper()
+    return normalized.replace("-", " ").title()
+
+
+def _topic_phrase_from_prompt(prompt: str) -> str:
+    cleaned = re.sub(r"\s+", " ", prompt or "").strip()
+    patterns = [
+        r"\b(?:proposal|project|research)\s+on\s+(.+?)(?:\.|;|:|\bprioritize\b|$)",
+        r"\bpapers?\s+on\s+(.+?)(?:\.|;|:|\bprioritize\b|$)",
+        r"\bsources?\s+on\s+(.+?)(?:\.|;|:|\bprioritize\b|$)",
+        r"\babout\s+(.+?)(?:\.|;|:|\bprioritize\b|$)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, cleaned, flags=re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return cleaned
+
+
+def infer_run_title(prompt: str, *, max_words: int = 6) -> str:
+    phrase = _topic_phrase_from_prompt(prompt)
+    tokens = re.findall(r"[A-Za-z][A-Za-z0-9-]*", phrase)
+    selected: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        key = token.casefold()
+        if key in RUN_TITLE_STOPWORDS or len(key) <= 2:
+            continue
+        if key not in seen:
+            seen.add(key)
+            selected.append(token)
+        if len(selected) >= max_words:
+            break
+    if not selected:
+        selected = [token for token in tokens[:max_words] if len(token) > 2]
+    title = " ".join(_format_title_token(token) for token in selected).strip()
+    return title or "Scholar Labs Run"
+
+
+def run_display_title(title: str | None, prompt: str) -> str:
+    cleaned = clean_markdown_text(title)
+    return cleaned if cleaned else infer_run_title(prompt)
+
+
+def run_note_stem(date: str, title: str | None, prompt: str) -> str:
+    display_title = run_display_title(title, prompt)
+    title_slug = slugify_text(display_title, max_length=60)
+    return f"{date}_{title_slug}" if date else title_slug
+
+
+def run_note_filename(date: str, title: str | None, prompt: str) -> str:
+    return f"{run_note_stem(date, title, prompt)}.md"
+
+
+def run_note_path(run_slug: str, date: str, title: str | None, prompt: str) -> str:
+    return f"runs/{run_slug}/{run_note_filename(date, title, prompt)}"
+
+
+def humanize_run_note_stem(stem: str, date: str | None = None) -> str:
+    cleaned = stem
+    if date and cleaned.startswith(date):
+        cleaned = cleaned[len(date) :].lstrip("-_ ")
+    return " ".join(_format_title_token(token) for token in re.split(r"[-_]+", cleaned) if token)
 
 
 def normalize_title(text: str | None) -> str:
@@ -347,11 +456,35 @@ def load_source_cards(paths: VaultPaths) -> list[SourceCard]:
     return cards
 
 
+def _apply_run_markdown_title(run: RunRecord, run_dir: Path) -> RunRecord:
+    markdown_files = sorted(path for path in run_dir.glob("*.md") if path.name != "index.md")
+    if not markdown_files:
+        return run
+
+    expected_stem = run_note_stem(run.date, run.title, run.prompt)
+    matching_note: Path | None = None
+    for note in markdown_files:
+        frontmatter, _ = read_frontmatter_markdown(note)
+        if frontmatter.get("type") == "scholar_labs_run" and frontmatter.get("run_id") == run.slug:
+            matching_note = note
+            if note.stem != expected_stem and note.stem != run.slug:
+                run.title = humanize_run_note_stem(note.stem, run.date)
+                return run
+            if isinstance(frontmatter.get("title"), str) and frontmatter["title"].strip():
+                run.title = frontmatter["title"].strip()
+                return run
+    if matching_note is None and len(markdown_files) == 1:
+        note = markdown_files[0]
+        if note.stem != expected_stem and note.stem != run.slug:
+            run.title = humanize_run_note_stem(note.stem, run.date)
+    return run
+
+
 def load_run_records(paths: VaultPaths) -> list[RunRecord]:
     runs: list[RunRecord] = []
     for path in sorted(paths.runs.glob("*/index.yaml")):
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        runs.append(RunRecord.model_validate(data))
+        runs.append(_apply_run_markdown_title(RunRecord.model_validate(data), path.parent))
     return runs
 
 

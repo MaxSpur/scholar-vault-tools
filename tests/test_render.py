@@ -87,7 +87,8 @@ def test_render_run_markdown_separates_selected_and_candidate_results() -> None:
     rendered = render_run_markdown(run, {"smith2024rag": card})
 
     assert "type: scholar_labs_run" in rendered
-    assert "# Scholar Labs Run: 2026-04-22" in rendered
+    assert "title: Retrieval Augmented Generation" in rendered
+    assert "# Scholar Labs Run: Retrieval Augmented Generation" in rendered
     assert "## Selected Papers" in rendered
     assert "## Candidate And Unmatched Results" in rendered
     assert (

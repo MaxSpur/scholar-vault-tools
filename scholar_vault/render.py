@@ -6,14 +6,14 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 from .models import ImportManifest, RunRecord, SourceCard
-from .sources import dump_frontmatter, topic_slug
+from .sources import dump_frontmatter, run_display_title, run_note_path, topic_slug
 
 TEMPLATE_ROOT = Path(__file__).resolve().parent.parent / "templates"
 ENVIRONMENT = Environment(loader=FileSystemLoader(str(TEMPLATE_ROOT)), autoescape=False)
 
 
-def run_note_path(run_slug: str) -> str:
-    return f"runs/{run_slug}/{run_slug}.md"
+def run_markdown_path(run: RunRecord) -> str:
+    return run_note_path(run.slug, run.date, run.title, run.prompt)
 
 
 def markdown_link(path: str, label: str) -> str:
@@ -30,12 +30,19 @@ def render_paper_markdown(card: SourceCard) -> str:
 def render_run_markdown(run: RunRecord, cards_by_slug: dict[str, SourceCard]) -> str:
     template = ENVIRONMENT.get_template("run_index.md.j2")
     card_paths = {slug: f"../../papers/{slug}.md" for slug in cards_by_slug}
-    body = template.render(run=run, cards_by_slug=cards_by_slug, card_paths=card_paths).strip()
     prompt_alias = run.prompt[:90].strip()
+    title = run_display_title(run.title, run.prompt)
+    body = template.render(
+        run=run,
+        run_title=title,
+        cards_by_slug=cards_by_slug,
+        card_paths=card_paths,
+    ).strip()
     frontmatter = dump_frontmatter(
         {
             "type": "scholar_labs_run",
             "run_id": run.slug,
+            "title": title,
             "date": run.date,
             "prompt": run.prompt,
             "result_count": run.result_count,
@@ -43,7 +50,7 @@ def render_run_markdown(run: RunRecord, cards_by_slug: dict[str, SourceCard]) ->
                 [result for result in run.results if result.status == "selected"]
             ),
             "tags": ["scholar-vault/run"],
-            "aliases": [f"{run.date} Scholar Labs: {prompt_alias}"],
+            "aliases": [f"{run.date} Scholar Labs: {title}", f"{run.date} {prompt_alias}"],
         }
     ).strip()
     return f"---\n{frontmatter}\n---\n\n{body}\n"
@@ -51,7 +58,14 @@ def render_run_markdown(run: RunRecord, cards_by_slug: dict[str, SourceCard]) ->
 
 def render_prompts_index(runs: list[RunRecord]) -> str:
     template = ENVIRONMENT.get_template("prompts.md.j2")
-    return template.render(runs=runs, run_note_path=run_note_path).rstrip() + "\n"
+    return (
+        template.render(
+            runs=runs,
+            run_display_title=run_display_title,
+            run_markdown_path=run_markdown_path,
+        ).rstrip()
+        + "\n"
+    )
 
 
 def render_papers_index(cards: list[SourceCard]) -> str:
@@ -83,7 +97,7 @@ def render_missing_pdfs(runs: list[RunRecord]) -> str:
         lines.append("")
         return "\n".join(lines)
     for run, result in missing:
-        run_link = f"../{run_note_path(run.slug)}"
+        run_link = f"../{run_markdown_path(run)}"
         if result.paper_card:
             lines.append(
                 f"- [{result.title}]({run_link}) "
@@ -176,7 +190,8 @@ def render_llms_full(
         selected = len([result for result in run.results if result.status == "selected"])
         candidates = len([result for result in run.results if result.status != "selected"])
         lines.append(
-            f"- {run.date} | {run.prompt} | {run_note_path(run.slug)} | "
+            f"- {run.date} | {run_display_title(run.title, run.prompt)} | "
+            f"{run_markdown_path(run)} | "
             f"selected={selected} candidate={candidates}"
         )
     lines.append("")
@@ -198,7 +213,7 @@ def render_llms_full(
             if result.status == "selected":
                 continue
             lines.append(
-                f"- {result.title} | {run_note_path(run.slug)} | "
+                f"- {result.title} | {run_markdown_path(run)} | "
                 f"status={result.status} | pdf_status={result.pdf_status}"
             )
     lines.append("")

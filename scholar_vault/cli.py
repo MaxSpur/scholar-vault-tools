@@ -20,6 +20,7 @@ from .importer import (
     latest_run_id,
     list_unmatched,
     rebuild_vault,
+    rename_run,
     reset_vault,
     resume_run,
     undo_run,
@@ -55,6 +56,14 @@ OptionalRunIdArg = Annotated[
         "--run",
         help="Run id. If omitted for rerun, the most recent run is used.",
     ),
+]
+TitleArg = Annotated[
+    str | None,
+    typer.Option("--title", help="Short run title used for Obsidian run-note names."),
+]
+RequiredTitleArg = Annotated[
+    str,
+    typer.Option("--title", help="Short run title used for Obsidian run-note names."),
 ]
 DryRunArg = Annotated[
     bool,
@@ -142,6 +151,7 @@ def import_run_command(
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
     archive_export: ArchiveExportArg = False,
+    title: TitleArg = None,
 ) -> None:
     summary = import_scholar_labs_run(
         vault,
@@ -152,6 +162,7 @@ def import_run_command(
         include_without_pdf=include_without_pdf,
         archive_matched=False,
         archive_export=archive_export,
+        title=title,
         confirm=_confirm,
     )
     _print_run_summary(summary)
@@ -166,6 +177,7 @@ def import_labs_command(
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
     archive_export: ArchiveExportArg = True,
+    title: TitleArg = None,
 ) -> None:
     summary = import_scholar_labs_run(
         vault,
@@ -176,6 +188,7 @@ def import_labs_command(
         include_without_pdf=include_without_pdf,
         archive_matched=True,
         archive_export=archive_export,
+        title=title,
         confirm=_confirm,
     )
     _print_run_summary(summary)
@@ -190,6 +203,7 @@ def import_alias_command(
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
     archive_export: ArchiveExportArg = True,
+    title: TitleArg = None,
 ) -> None:
     summary = import_scholar_labs_run(
         vault,
@@ -200,6 +214,7 @@ def import_alias_command(
         include_without_pdf=include_without_pdf,
         archive_matched=True,
         archive_export=archive_export,
+        title=title,
         confirm=_confirm,
     )
     _print_run_summary(summary)
@@ -317,6 +332,15 @@ def re_run_command(
     run_id = run or latest_run_id(vault)
     summary = resume_run(vault, run_id, dry_run=dry_run, commit=commit, confirm=_confirm)
     _print_run_summary(summary)
+
+
+@app.command("rename-run")
+def rename_run_command(vault: VaultArg, run: RunIdArg, title: RequiredTitleArg) -> None:
+    summary = rename_run(vault, run, title)
+    console.print(
+        f"Renamed run {summary['run']} to {summary['title']}. "
+        f"Run note: {summary['new_ref']}."
+    )
 
 
 @app.command("undo")

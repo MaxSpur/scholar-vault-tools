@@ -53,6 +53,7 @@ from .sources import (
     build_pdf_filename,
     clean_markdown_text,
     ensure_relative,
+    infer_run_title,
     infer_topics,
     load_import_manifests,
     load_run_records,
@@ -60,6 +61,10 @@ from .sources import (
     normalize_doi,
     normalize_title,
     parse_people,
+    read_frontmatter_markdown,
+    run_display_title,
+    run_note_filename,
+    run_note_path,
     slugify_text,
     topic_slug,
     write_json,
@@ -90,22 +95,26 @@ def _run_slug(export: ScholarLabsExport, export_path: Path) -> tuple[str, str]:
     return f"{date}_{prompt_slug}", date
 
 
-def _run_markdown_name(run_id: str) -> str:
-    return f"{run_id}.md"
+def _run_ref_from_parts(run_id: str, date: str, title: str | None, prompt: str) -> str:
+    return run_note_path(run_id, date, title, prompt)
 
 
-def _run_ref(run_id: str) -> str:
-    return f"runs/{run_id}/{_run_markdown_name(run_id)}"
+def _run_ref(run: RunRecord) -> str:
+    return _run_ref_from_parts(run.slug, run.date, run.title, run.prompt)
 
 
 def _legacy_run_ref(run_id: str) -> str:
     return f"runs/{run_id}/index.md"
 
 
-def _normalize_run_ref(ref: str) -> str:
+def _normalize_run_ref(ref: str, run_refs: dict[str, str] | None = None) -> str:
     parts = Path(ref).parts
-    if len(parts) == 3 and parts[0] == "runs" and parts[2] == "index.md":
-        return _run_ref(parts[1])
+    if len(parts) == 3 and parts[0] == "runs":
+        if run_refs and parts[1] in run_refs:
+            return run_refs[parts[1]]
+        if parts[2] == "index.md":
+            stem_title = infer_run_title(parts[1])
+            return _run_ref_from_parts(parts[1], parts[1].split("_", 1)[0], stem_title, stem_title)
     return ref
 
 
@@ -179,12 +188,13 @@ def _summary_source_from_result(
     *,
     run_ref: str,
     prompt: str,
+    run_refs: dict[str, str] | None = None,
 ) -> SummarySource | None:
     summary = clean_markdown_text(result.summary)
     if not _prefer_existing(summary):
         return None
     return SummarySource(
-        run=_normalize_run_ref(run_ref),
+        run=_normalize_run_ref(run_ref, run_refs),
         prompt=prompt,
         rank=result.rank,
         summary=summary,
@@ -195,13 +205,15 @@ def _summary_source_from_result(
 def _merge_summary_sources(
     existing: list[SummarySource],
     incoming: list[SummarySource],
+    *,
+    run_refs: dict[str, str] | None = None,
 ) -> list[SummarySource]:
     merged: list[SummarySource] = []
     by_run: dict[str, int] = {}
     seen_without_run: set[str] = set()
     for source in [*existing, *incoming]:
         source = source.model_copy(deep=True)
-        source.run = _normalize_run_ref(source.run)
+        source.run = _normalize_run_ref(source.run, run_refs)
         source.summary = clean_markdown_text(source.summary)
         if not _prefer_existing(source.summary):
             continue
@@ -219,12 +231,16 @@ def _merge_summary_sources(
     return merged
 
 
-def _backfill_summary_source_from_card(card: SourceCard) -> list[SummarySource]:
+def _backfill_summary_source_from_card(
+    card: SourceCard,
+    *,
+    run_refs: dict[str, str] | None = None,
+) -> list[SummarySource]:
     if not _prefer_existing(card.summary) or card.summary_sources:
         return card.summary_sources
     return [
         SummarySource(
-            run=_normalize_run_ref(run_ref),
+            run=_normalize_run_ref(run_ref, run_refs),
             summary=card.summary,
             rationale_points=card.why_this_source_matters,
         )
@@ -463,10 +479,10 @@ def _read_run_yaml(path: Path) -> RunRecord:
 
 
 def _load_run_record(paths: VaultPaths, run_id: str) -> RunRecord | None:
-    path = paths.runs / run_id / "index.yaml"
-    if not path.exists():
-        return None
-    return _read_run_yaml(path)
+    for run in load_run_records(paths):
+        if run.slug == run_id:
+            return run
+    return None
 
 
 def _load_manifest(paths: VaultPaths, run_id: str) -> ImportManifest | None:
@@ -484,10 +500,20 @@ def _write_run(paths: VaultPaths, run: RunRecord, cards: list[SourceCard]) -> No
     run_dir.mkdir(parents=True, exist_ok=True)
     write_yaml(run_dir / "index.yaml", run.model_dump(exclude_none=True))
     cards_by_slug = {card.slug: card for card in cards}
-    write_text(run_dir / _run_markdown_name(run.slug), render_run_markdown(run, cards_by_slug))
-    legacy_index = run_dir / "index.md"
-    if legacy_index.exists():
-        legacy_index.unlink()
+    note_name = run_note_filename(run.date, run.title, run.prompt)
+    note_path = run_dir / note_name
+    write_text(note_path, render_run_markdown(run, cards_by_slug))
+    for markdown_path in run_dir.glob("*.md"):
+        if markdown_path == note_path:
+            continue
+        frontmatter, _ = read_frontmatter_markdown(markdown_path)
+        if markdown_path.name == "index.md" or markdown_path.stem.startswith(run.date):
+            markdown_path.unlink()
+        elif (
+            frontmatter.get("type") == "scholar_labs_run"
+            and frontmatter.get("run_id") == run.slug
+        ):
+            markdown_path.unlink()
 
 
 def _write_manifest(paths: VaultPaths, manifest: ImportManifest) -> None:
@@ -523,15 +549,19 @@ def _cards_to_csl_json(cards: list[SourceCard]) -> list[dict]:
 
 
 def _rebuild_indexes(paths: VaultPaths) -> None:
+    runs = load_run_records(paths)
+    run_refs = {run.slug: _run_ref(run) for run in runs}
     cards = load_source_cards(paths)
     cards_changed = False
     for card in cards:
-        normalized_discovered_in = [_normalize_run_ref(item) for item in card.discovered_in]
+        normalized_discovered_in = [
+            _normalize_run_ref(item, run_refs) for item in card.discovered_in
+        ]
         if normalized_discovered_in != card.discovered_in:
             card.discovered_in = normalized_discovered_in
             cards_changed = True
-        backfilled_sources = _backfill_summary_source_from_card(card)
-        normalized_sources = _merge_summary_sources(backfilled_sources, [])
+        backfilled_sources = _backfill_summary_source_from_card(card, run_refs=run_refs)
+        normalized_sources = _merge_summary_sources(backfilled_sources, [], run_refs=run_refs)
         if normalized_sources != card.summary_sources:
             card.summary_sources = normalized_sources
             cards_changed = True
@@ -539,7 +569,6 @@ def _rebuild_indexes(paths: VaultPaths) -> None:
         for card in cards:
             _save_card(paths, card)
 
-    runs = load_run_records(paths)
     manifests = load_import_manifests(paths)
     topic_cards = group_cards_by_topic(cards)
 
@@ -764,6 +793,7 @@ def import_scholar_labs_run(
     include_without_pdf: bool = False,
     archive_matched: bool = False,
     archive_export: bool = False,
+    title: str | None = None,
     confirm: ConfirmCallback | None = None,
 ) -> dict[str, int | str]:
     if dry_run and commit:
@@ -774,8 +804,12 @@ def import_scholar_labs_run(
     staging_dir = Path(staging_path).expanduser().resolve()
     export = _load_validated_scholar_export(paths, export_file)
     run_slug, run_date = _run_slug(export, export_file)
-    run_ref = _run_ref(run_slug)
     existing_run = _load_run_record(paths, run_slug)
+    run_title = run_display_title(
+        title or (existing_run.title if existing_run else None),
+        export.prompt,
+    )
+    run_ref = _run_ref_from_parts(run_slug, run_date, run_title, export.prompt)
     if existing_run and not dry_run and not commit and confirm is not None:
         if not confirm(f"Run {run_slug} already exists. Resume and update it?"):
             raise ValueError(f"Run {run_slug} already exists.")
@@ -1034,6 +1068,7 @@ def import_scholar_labs_run(
         slug=run_slug,
         date=run_date,
         prompt=export.prompt,
+        title=run_title,
         exported_at=export.exported_at,
         export_file=str(export_file),
         raw_export_file=ensure_relative(raw_export_file, paths.vault),
@@ -1095,6 +1130,7 @@ def resume_run(
         include_without_pdf=run.include_without_pdf,
         archive_matched=run.archive_matched_from_staging,
         archive_export=run.archive_matched_from_staging,
+        title=run.title,
         confirm=confirm,
     )
 
@@ -1113,6 +1149,37 @@ def latest_run_id(vault: Path | str) -> str:
     if run_candidates:
         return max(run_candidates, key=lambda item: (item[0], item[1]))[1]
     raise ValueError(f"No runs found in vault: {paths.vault}")
+
+
+def rename_run(vault: Path | str, run_id: str, title: str) -> dict[str, str]:
+    paths = initialize_vault(vault)
+    run = _load_run_record(paths, run_id)
+    if run is None:
+        raise ValueError(f"Run does not exist: {run_id}")
+
+    old_ref = _run_ref(run)
+    run.title = run_display_title(title, run.prompt)
+    new_ref = _run_ref(run)
+    cards = load_source_cards(paths)
+    for card in cards:
+        card_changed = False
+        updated_discovered = [
+            new_ref if Path(item).parts[:2] == ("runs", run_id) else item
+            for item in card.discovered_in
+        ]
+        if updated_discovered != card.discovered_in:
+            card.discovered_in = updated_discovered
+            card_changed = True
+        for source in card.summary_sources:
+            if Path(source.run).parts[:2] == ("runs", run_id):
+                source.run = new_ref
+                card_changed = True
+        if card_changed:
+            _save_card(paths, card)
+
+    _write_run(paths, run, load_source_cards(paths))
+    _rebuild_indexes(paths)
+    return {"run": run_id, "title": run.title or "", "old_ref": old_ref, "new_ref": new_ref}
 
 
 def _archive_path(base_dir: Path, filename: str) -> Path:
@@ -1221,7 +1288,7 @@ def attach_pdf(vault: Path | str, citekey: str, pdf_path: Path | str) -> dict[st
                 result.paper_card = f"papers/{card.slug}.md"
                 changed = True
         if changed:
-            run_ref = _run_ref(run.slug)
+            run_ref = _run_ref(run)
             if run_ref not in card.discovered_in:
                 card.discovered_in.append(run_ref)
             _write_run(paths, run, load_source_cards(paths))
@@ -1274,7 +1341,7 @@ def cleanup_run_selected_only(vault: Path | str, run_id: str) -> dict[str, int]:
         raise ValueError(f"Run does not exist: {run_id}")
 
     cards = load_source_cards(paths)
-    run_ref = _run_ref(run_id)
+    run_ref = _run_ref(run)
     archive_dir = paths.raw_imported / "cleanup-archive" / run_id
     archived = 0
     kept = 0

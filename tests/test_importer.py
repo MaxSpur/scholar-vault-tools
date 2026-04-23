@@ -13,12 +13,13 @@ from scholar_vault.importer import (
     initialize_vault,
     latest_run_id,
     rebuild_vault,
+    rename_run,
     reset_vault,
     resume_run,
     undo_run,
 )
 from scholar_vault.models import RunRecord, RunResultRecord, ScholarLabsResult, SourceCard
-from scholar_vault.sources import load_source_cards, write_yaml
+from scholar_vault.sources import load_source_cards, run_note_path, write_yaml
 
 
 def _write_fixture_copy(name: str, target: Path) -> Path:
@@ -92,6 +93,16 @@ def _run_yaml(vault: Path, run_id: str) -> dict:
 def _manifest_yaml(vault: Path, run_id: str) -> dict:
     return yaml.safe_load(
         (vault / "runs" / run_id / "import-manifest.yaml").read_text(encoding="utf-8")
+    )
+
+
+def _run_note_path(vault: Path, run_id: str) -> str:
+    run_yaml = _run_yaml(vault, run_id)
+    return run_note_path(
+        run_id,
+        run_yaml["date"],
+        run_yaml.get("title"),
+        run_yaml["prompt"],
     )
 
 
@@ -213,11 +224,13 @@ def test_repeated_labs_result_adds_run_specific_summary_to_existing_card(
         "First Scholar Labs summary.",
         "Second Scholar Labs summary.",
     ]
-    assert cards[0].summary_sources[0].run == f"runs/{first['run']}/{first['run']}.md"
-    assert cards[0].summary_sources[1].run == f"runs/{second['run']}/{second['run']}.md"
+    first_note = _run_note_path(vault, str(first["run"]))
+    second_note = _run_note_path(vault, str(second["run"]))
+    assert cards[0].summary_sources[0].run == first_note
+    assert cards[0].summary_sources[1].run == second_note
     assert cards[0].discovered_in == [
-        f"runs/{first['run']}/{first['run']}.md",
-        f"runs/{second['run']}/{second['run']}.md",
+        first_note,
+        second_note,
     ]
 
 
@@ -231,12 +244,64 @@ def test_run_markdown_uses_obsidian_friendly_filename(tmp_path: Path) -> None:
 
     summary = import_scholar_labs_run(vault, export_path, staging, commit=True)
     run_id = str(summary["run"])
+    note = _run_note_path(vault, run_id)
 
-    assert (vault / "runs" / run_id / f"{run_id}.md").exists()
+    assert (vault / note).exists()
+    assert Path(note).name != f"{run_id}.md"
     assert not (vault / "runs" / run_id / "index.md").exists()
-    assert f"../runs/{run_id}/{run_id}.md" in (
+    assert f"../{note}" in (
         vault / "_indexes" / "prompts.md"
     ).read_text(encoding="utf-8")
+
+
+def test_import_run_accepts_short_title_for_obsidian_graph(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_export(exports / "sample.json", 1)
+
+    summary = import_scholar_labs_run(
+        vault,
+        export_path,
+        staging,
+        commit=True,
+        title="Urban Mobility Sources",
+    )
+    run_id = str(summary["run"])
+    note = _run_note_path(vault, run_id)
+    run_yaml = _run_yaml(vault, run_id)
+    run_markdown = (vault / note).read_text(encoding="utf-8")
+
+    assert run_yaml["title"] == "Urban Mobility Sources"
+    assert note.endswith("/2026-04-22_urban-mobility-sources.md")
+    assert "title: Urban Mobility Sources" in run_markdown
+    assert "# Scholar Labs Run: Urban Mobility Sources" in run_markdown
+
+
+def test_rename_run_updates_note_and_card_references(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_export(exports / "sample.json", 1)
+    _write_pdf_with_title(staging / "paper-1.pdf", "Result Paper 1")
+
+    summary = import_scholar_labs_run(vault, export_path, staging, commit=True)
+    run_id = str(summary["run"])
+    old_note = _run_note_path(vault, run_id)
+    rename_run(vault, run_id, "Renamed Run")
+    new_note = _run_note_path(vault, run_id)
+    cards = load_source_cards(initialize_vault(vault))
+
+    assert old_note != new_note
+    assert new_note.endswith("/2026-04-22_renamed-run.md")
+    assert not (vault / old_note).exists()
+    assert (vault / new_note).exists()
+    assert cards[0].discovered_in == [new_note]
+    assert cards[0].summary_sources[0].run == new_note
 
 
 def test_rebuild_migrates_legacy_run_index_links_and_files(tmp_path: Path) -> None:
@@ -244,7 +309,6 @@ def test_rebuild_migrates_legacy_run_index_links_and_files(tmp_path: Path) -> No
     paths = initialize_vault(vault)
     run_id = "2026-04-22_legacy-index-run"
     legacy_ref = f"runs/{run_id}/index.md"
-    named_ref = f"runs/{run_id}/{run_id}.md"
     run_dir = paths.runs / run_id
     run_dir.mkdir(parents=True)
     (run_dir / "index.md").write_text("# Legacy index\n", encoding="utf-8")
@@ -285,10 +349,50 @@ def test_rebuild_migrates_legacy_run_index_links_and_files(tmp_path: Path) -> No
     rebuild_vault(vault)
 
     migrated = load_source_cards(initialize_vault(vault))[0]
+    named_ref = _run_note_path(vault, run_id)
     assert migrated.discovered_in == [named_ref]
     assert migrated.summary_sources[0].run == named_ref
-    assert (run_dir / f"{run_id}.md").exists()
+    assert (vault / named_ref).exists()
     assert not (run_dir / "index.md").exists()
+
+
+def test_rebuild_shortens_previous_long_generated_run_note_names(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    run_id = "2026-04-23_find-key-papers-on-collaborative-immersive-analytics-for-dat"
+    prompt = (
+        "Find key papers on collaborative immersive analytics for data visualization "
+        "in virtual reality."
+    )
+    run_dir = paths.runs / run_id
+    run_dir.mkdir(parents=True)
+    write_yaml(
+        run_dir / "index.yaml",
+        RunRecord(
+            slug=run_id,
+            date="2026-04-23",
+            prompt=prompt,
+            exported_at="2026-04-23T16:00:00+02:00",
+            export_file="/tmp/export.json",
+            raw_export_file="raw/scholar-labs/example.json",
+            result_count=0,
+            results=[],
+        ).model_dump(exclude_none=True),
+    )
+    (run_dir / f"{run_id}.md").write_text(
+        "---\ntype: scholar_labs_run\nrun_id: "
+        f"{run_id}\n---\n\n# Legacy long run note\n",
+        encoding="utf-8",
+    )
+
+    rebuild_vault(vault)
+
+    note = _run_note_path(vault, run_id)
+    assert note.endswith(
+        "/2026-04-23_collaborative-immersive-analytics-data-visualization-virtual.md"
+    )
+    assert (vault / note).exists()
+    assert not (run_dir / f"{run_id}.md").exists()
 
 
 def test_import_labs_archives_matched_pdfs_and_leaves_unmatched_in_staging(

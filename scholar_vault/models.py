@@ -189,6 +189,7 @@ class RunRecord(BaseModel):
     slug: str
     date: str
     prompt: str
+    title: str | None = None
     source: str = "google_scholar_labs"
     exported_at: str
     export_file: str
