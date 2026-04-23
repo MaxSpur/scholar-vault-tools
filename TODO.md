@@ -15,5 +15,6 @@
 - [x] Promote trusted DOI metadata into canonical paper card fields so venues/authors/titles are not left as Scholar preview strings.
 - [x] Add canonical-card abstract enrichment with separate abstract provenance, locks, refresh behavior, and exports.
 - [x] Add short Obsidian-facing run titles, `--title`, and `rename-run` while keeping stable run IDs.
+- [x] Add user-level default paths and make `import-labs` select the newest unused Scholar Labs export JSON automatically.
 - [ ] Add review workflow for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

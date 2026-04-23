@@ -74,6 +74,32 @@ If Fish cannot find `scholar-vault`, confirm that `conda activate
 scholar-vault` succeeded, then reinstall from the repository folder with
 `python -m pip install -e .`.
 
+## Configure Default Paths
+
+Store your normal project paths once so routine commands can omit them:
+
+```fish
+scholar-vault configure \
+  --code ~/Developer/scholar-vault-tools \
+  --vault ~/Documents/Research/scholar-labs-vault \
+  --staging ~/Downloads/scholar-labs-staging \
+  --exports ~/Downloads/scholar-labs-exports
+```
+
+The defaults are written to `~/.config/scholar-vault/config.yaml`. Run
+`scholar-vault configure` without options to inspect the current values.
+Explicit command-line paths always override configured defaults.
+
+With defaults configured, commands can be shorter:
+
+```fish
+scholar-vault import-labs --commit
+scholar-vault import-pdf
+scholar-vault rerun --commit
+scholar-vault rebuild
+scholar-vault enrich-citations --abstracts
+```
+
 ## Initialize A Vault
 
 ```fish
@@ -124,6 +150,17 @@ scholar-labs-vault/
 scholar-vault import-labs --vault ~/Documents/Research/scholar-labs-vault --export ~/Downloads/scholar-labs-exports/example.json --staging ~/Downloads/scholar-labs-staging
 ```
 
+If you configured defaults, the usual command is:
+
+```fish
+scholar-vault import-labs --commit
+```
+
+When `--export` is omitted, `import-labs` uses the newest top-level `.json`
+file in the configured exports folder. It ignores files already moved into the
+`used/` subfolder. Pass `--export PATH` when you want to import a specific JSON
+instead.
+
 The compatibility alias still behaves identically:
 
 ```fish
@@ -140,6 +177,7 @@ Default Scholar Labs behavior is now selected-only:
 - `import-labs` copies accepted PDFs into `pdfs/`, verifies them, and then archives the matched originals out of staging into `raw/imported/`, leaving only unmatched PDFs in staging.
 - After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder without renaming it, for example `~/Downloads/scholar-labs-exports/used/example.json`. The run metadata is updated so `resume` and `rerun` still know where the export went.
 - `import-run` is the lower-level transactional variant. It copies accepted PDFs into `pdfs/` but leaves staging untouched unless you later run `clean-staging`.
+- Most commands that accept `--vault`, and commands that accept `--staging`, can use configured defaults when those options are omitted.
 
 Run notes are written as `runs/<run_id>/<Short Title.md>` instead of
 `index.md`. This gives Obsidian Graph and the file sidebar meaningful run/prompt

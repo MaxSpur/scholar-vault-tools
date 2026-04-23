@@ -3,6 +3,7 @@
 ## Repository
 
 - `scholar_vault/cli.py`: Typer CLI entrypoint and command wiring.
+- `scholar_vault/config.py`: user-level default path storage and latest Scholar Labs export selection.
 - `scholar_vault/models.py`: typed records for exports, paper cards, runs, logs, and PDF candidates.
 - `scholar_vault/sources.py`: vault path management, slug and citekey utilities, Markdown parsing, and frontmatter helpers.
 - `scholar_vault/matcher.py`: PDF extraction, metadata inference, and fuzzy matching helpers using DOI, extracted title, filename, and compact first-page text evidence.
@@ -17,6 +18,8 @@
 ## CLI Workflows
 
 - `import-labs`: Scholar Labs convenience flow. It keeps all JSON results on the run record, creates canonical paper cards only for selected results by default, archives matched PDFs out of staging only after the verified vault copy exists, and moves used browser-export JSON unchanged into a sibling `used/` folder after successful non-dry-run imports.
+- `configure`: stores user-level defaults for the vault, staging folder, export folder, and code directory in `~/.config/scholar-vault/config.yaml`. Commands use these defaults unless explicit paths are passed.
+- `import-labs`: Scholar Labs convenience flow. It keeps all JSON results on the run record, creates canonical paper cards only for selected results by default, archives matched PDFs out of staging only after the verified vault copy exists, and moves used browser-export JSON unchanged into a sibling `used/` folder after successful non-dry-run imports. If `--export` is omitted, it imports the newest top-level `.json` file from the configured exports folder.
 - `import-run`: lower-level transactional Scholar Labs import. It uses the same matching and manifest logic but leaves staging untouched unless another command archives files later.
 - `import-pdf`, `import-bibtex`, and `import-doi`: non-Scholar-Labs ingestion paths that still converge on canonical `papers/*.md` cards.
 - `enrich-citations`: canonical-card-only DOI, citation, and optional abstract metadata enrichment. Default behavior enriches DOI/citation data; `--abstracts`, `--only missing-abstract`, or `--refresh-abstracts` switch to abstract enrichment with separate locks and fingerprints.

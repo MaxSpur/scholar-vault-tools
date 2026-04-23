@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
+from .config import configured_path, latest_export_json, load_user_config, save_user_config
 from .importer import (
     attach_pdf,
     clean_staging,
@@ -30,8 +31,8 @@ app = typer.Typer(help="Local-first research source wiki and vault manager.")
 console = Console()
 
 VaultArg = Annotated[
-    Path,
-    typer.Option(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    Path | None,
+    typer.Option("--vault", exists=True, file_okay=False, dir_okay=True, resolve_path=True),
 ]
 NewVaultArg = Annotated[
     Path,
@@ -41,13 +42,21 @@ ExportArg = Annotated[
     Path,
     typer.Option(..., exists=True, file_okay=True, dir_okay=False, resolve_path=True),
 ]
+OptionalExportArg = Annotated[
+    Path | None,
+    typer.Option("--export", exists=True, file_okay=True, dir_okay=False, resolve_path=True),
+]
 PdfArg = Annotated[
     Path,
     typer.Option(..., exists=True, file_okay=True, dir_okay=False, resolve_path=True),
 ]
 StagingArg = Annotated[
-    Path,
-    typer.Option(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+    Path | None,
+    typer.Option("--staging", exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+]
+ConfigPathArg = Annotated[
+    Path | None,
+    typer.Option(exists=True, file_okay=False, dir_okay=True, resolve_path=True),
 ]
 RunIdArg = Annotated[str, typer.Option(..., help="Run id, for example 2026-04-22_example-prompt.")]
 OptionalRunIdArg = Annotated[
@@ -133,6 +142,46 @@ def _confirm(prompt: str) -> bool:
     return typer.confirm(prompt, default=False)
 
 
+def _require_configured_path(
+    explicit: Path | None,
+    key: str,
+    *,
+    label: str,
+    must_be_file: bool = False,
+    must_be_dir: bool = True,
+) -> Path:
+    path = explicit or configured_path(key)
+    if path is None:
+        raise typer.BadParameter(
+            f"No {label} was provided and no default is configured. "
+            "Run `scholar-vault configure` to store default paths."
+        )
+    resolved = path.expanduser().resolve()
+    if must_be_file and not resolved.is_file():
+        raise typer.BadParameter(f"Configured {label} is not a file: {resolved}")
+    if must_be_dir and not resolved.is_dir():
+        raise typer.BadParameter(f"Configured {label} is not a directory: {resolved}")
+    return resolved
+
+
+def _resolve_vault(vault: Path | None) -> Path:
+    return _require_configured_path(vault, "vault", label="vault path")
+
+
+def _resolve_staging(staging: Path | None) -> Path:
+    return _require_configured_path(staging, "staging", label="staging folder")
+
+
+def _resolve_latest_export(export: Path | None) -> Path:
+    if export is not None:
+        return export.expanduser().resolve()
+    exports_dir = _require_configured_path(None, "exports", label="exports folder")
+    try:
+        return latest_export_json(exports_dir)
+    except FileNotFoundError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
 def _print_run_summary(summary: dict[str, int | str]) -> None:
     console.print(
         f"Processed run {summary['run']} with {summary['papers']} paper cards, "
@@ -144,6 +193,38 @@ def _print_run_summary(summary: dict[str, int | str]) -> None:
         console.print(f"Archived used export JSON to {summary['export_archived']}.")
 
 
+@app.command("configure")
+def configure_command(
+    vault: ConfigPathArg = None,
+    staging: ConfigPathArg = None,
+    exports: ConfigPathArg = None,
+    code: ConfigPathArg = None,
+) -> None:
+    config = load_user_config()
+    if vault is not None:
+        config["vault"] = str(vault.expanduser().resolve())
+    if staging is not None:
+        config["staging"] = str(staging.expanduser().resolve())
+    if exports is not None:
+        config["exports"] = str(exports.expanduser().resolve())
+    if code is not None:
+        config["code"] = str(code.expanduser().resolve())
+
+    if any(path is not None for path in (vault, staging, exports, code)):
+        config_path = save_user_config(config)
+        console.print(f"Wrote scholar-vault defaults to {config_path}.")
+
+    if not config:
+        console.print("No scholar-vault defaults configured.")
+        return
+
+    console.print("Configured scholar-vault defaults:")
+    for key in ("code", "vault", "staging", "exports"):
+        value = config.get(key)
+        if value:
+            console.print(f"- {key}: {value}")
+
+
 @app.command("init")
 def init_command(vault: NewVaultArg) -> None:
     paths = initialize_vault(vault)
@@ -152,9 +233,9 @@ def init_command(vault: NewVaultArg) -> None:
 
 @app.command("import-run")
 def import_run_command(
-    vault: VaultArg,
     export: ExportArg,
-    staging: StagingArg,
+    vault: VaultArg = None,
+    staging: StagingArg = None,
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
@@ -162,9 +243,9 @@ def import_run_command(
     title: TitleArg = None,
 ) -> None:
     summary = import_scholar_labs_run(
-        vault,
+        _resolve_vault(vault),
         export,
-        staging,
+        _resolve_staging(staging),
         dry_run=dry_run,
         commit=commit,
         include_without_pdf=include_without_pdf,
@@ -178,9 +259,9 @@ def import_run_command(
 
 @app.command("import-labs")
 def import_labs_command(
-    vault: VaultArg,
-    export: ExportArg,
-    staging: StagingArg,
+    vault: VaultArg = None,
+    export: OptionalExportArg = None,
+    staging: StagingArg = None,
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
@@ -188,9 +269,9 @@ def import_labs_command(
     title: TitleArg = None,
 ) -> None:
     summary = import_scholar_labs_run(
-        vault,
-        export,
-        staging,
+        _resolve_vault(vault),
+        _resolve_latest_export(export),
+        _resolve_staging(staging),
         dry_run=dry_run,
         commit=commit,
         include_without_pdf=include_without_pdf,
@@ -204,9 +285,9 @@ def import_labs_command(
 
 @app.command("import")
 def import_alias_command(
-    vault: VaultArg,
-    export: ExportArg,
-    staging: StagingArg,
+    vault: VaultArg = None,
+    export: OptionalExportArg = None,
+    staging: StagingArg = None,
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
@@ -214,9 +295,9 @@ def import_alias_command(
     title: TitleArg = None,
 ) -> None:
     summary = import_scholar_labs_run(
-        vault,
-        export,
-        staging,
+        _resolve_vault(vault),
+        _resolve_latest_export(export),
+        _resolve_staging(staging),
         dry_run=dry_run,
         commit=commit,
         include_without_pdf=include_without_pdf,
@@ -230,46 +311,47 @@ def import_alias_command(
 
 @app.command("import-pdf")
 def import_pdf_command(
-    vault: VaultArg,
-    staging: StagingArg,
+    vault: VaultArg = None,
+    staging: StagingArg = None,
 ) -> None:
-    summary = import_pdf_dropins(vault, staging, confirm=_confirm)
+    summary = import_pdf_dropins(_resolve_vault(vault), _resolve_staging(staging), confirm=_confirm)
     console.print(f"Imported {summary['imported']} PDF files.")
 
 
 @app.command("import-bibtex")
 def import_bibtex_command(
-    vault: VaultArg,
     bib: ExportArg,
+    vault: VaultArg = None,
 ) -> None:
-    summary = import_bibtex(vault, bib)
+    summary = import_bibtex(_resolve_vault(vault), bib)
     console.print(f"Imported {summary['imported']} BibTeX entries.")
 
 
 @app.command("import-doi")
 def import_doi_command(
-    vault: VaultArg,
     doi: str = typer.Option(...),
+    vault: VaultArg = None,
 ) -> None:
-    summary = import_doi(vault, doi)
+    summary = import_doi(_resolve_vault(vault), doi)
     console.print(f"Imported {summary['imported']} DOI stubs.")
 
 
 @app.command("rebuild")
-def rebuild_command(vault: VaultArg) -> None:
-    rebuild_vault(vault)
-    console.print(f"Rebuilt derived files for {Path(vault).expanduser().resolve()}")
+def rebuild_command(vault: VaultArg = None) -> None:
+    resolved_vault = _resolve_vault(vault)
+    rebuild_vault(resolved_vault)
+    console.print(f"Rebuilt derived files for {resolved_vault}")
 
 
 @app.command("bibtex")
-def bibtex_command(vault: VaultArg) -> None:
-    output = export_bibtex(vault)
+def bibtex_command(vault: VaultArg = None) -> None:
+    output = export_bibtex(_resolve_vault(vault))
     console.print(f"Wrote {output}")
 
 
 @app.command("enrich-citations")
 def enrich_citations_command(
-    vault: VaultArg,
+    vault: VaultArg = None,
     citekey: OptionalCitekeyArg = None,
     only: OnlyArg = "all",
     refresh: RefreshArg = False,
@@ -280,7 +362,7 @@ def enrich_citations_command(
     force: ForceArg = False,
 ) -> None:
     summary = enrich_citations(
-        vault,
+        _resolve_vault(vault),
         citekey=citekey,
         only=only,
         refresh=refresh,
@@ -307,56 +389,68 @@ def enrich_citations_command(
 
 
 @app.command("reset")
-def reset_command(vault: VaultArg, yes: YesArg = False) -> None:
-    resolved = Path(vault).expanduser().resolve()
+def reset_command(vault: VaultArg = None, yes: YesArg = False) -> None:
+    resolved = _resolve_vault(vault)
     if not yes and not _confirm(
         f"Reset vault at {resolved}? This removes imported papers, runs, PDFs, "
         "raw copies inside the vault, derived indexes, and exports."
     ):
         raise typer.Exit(code=1)
 
-    summary = reset_vault(vault)
+    summary = reset_vault(resolved)
     console.print(f"Reset vault at {resolved}. Removed {summary['removed']} vault-managed items.")
 
 
 @app.command("resume")
 def resume_command(
-    vault: VaultArg,
     run: RunIdArg,
+    vault: VaultArg = None,
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
 ) -> None:
-    summary = resume_run(vault, run, dry_run=dry_run, commit=commit, confirm=_confirm)
+    summary = resume_run(
+        _resolve_vault(vault),
+        run,
+        dry_run=dry_run,
+        commit=commit,
+        confirm=_confirm,
+    )
     _print_run_summary(summary)
 
 
 @app.command("rerun")
 def rerun_command(
-    vault: VaultArg,
+    vault: VaultArg = None,
     run: OptionalRunIdArg = None,
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
 ) -> None:
-    run_id = run or latest_run_id(vault)
-    summary = resume_run(vault, run_id, dry_run=dry_run, commit=commit, confirm=_confirm)
+    resolved_vault = _resolve_vault(vault)
+    run_id = run or latest_run_id(resolved_vault)
+    summary = resume_run(resolved_vault, run_id, dry_run=dry_run, commit=commit, confirm=_confirm)
     _print_run_summary(summary)
 
 
 @app.command("re-run")
 def re_run_command(
-    vault: VaultArg,
+    vault: VaultArg = None,
     run: OptionalRunIdArg = None,
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
 ) -> None:
-    run_id = run or latest_run_id(vault)
-    summary = resume_run(vault, run_id, dry_run=dry_run, commit=commit, confirm=_confirm)
+    resolved_vault = _resolve_vault(vault)
+    run_id = run or latest_run_id(resolved_vault)
+    summary = resume_run(resolved_vault, run_id, dry_run=dry_run, commit=commit, confirm=_confirm)
     _print_run_summary(summary)
 
 
 @app.command("rename-run")
-def rename_run_command(vault: VaultArg, run: RunIdArg, title: RequiredTitleArg) -> None:
-    summary = rename_run(vault, run, title)
+def rename_run_command(
+    run: RunIdArg,
+    title: RequiredTitleArg,
+    vault: VaultArg = None,
+) -> None:
+    summary = rename_run(_resolve_vault(vault), run, title)
     console.print(
         f"Renamed run {summary['run']} to {summary['title']}. "
         f"Run note: {summary['new_ref']}."
@@ -364,8 +458,8 @@ def rename_run_command(vault: VaultArg, run: RunIdArg, title: RequiredTitleArg) 
 
 
 @app.command("undo")
-def undo_command(vault: VaultArg, run: RunIdArg) -> None:
-    summary = undo_run(vault, run)
+def undo_command(run: RunIdArg, vault: VaultArg = None) -> None:
+    summary = undo_run(_resolve_vault(vault), run)
     console.print(
         f"Undid run {run}. Archived {summary['archived_cards']} cards, "
         f"restored {summary['restored_cards']} cards, archived {summary['archived_pdfs']} PDFs, "
@@ -375,11 +469,11 @@ def undo_command(vault: VaultArg, run: RunIdArg) -> None:
 
 @app.command("attach-pdf")
 def attach_pdf_command(
-    vault: VaultArg,
     citekey: CitekeyArg,
     pdf: PdfArg,
+    vault: VaultArg = None,
 ) -> None:
-    summary = attach_pdf(vault, citekey, pdf)
+    summary = attach_pdf(_resolve_vault(vault), citekey, pdf)
     console.print(
         f"Attached {summary['pdf']} to {citekey} "
         f"(copied={summary['copied']}, verified={summary['verified']})."
@@ -387,8 +481,8 @@ def attach_pdf_command(
 
 
 @app.command("unmatched")
-def unmatched_command(vault: VaultArg) -> None:
-    rows = list_unmatched(vault)
+def unmatched_command(vault: VaultArg = None) -> None:
+    rows = list_unmatched(_resolve_vault(vault))
     if not rows:
         console.print("No unmatched PDFs.")
         return
@@ -400,8 +494,8 @@ def unmatched_command(vault: VaultArg) -> None:
 
 
 @app.command("clean-staging")
-def clean_staging_command(vault: VaultArg, staging: StagingArg) -> None:
-    summary = clean_staging(vault, staging)
+def clean_staging_command(vault: VaultArg = None, staging: StagingArg = None) -> None:
+    summary = clean_staging(_resolve_vault(vault), _resolve_staging(staging))
     console.print(
         f"Cleaned staging. Moved {summary['moved']} files into vault archive "
         f"and kept {summary['kept']} files."
@@ -410,13 +504,13 @@ def clean_staging_command(vault: VaultArg, staging: StagingArg) -> None:
 
 @app.command("cleanup-run")
 def cleanup_run_command(
-    vault: VaultArg,
     run: RunIdArg,
+    vault: VaultArg = None,
     selected_only: SelectedOnlyArg = False,
 ) -> None:
     if not selected_only:
         raise typer.BadParameter("Only --selected-only is currently supported.")
-    summary = cleanup_run_selected_only(vault, run)
+    summary = cleanup_run_selected_only(_resolve_vault(vault), run)
     console.print(
         f"Cleaned run {run}. Archived {summary['archived']} candidate-only cards "
         f"and kept {summary['kept']} cards."
