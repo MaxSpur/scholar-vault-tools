@@ -13,6 +13,12 @@
 - `browser/`: browser-side exporter for visible Google Scholar Labs results.
 - `tests/`: regression coverage for naming, parsing, matching, rendering, and idempotence.
 
+## CLI Workflows
+
+- `import-labs`: Scholar Labs convenience flow. It keeps all JSON results on the run record, creates canonical paper cards only for selected results by default, and archives matched PDFs out of staging only after the verified vault copy exists.
+- `import-run`: lower-level transactional Scholar Labs import. It uses the same matching and manifest logic but leaves staging untouched unless another command archives files later.
+- `import-pdf`, `import-bibtex`, and `import-doi`: non-Scholar-Labs ingestion paths that still converge on canonical `papers/*.md` cards.
+
 ## Canonical Data Model
 
 - Canonical source record: `papers/<slug>.md`
@@ -22,7 +28,7 @@
 
 ## Merge Strategy
 
-- Match existing cards by DOI first, then Scholar CID, citekey, exact normalized title, and finally near-exact title similarity when appropriate.
+- Match existing cards by DOI first, then Scholar CID, citekey, and exact normalized title.
 - Keep the original `source_kind` on an existing card so enrichment imports do not erase provenance.
 - Prefer existing citekeys, summaries, notes, and discovered runs. Fill missing metadata from new imports.
 

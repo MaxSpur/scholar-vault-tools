@@ -15,6 +15,7 @@
 - Keep `browser/scholar_labs_json_exporter.js` Scholar-specific. It depends on Google Scholar `gs_*` selectors and should not be generalized without testing on a real Scholar Labs results page.
 - Keep raw failed Scholar Labs exports for debugging, but do not import them into runs or paper cards.
 - Keep Scholar Labs PDF handling non-destructive: prefer copy-and-verify into `pdfs/`, leave staging files in place unless the command explicitly archives them, and record decisions in the run manifest.
+- `import-labs` is the explicit Scholar Labs convenience flow. It should archive matched PDFs out of staging only after the verified vault copy exists, while unmatched PDFs stay in staging.
 - If the exporter changes, verify these browser diagnostics on a live Scholar Labs results page before accepting the change:
   `document.querySelectorAll('div.gs_r[data-cid], div.gs_or[data-cid]').length`
   `document.querySelector('.gs_as_np_tq')?.innerText`

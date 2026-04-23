@@ -7,3 +7,4 @@
 - [x] Run verification commands and record any fixes from the first pass.
 - [x] Reject invalid Scholar Labs exports and keep failed raw exports for debugging without creating runs or paper cards.
 - [x] Switch Scholar Labs imports to selected-only paper creation with run manifests and non-destructive staging handling.
+- [x] Split the explicit Scholar Labs workflow into `import-labs`, with matched PDFs archived out of staging after verified copy and unmatched PDFs left in place.

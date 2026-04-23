@@ -153,6 +153,7 @@ class RunRecord(BaseModel):
     staging_folder: str = ""
     result_count: int
     include_without_pdf: bool = False
+    archive_matched_from_staging: bool = False
     results: list[RunResultRecord] = Field(default_factory=list)
     matched_files: list[str] = Field(default_factory=list)
     unmatched_files: list[str] = Field(default_factory=list)

@@ -80,6 +80,15 @@ def _confirm(prompt: str) -> bool:
     return typer.confirm(prompt, default=False)
 
 
+def _print_run_summary(summary: dict[str, int | str]) -> None:
+    console.print(
+        f"Processed run {summary['run']} with {summary['papers']} paper cards, "
+        f"{summary['selected']} selected results, "
+        f"{summary['matched']} matched PDFs, {summary['unmatched']} unmatched PDFs, "
+        f"and {summary['archived']} matched staging PDFs archived."
+    )
+
+
 @app.command("init")
 def init_command(vault: NewVaultArg) -> None:
     paths = initialize_vault(vault)
@@ -102,13 +111,32 @@ def import_run_command(
         dry_run=dry_run,
         commit=commit,
         include_without_pdf=include_without_pdf,
+        archive_matched=False,
         confirm=_confirm,
     )
-    console.print(
-        f"Processed run {summary['run']} with {summary['papers']} paper cards, "
-        f"{summary['selected']} selected results, "
-        f"{summary['matched']} matched PDFs, {summary['unmatched']} unmatched PDFs."
+    _print_run_summary(summary)
+
+
+@app.command("import-labs")
+def import_labs_command(
+    vault: VaultArg,
+    export: ExportArg,
+    staging: StagingArg,
+    dry_run: DryRunArg = False,
+    commit: CommitArg = False,
+    include_without_pdf: IncludeWithoutPdfArg = False,
+) -> None:
+    summary = import_scholar_labs_run(
+        vault,
+        export,
+        staging,
+        dry_run=dry_run,
+        commit=commit,
+        include_without_pdf=include_without_pdf,
+        archive_matched=True,
+        confirm=_confirm,
     )
+    _print_run_summary(summary)
 
 
 @app.command("import")
@@ -127,13 +155,10 @@ def import_alias_command(
         dry_run=dry_run,
         commit=commit,
         include_without_pdf=include_without_pdf,
+        archive_matched=True,
         confirm=_confirm,
     )
-    console.print(
-        f"Processed run {summary['run']} with {summary['papers']} paper cards, "
-        f"{summary['selected']} selected results, "
-        f"{summary['matched']} matched PDFs, {summary['unmatched']} unmatched PDFs."
-    )
+    _print_run_summary(summary)
 
 
 @app.command("import-pdf")
@@ -196,11 +221,7 @@ def resume_command(
     commit: CommitArg = False,
 ) -> None:
     summary = resume_run(vault, run, dry_run=dry_run, commit=commit, confirm=_confirm)
-    console.print(
-        f"Resumed run {summary['run']} with {summary['papers']} paper cards, "
-        f"{summary['selected']} selected results, "
-        f"{summary['matched']} matched PDFs, {summary['unmatched']} unmatched PDFs."
-    )
+    _print_run_summary(summary)
 
 
 @app.command("undo")
@@ -208,7 +229,8 @@ def undo_command(vault: VaultArg, run: RunIdArg) -> None:
     summary = undo_run(vault, run)
     console.print(
         f"Undid run {run}. Archived {summary['archived_cards']} cards, "
-        f"restored {summary['restored_cards']} cards, and archived {summary['archived_pdfs']} PDFs."
+        f"restored {summary['restored_cards']} cards, archived {summary['archived_pdfs']} PDFs, "
+        f"and restored {summary['restored_originals']} staging originals."
     )
 
 

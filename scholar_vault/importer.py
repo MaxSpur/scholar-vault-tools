@@ -559,6 +559,13 @@ def _paper_card_exists(paths: VaultPaths, paper_card: str | None) -> bool:
     return (paths.vault / paper_card).exists()
 
 
+def _archive_matched_pdf(paths: VaultPaths, run_id: str, source_pdf: Path) -> str:
+    archive_dir = paths.raw_imported / "scholar-labs" / run_id / "matched-pdfs"
+    destination = _archive_path(archive_dir, source_pdf.name)
+    shutil.move(str(source_pdf), str(destination))
+    return ensure_relative(destination, paths.vault)
+
+
 def _build_manifest_entry(
     result: ScholarLabsResult,
     match: MatchDecision | None,
@@ -640,6 +647,7 @@ def import_scholar_labs_run(
     dry_run: bool = False,
     commit: bool = False,
     include_without_pdf: bool = False,
+    archive_matched: bool = False,
     confirm: ConfirmCallback | None = None,
 ) -> dict[str, int | str]:
     if dry_run and commit:
@@ -688,6 +696,7 @@ def import_scholar_labs_run(
     matched_files: list[str] = []
     unmatched_files: list[str] = []
     log_entries: list[ImportLogEntry] = []
+    archived_files: list[str] = []
     interactive = not dry_run and not commit
 
     for result in sorted(export.results, key=lambda item: item.rank):
@@ -721,8 +730,10 @@ def import_scholar_labs_run(
         card_preexisting = False
         card_before: dict | None = None
         copied = False
+        moved = False
         verified = False
         destination_path: str | None = None
+        archived_original_path: str | None = None
         note: str | None = None
         existing_paper_card = (
             prior_result.paper_card
@@ -776,6 +787,12 @@ def import_scholar_labs_run(
             card.status = "active"
             if card.citation_status == "preview":
                 card.citation_status = "partial"
+            source_pdf = Path(proposal.candidate.path)
+            if archive_matched and source_pdf.exists():
+                archived_original_path = _archive_matched_pdf(paths, run_slug, source_pdf)
+                moved = True
+                archived_files.append(Path(archived_original_path).name)
+                note = f"Archived matched staging PDF to {archived_original_path}."
             _save_card(paths, card)
             paper_card = f"papers/{card.slug}.md"
             run_status = "selected"
@@ -792,6 +809,7 @@ def import_scholar_labs_run(
                     destination_path=destination_path,
                     status="copied",
                     score=proposal.score,
+                    note=note,
                 )
             )
         else:
@@ -847,6 +865,8 @@ def import_scholar_labs_run(
                 card_before=card_before,
                 destination_path=destination_path,
                 copied=copied,
+                moved=moved,
+                archived_original_path=archived_original_path,
                 verified=verified,
                 note=note,
             )
@@ -880,6 +900,7 @@ def import_scholar_labs_run(
         staging_folder=str(staging_dir),
         result_count=len(export.results),
         include_without_pdf=include_without_pdf,
+        archive_matched_from_staging=archive_matched,
         results=run_results,
         matched_files=sorted(set(matched_files)),
         unmatched_files=sorted(set(unmatched_files)),
@@ -887,13 +908,14 @@ def import_scholar_labs_run(
     _write_manifest(paths, manifest)
     _write_run(paths, run_record, cards)
     if log_entries:
-        _write_log(paths, "import-run", log_entries)
+        _write_log(paths, "import-labs" if archive_matched else "import-run", log_entries)
     _rebuild_indexes(paths)
     return {
         "papers": len([result for result in run_results if result.paper_card]),
         "selected": len([result for result in run_results if result.status == "selected"]),
         "matched": len([result for result in run_results if result.pdf_status == "attached"]),
         "unmatched": len(sorted(set(unmatched_files))),
+        "archived": len(sorted(set(archived_files))),
         "run": run_slug,
     }
 
@@ -919,6 +941,7 @@ def resume_run(
         dry_run=dry_run,
         commit=commit,
         include_without_pdf=run.include_without_pdf,
+        archive_matched=run.archive_matched_from_staging,
         confirm=confirm,
     )
 
@@ -943,6 +966,7 @@ def undo_run(vault: Path | str, run_id: str) -> dict[str, int]:
     archive_root = paths.raw_imported / "undo-archive" / run_id
     archived_cards = 0
     restored_cards = 0
+    restored_originals = 0
 
     for entry in manifest.entries:
         if not entry.paper_card:
@@ -962,13 +986,19 @@ def undo_run(vault: Path | str, run_id: str) -> dict[str, int]:
     archived_pdfs = 0
     referenced_pdfs = {card.pdf for card in current_cards if card.pdf}
     for entry in manifest.entries:
-        if not entry.destination_path or not entry.copied:
-            continue
-        destination_path = paths.vault / entry.destination_path
-        if destination_path.exists() and entry.destination_path not in referenced_pdfs:
-            destination = _archive_path(archive_root / "pdfs", destination_path.name)
-            shutil.move(str(destination_path), str(destination))
-            archived_pdfs += 1
+        if entry.destination_path and entry.copied:
+            destination_path = paths.vault / entry.destination_path
+            if destination_path.exists() and entry.destination_path not in referenced_pdfs:
+                destination = _archive_path(archive_root / "pdfs", destination_path.name)
+                shutil.move(str(destination_path), str(destination))
+                archived_pdfs += 1
+        if entry.moved and entry.archived_original_path and entry.original_path:
+            archived_original = paths.vault / entry.archived_original_path
+            original_path = Path(entry.original_path)
+            if archived_original.exists() and not original_path.exists():
+                original_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(archived_original), str(original_path))
+                restored_originals += 1
 
     run_dir = paths.runs / run_id
     if run_dir.exists():
@@ -983,6 +1013,7 @@ def undo_run(vault: Path | str, run_id: str) -> dict[str, int]:
         "archived_cards": archived_cards,
         "restored_cards": restored_cards,
         "archived_pdfs": archived_pdfs,
+        "restored_originals": restored_originals,
     }
 
 

@@ -152,6 +152,39 @@ def test_import_run_is_idempotent(tmp_path: Path) -> None:
     assert len(list((vault / "pdfs").glob("*.pdf"))) == 1
 
 
+def test_import_labs_archives_matched_pdfs_and_leaves_unmatched_in_staging(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_fixture_copy("sample_scholar_labs_export.json", exports / "sample.json")
+    matched_pdf = staging / "match.pdf"
+    unmatched_pdf = staging / "unmatched.pdf"
+    _write_pdf_with_title(matched_pdf, "Evaluating Retrieval Augmented Generation Systems")
+    _write_pdf_with_title(unmatched_pdf, "Completely Different Source")
+
+    summary = import_scholar_labs_run(
+        vault,
+        export_path,
+        staging,
+        commit=True,
+        archive_matched=True,
+    )
+    manifest = _manifest_yaml(vault, str(summary["run"]))
+
+    assert summary["archived"] == 1
+    assert not matched_pdf.exists()
+    assert unmatched_pdf.exists()
+    accepted = [entry for entry in manifest["entries"] if entry.get("decision") == "accepted"]
+    assert len(accepted) == 1
+    assert accepted[0]["moved"] is True
+    assert accepted[0]["archived_original_path"] is not None
+    assert (vault / accepted[0]["archived_original_path"]).exists()
+
+
 def test_accepted_match_copies_pdf_and_manifest_records_it(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     staging = tmp_path / "staging"
@@ -197,6 +230,33 @@ def test_undo_archives_created_state_and_preserves_staging_original(tmp_path: Pa
     assert not (vault / "runs" / run_id).exists()
     assert pdf_path.exists()
     assert list((vault / "raw" / "imported" / "undo-archive" / run_id / "papers").glob("*.md"))
+
+
+def test_undo_restores_archived_original_for_import_labs_flow(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_fixture_copy("sample_scholar_labs_export.json", exports / "sample.json")
+    pdf_path = staging / "match.pdf"
+    _write_pdf_with_title(pdf_path, "Evaluating Retrieval Augmented Generation Systems")
+
+    summary = import_scholar_labs_run(
+        vault,
+        export_path,
+        staging,
+        commit=True,
+        archive_matched=True,
+    )
+    run_id = str(summary["run"])
+
+    assert not pdf_path.exists()
+
+    undo_summary = undo_run(vault, run_id)
+
+    assert undo_summary["restored_originals"] == 1
+    assert pdf_path.exists()
 
 
 def test_import_pdf_creates_stub_card_and_copies_pdf(tmp_path: Path) -> None:
