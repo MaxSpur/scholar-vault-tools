@@ -10,3 +10,4 @@
 - [x] Split the explicit Scholar Labs workflow into `import-labs`, with matched PDFs archived out of staging after verified copy and unmatched PDFs left in place.
 - [x] Move successfully used Scholar Labs JSON exports unchanged into an exports-folder `used/` subfolder while keeping run resume metadata valid.
 - [x] Add a `rerun` shortcut for rescanning an existing run after more PDFs are added to staging.
+- [x] Make `rerun` default to the latest recorded run when `--run` is omitted.

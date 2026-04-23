@@ -37,6 +37,27 @@ def test_best_pdf_match_uses_filename_when_pdf_title_is_journal_header() -> None
     assert decision.reason in {"filename", "text"}
 
 
+def test_best_pdf_match_rejects_single_token_text_overlap_false_positive() -> None:
+    candidate = PdfCandidate(
+        path="/tmp/3440207.pdf",
+        title="CSUR5402-39",
+        doi="10.1145/3440207",
+        text_excerpt=(
+            "A Survey on Trajectory Data Management, Analytics, and Learning\n"
+            "Recent advances in sensor and mobile devices have enabled urban trajectory data."
+        ),
+    )
+
+    decision = best_pdf_match(
+        "Navigating the Sky Together: Investigating Collaboration Dynamics through "
+        "Annotation in an Immersive Learning Environment",
+        [candidate],
+    )
+
+    assert decision.decision == "skip"
+    assert decision.score < 70
+
+
 def test_match_candidate_to_existing_card_by_title() -> None:
     candidate = PdfCandidate(
         path="/tmp/example.pdf",

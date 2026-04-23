@@ -156,7 +156,13 @@ Resume a previous run using the export and staging folder already recorded in `r
 scholar-vault resume --vault ~/Documents/Research/scholar-labs-vault --run 2026-04-22_example-prompt
 ```
 
-Rerun a previous Scholar Labs import after adding more PDFs to the staging folder:
+Rerun the most recent Scholar Labs import after adding more PDFs to the staging folder:
+
+```fish
+scholar-vault rerun --vault ~/Documents/Research/scholar-labs-vault --commit
+```
+
+Rerun a specific run if needed:
 
 ```fish
 scholar-vault rerun --vault ~/Documents/Research/scholar-labs-vault --run 2026-04-22_example-prompt --commit

@@ -968,6 +968,22 @@ def resume_run(
     )
 
 
+def latest_run_id(vault: Path | str) -> str:
+    paths = initialize_vault(vault)
+    manifest_candidates: list[tuple[datetime, str]] = []
+    for manifest in load_import_manifests(paths):
+        manifest_candidates.append((_parse_datetime(manifest.created_at), manifest.run_id))
+    if manifest_candidates:
+        return max(manifest_candidates, key=lambda item: (item[0], item[1]))[1]
+
+    run_candidates = [
+        (_parse_datetime(run.exported_at), run.slug) for run in load_run_records(paths)
+    ]
+    if run_candidates:
+        return max(run_candidates, key=lambda item: (item[0], item[1]))[1]
+    raise ValueError(f"No runs found in vault: {paths.vault}")
+
+
 def _archive_path(base_dir: Path, filename: str) -> Path:
     base_dir.mkdir(parents=True, exist_ok=True)
     destination = base_dir / filename

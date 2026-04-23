@@ -16,6 +16,7 @@ from .importer import (
     import_pdf_dropins,
     import_scholar_labs_run,
     initialize_vault,
+    latest_run_id,
     list_unmatched,
     rebuild_vault,
     reset_vault,
@@ -47,6 +48,13 @@ StagingArg = Annotated[
     typer.Option(..., exists=True, file_okay=False, dir_okay=True, resolve_path=True),
 ]
 RunIdArg = Annotated[str, typer.Option(..., help="Run id, for example 2026-04-22_example-prompt.")]
+OptionalRunIdArg = Annotated[
+    str | None,
+    typer.Option(
+        "--run",
+        help="Run id. If omitted for rerun, the most recent run is used.",
+    ),
+]
 DryRunArg = Annotated[
     bool,
     typer.Option("--dry-run", help="Plan matches without copying PDFs or creating cards."),
@@ -242,22 +250,24 @@ def resume_command(
 @app.command("rerun")
 def rerun_command(
     vault: VaultArg,
-    run: RunIdArg,
+    run: OptionalRunIdArg = None,
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
 ) -> None:
-    summary = resume_run(vault, run, dry_run=dry_run, commit=commit, confirm=_confirm)
+    run_id = run or latest_run_id(vault)
+    summary = resume_run(vault, run_id, dry_run=dry_run, commit=commit, confirm=_confirm)
     _print_run_summary(summary)
 
 
 @app.command("re-run")
 def re_run_command(
     vault: VaultArg,
-    run: RunIdArg,
+    run: OptionalRunIdArg = None,
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
 ) -> None:
-    summary = resume_run(vault, run, dry_run=dry_run, commit=commit, confirm=_confirm)
+    run_id = run or latest_run_id(vault)
+    summary = resume_run(vault, run_id, dry_run=dry_run, commit=commit, confirm=_confirm)
     _print_run_summary(summary)
 
 

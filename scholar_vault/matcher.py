@@ -9,7 +9,7 @@ from pypdf import PdfReader
 from rapidfuzz import fuzz
 
 from .models import MatchDecision, PdfCandidate, SourceCard
-from .sources import DOI_RE, YEAR_RE, infer_year, normalize_doi, normalize_title
+from .sources import DOI_RE, STOPWORDS, YEAR_RE, infer_year, normalize_doi, normalize_title
 
 
 def extract_pdf_text_excerpt(path: Path, *, max_pages: int = 3) -> str:
@@ -96,9 +96,42 @@ def score_title_match(left: str | None, right: str | None) -> int:
     if not normalized_left or not normalized_right:
         return 0
     exact = 100 if normalized_left == normalized_right else 0
-    token_set = fuzz.token_set_ratio(normalized_left, normalized_right)
-    partial = fuzz.partial_ratio(normalized_left, normalized_right)
-    return int(round(max(exact, token_set, partial)))
+    ratio = fuzz.ratio(normalized_left, normalized_right)
+    scores = [exact, ratio]
+    if _has_substantial_containment(normalized_left, normalized_right) or _has_substantial_overlap(
+        normalized_left,
+        normalized_right,
+    ):
+        scores.extend(
+            [
+                fuzz.token_set_ratio(normalized_left, normalized_right),
+                fuzz.partial_ratio(normalized_left, normalized_right),
+            ]
+        )
+    return int(round(max(scores)))
+
+
+def _title_tokens(normalized_text: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", normalized_text)
+        if token not in STOPWORDS and len(token) >= 3
+    }
+
+
+def _has_substantial_overlap(normalized_left: str, normalized_right: str) -> bool:
+    left_tokens = _title_tokens(normalized_left)
+    right_tokens = _title_tokens(normalized_right)
+    if not left_tokens or not right_tokens:
+        return False
+    overlap = left_tokens & right_tokens
+    smaller_count = min(len(left_tokens), len(right_tokens))
+    return len(overlap) >= 2 and len(overlap) / smaller_count >= 0.55
+
+
+def _has_substantial_containment(normalized_left: str, normalized_right: str) -> bool:
+    shorter, longer = sorted([normalized_left, normalized_right], key=len)
+    return len(shorter) >= 24 and shorter in longer
 
 
 def _compact_title(text: str | None) -> str:

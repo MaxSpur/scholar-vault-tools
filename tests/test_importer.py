@@ -11,6 +11,7 @@ from scholar_vault.importer import (
     import_pdf_dropins,
     import_scholar_labs_run,
     initialize_vault,
+    latest_run_id,
     reset_vault,
     resume_run,
     undo_run,
@@ -33,7 +34,13 @@ def _write_pdf_with_title(path: Path, title: str) -> None:
         writer.write(handle)
 
 
-def _write_export(path: Path, result_count: int) -> Path:
+def _write_export(
+    path: Path,
+    result_count: int,
+    *,
+    prompt: str = "retrieval augmented generation evaluation with grounded evidence",
+    exported_at: str = "2026-04-22T16:00:00+02:00",
+) -> Path:
     results = []
     for index in range(result_count):
         results.append(
@@ -59,8 +66,8 @@ def _write_export(path: Path, result_count: int) -> Path:
     payload = {
         "schema_version": "0.2",
         "source": "google_scholar_labs",
-        "exported_at": "2026-04-22T16:00:00+02:00",
-        "prompt": "retrieval augmented generation evaluation with grounded evidence",
+        "exported_at": exported_at,
+        "prompt": prompt,
         "results": results,
     }
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -273,6 +280,37 @@ def test_rerun_updates_existing_run_with_newly_staged_matches(tmp_path: Path) ->
     assert len(cards) == 3
     assert len([result for result in run_yaml["results"] if result["status"] == "selected"]) == 3
     assert list(staging.glob("*.pdf")) == []
+
+
+def test_latest_run_id_uses_most_recent_manifest(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    first_export = _write_export(
+        exports / "first.json",
+        1,
+        prompt="first scholar labs prompt about local archives",
+        exported_at="2026-04-21T16:00:00+02:00",
+    )
+    second_export = _write_export(
+        exports / "second.json",
+        1,
+        prompt="second scholar labs prompt about immersive analytics",
+        exported_at="2026-04-22T16:00:00+02:00",
+    )
+
+    first = import_scholar_labs_run(vault, first_export, staging, commit=True)
+    second = import_scholar_labs_run(vault, second_export, staging, commit=True)
+    first_manifest = _manifest_yaml(vault, str(first["run"]))
+    second_manifest = _manifest_yaml(vault, str(second["run"]))
+    first_manifest["created_at"] = "2026-04-21T10:00:00+02:00"
+    second_manifest["created_at"] = "2026-04-23T10:00:00+02:00"
+    write_yaml(vault / "runs" / str(first["run"]) / "import-manifest.yaml", first_manifest)
+    write_yaml(vault / "runs" / str(second["run"]) / "import-manifest.yaml", second_manifest)
+
+    assert latest_run_id(vault) == second["run"]
 
 
 def test_accepted_match_copies_pdf_and_manifest_records_it(tmp_path: Path) -> None:
