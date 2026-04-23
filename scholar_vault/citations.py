@@ -22,6 +22,7 @@ from .sources import (
     VaultPaths,
     first_author_surname,
     normalize_doi,
+    normalize_title,
     parse_people,
     write_text,
 )
@@ -352,6 +353,112 @@ def rekey_bibtex(raw_bibtex: str, key: str) -> str:
     return re.sub(r"^@\s*([^{]+)\{[^,]+,", rf"@\1{{{key},", raw_bibtex.strip(), count=1)
 
 
+def _author_surnames(authors: list[str]) -> list[str]:
+    surnames: list[str] = []
+    for author in authors:
+        surname = first_author_surname([author])
+        if surname and surname != "source":
+            surnames.append(surname)
+    return surnames
+
+
+def _is_abbreviated_author_list(authors: list[str]) -> bool:
+    if not authors:
+        return True
+    initials = 0
+    for author in authors:
+        tokens = [token for token in re.split(r"\s+", author.replace(".", " ").strip()) if token]
+        if len(tokens) >= 2 and all(len(token) <= 2 for token in tokens[:-1]):
+            initials += 1
+    return initials >= max(1, len(authors) - 1)
+
+
+def _is_preview_venue(value: str | None) -> bool:
+    if not value:
+        return True
+    stripped = value.strip()
+    return "…" in stripped or "..." in stripped or bool(re.search(r",\s*(19|20)\d{2}$", stripped))
+
+
+def _is_scholar_citation_url(value: str | None) -> bool:
+    if not value:
+        return True
+    parsed = urllib.parse.urlparse(value)
+    host = parsed.netloc.lower()
+    return (
+        "scholar.google" in host
+        and ("scholar.bib" in parsed.path or "output=citation" in parsed.query)
+    )
+
+
+def _candidate_is_consistent(card: SourceCard, candidate: CitationCandidate) -> bool:
+    if not candidate.title:
+        return False
+    if card.doi and candidate.doi and normalize_doi(card.doi) != normalize_doi(candidate.doi):
+        return False
+    return candidate.score >= 88
+
+
+def _promote_metadata_from_candidate(card: SourceCard, candidate: CitationCandidate) -> bool:
+    if not _candidate_is_consistent(card, candidate):
+        return False
+
+    changed = False
+    if candidate.title and normalize_title(candidate.title) == normalize_title(card.title):
+        if candidate.title != card.title:
+            card.title = candidate.title
+            changed = True
+
+    if candidate.authors:
+        current_surnames = _author_surnames(card.authors)
+        candidate_surnames = _author_surnames(candidate.authors)
+        same_surnames = (
+            current_surnames
+            and candidate_surnames
+            and current_surnames[: len(candidate_surnames)] == candidate_surnames
+        )
+        if not card.authors or _is_abbreviated_author_list(card.authors) or same_surnames:
+            if card.authors != candidate.authors:
+                card.authors = candidate.authors
+                changed = True
+
+    if candidate.year and not card.year:
+        card.year = candidate.year
+        changed = True
+
+    if candidate.venue and (
+        _is_preview_venue(card.venue)
+        or normalize_title(candidate.venue) == normalize_title(card.venue)
+        or (card.venue is not None and len(candidate.venue) > len(card.venue))
+    ):
+        if candidate.venue != card.venue:
+            card.venue = candidate.venue
+            changed = True
+
+    if candidate.url and _is_scholar_citation_url(card.url):
+        if candidate.url != card.url:
+            card.url = candidate.url
+            changed = True
+
+    return changed
+
+
+def _finalize_citation_success(
+    card: SourceCard,
+    *,
+    checked_at: str,
+    candidates: list[CitationCandidate],
+) -> None:
+    if card.doi_status in {"missing", "detected"}:
+        card.doi_status = "resolved"
+    card.citation_status = "verified" if _strong_consistency(card, candidates) else "generated"
+    card.citation_source = "doi"
+    card.citation_enriched_at = checked_at
+    card.citation_last_checked = checked_at
+    card.citation_input_fingerprint = card_fingerprint(card)
+    card.citation_skip_reason = None
+
+
 def _http_json(url: str, cache_path: Path, refresh: bool) -> dict[str, Any] | list[Any] | None:
     if cache_path.exists() and not refresh:
         return json.loads(cache_path.read_text(encoding="utf-8"))
@@ -451,6 +558,7 @@ def enrich_card(
             card.doi_status = "resolved"
             card.doi_source = best.source
             card.doi_confidence = best.score / 100
+            _promote_metadata_from_candidate(card, best)
             doi = best.doi
         elif best and ambiguous:
             card.doi_status = "ambiguous"
@@ -481,24 +589,14 @@ def enrich_card(
         if csl_json:
             try:
                 csl = json.loads(csl_json)
-                if csl.get("title") and not card.url:
-                    card.url = csl.get("URL")
                 csl_candidate = _csl_candidate(csl, card)
                 if csl_candidate:
                     candidates.append(csl_candidate)
+                    _promote_metadata_from_candidate(card, csl_candidate)
             except json.JSONDecodeError:
                 pass
         if raw_bibtex or card.title:
-            if card.doi_status in {"missing", "detected"}:
-                card.doi_status = "resolved"
-            card.citation_status = (
-                "verified" if _strong_consistency(card, candidates) else "generated"
-            )
-            card.citation_source = "doi"
-            card.citation_enriched_at = checked_at
-            card.citation_last_checked = checked_at
-            card.citation_input_fingerprint = fingerprint
-            card.citation_skip_reason = None
+            _finalize_citation_success(card, checked_at=checked_at, candidates=candidates)
             return EnrichmentResult(
                 card.citekey or card.slug,
                 card.citation_status,
@@ -514,13 +612,14 @@ def enrich_card(
         if isinstance(datacite_payload, dict):
             datacite = datacite_candidate(datacite_payload, card)
             if datacite and datacite.score >= 88:
+                _promote_metadata_from_candidate(card, datacite)
                 card.doi_status = "resolved"
                 card.doi_source = card.doi_source or "datacite"
                 card.citation_status = "generated"
                 card.citation_source = "datacite"
                 card.citation_enriched_at = checked_at
                 card.citation_last_checked = checked_at
-                card.citation_input_fingerprint = fingerprint
+                card.citation_input_fingerprint = card_fingerprint(card)
                 card.citation_skip_reason = None
                 return EnrichmentResult(
                     card.citekey or card.slug,

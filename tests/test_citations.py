@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from scholar_vault.bibtex import write_library_bib
@@ -94,6 +95,65 @@ def test_bibtex_generation_normalizes_key_and_includes_pdf_note_topics() -> None
     rendered = normalize_bibtex_for_card(card, raw)
 
     assert "@article{smith2024rag," in rendered
+
+
+def test_doi_csl_promotes_canonical_venue_and_metadata(tmp_path: Path) -> None:
+    paths = VaultPaths.from_root(tmp_path / "vault")
+    paths.ensure()
+    card = SourceCard(
+        slug="jackson2024workspaceguardianinvestigatingawarenesspersonal",
+        citekey="jackson2024workspaceguardianinvestigatingawarenesspersonal",
+        title=(
+            "Workspace guardian: Investigating awareness of personal workspace between "
+            "co-located augmented reality users"
+        ),
+        authors=["B Jackson", "L Lor", "BC Heggeseth"],
+        year=2024,
+        venue="IEEE Transactions on …, 2024",
+        doi="10.1109/tvcg.2024.3372073",
+        url="https://scholar.googleusercontent.com/scholar.bib?q=info:o_l28irQlOwJ:scholar.google.com/&output=citation",
+        citation_status="verified",
+    )
+    csl = {
+        "title": (
+            "Workspace Guardian: Investigating Awareness of Personal Workspace Between "
+            "Co-Located Augmented Reality Users"
+        ),
+        "container-title": "IEEE Transactions on Visualization and Computer Graphics",
+        "issued": {"date-parts": [[2024, 5]]},
+        "DOI": "10.1109/tvcg.2024.3372073",
+        "URL": "http://dx.doi.org/10.1109/tvcg.2024.3372073",
+        "author": [
+            {"given": "Bret", "family": "Jackson"},
+            {"given": "Linda", "family": "Lor"},
+            {"given": "Brianna C.", "family": "Heggeseth"},
+        ],
+    }
+
+    def fake_text(url: str, cache_path: Path, refresh: bool, headers: dict[str, str]) -> str | None:
+        del url, refresh
+        accept = headers.get("Accept")
+        if accept == "application/vnd.citationstyles.csl+json":
+            cache_path.write_text(json.dumps(csl), encoding="utf-8")
+            return json.dumps(csl)
+        if accept == "application/x-bibtex":
+            return "@article{Jackson_2024, title={Workspace Guardian}}"
+        return None
+
+    result = enrich_card(
+        paths,
+        card,
+        EnrichmentOptions(refresh=True),
+        fetch_json=lambda *_args: None,
+        fetch_text=fake_text,
+    )
+
+    assert result.status == "verified"
+    assert card.title == csl["title"]
+    assert card.authors == ["Bret Jackson", "Linda Lor", "Brianna C. Heggeseth"]
+    assert card.venue == "IEEE Transactions on Visualization and Computer Graphics"
+    assert card.url == "http://dx.doi.org/10.1109/tvcg.2024.3372073"
+    assert card.citation_input_fingerprint == card_fingerprint(card)
 
 
 def test_idempotent_second_run_skips_unchanged_generated_card() -> None:

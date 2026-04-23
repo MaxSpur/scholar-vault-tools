@@ -12,3 +12,4 @@
 - [x] Add a `rerun` shortcut for rescanning an existing run after more PDFs are added to staging.
 - [x] Make `rerun` default to the latest recorded run when `--run` is omitted.
 - [x] Add canonical-card DOI and BibTeX enrichment with cached provider responses, skip rules, fingerprints, and generated-only BibTeX export.
+- [x] Promote trusted DOI metadata into canonical paper card fields so venues/authors/titles are not left as Scholar preview strings.
