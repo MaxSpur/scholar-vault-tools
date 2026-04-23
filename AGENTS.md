@@ -27,6 +27,8 @@
 - Keep run IDs stable for idempotence. Use `note_file`, the run `title` field, `--title`, `rename-run`, or an Obsidian filename rename to change Obsidian-facing run note names.
 - `enrich-citations` must process canonical `papers/*.md` cards only. Do not enrich run candidates directly.
 - Citation enrichment should preserve Scholar Labs summaries, rationale, provenance, and topics. Respect `metadata_lock: true`, `citation_status: verified`, fingerprints, and retry limits unless the user passes the explicit override flags.
+- Abstract enrichment is part of `enrich-citations` but only runs when `--abstracts`, `--only missing-abstract`, or `--refresh-abstracts` is passed. Treat abstracts as separate metadata from Scholar Labs summaries.
+- Preserve non-empty manual abstracts and `abstract_lock: true` records unless the user explicitly passes `--force`. Use `--refresh-abstracts` for deliberate provider upgrades such as replacing `pdf_extracted` with Crossref.
 - Keep raw citation provider responses under `raw/metadata/<citekey>/` and use cached responses before making repeated remote requests.
 - Keep generated Markdown Obsidian-safe: YAML frontmatter, plain links, no plugin-only syntax.
 - Maintain idempotence for import commands and rebuilds.

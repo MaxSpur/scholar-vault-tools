@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import os
 import re
@@ -13,6 +14,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
+
+from rapidfuzz import fuzz
 
 from .bibtex import card_to_bibtex
 from .matcher import extract_pdf_text_excerpt, read_pdf_metadata, score_title_match
@@ -27,13 +30,21 @@ from .sources import (
     write_text,
 )
 
-OnlyMode = Literal["all", "missing-doi", "missing-bibtex"]
+OnlyMode = Literal["all", "missing-doi", "missing-bibtex", "missing-abstract"]
 FetchJson = Callable[[str, Path, bool], dict[str, Any] | list[Any] | None]
 FetchText = Callable[[str, Path, bool, dict[str, str]], str | None]
 
 GENERATED_CITATION_STATUSES = {"generated", "verified"}
 FAILED_CITATION_STATUSES = {"ambiguous", "unresolved"}
 MAX_RETRIES = 3
+ABSTRACT_SOURCE_RANK = {
+    "pdf_extracted": 1,
+    "openalex_reconstructed": 2,
+    "datacite": 3,
+    "europepmc": 4,
+    "crossref": 5,
+    "manual": 6,
+}
 
 
 @dataclass(frozen=True)
@@ -41,6 +52,8 @@ class EnrichmentOptions:
     only: OnlyMode = "all"
     citekey: str | None = None
     refresh: bool = False
+    abstracts: bool = False
+    refresh_abstracts: bool = False
     retry_failed: bool = False
     dry_run: bool = False
     force: bool = False
@@ -57,6 +70,15 @@ class CitationCandidate:
     source: str = ""
     raw: dict[str, Any] | None = None
     score: int = 0
+
+
+@dataclass(frozen=True)
+class AbstractCandidate:
+    text: str
+    source: str
+    source_url: str | None = None
+    confidence: float = 0.0
+    metadata: CitationCandidate | None = None
 
 
 @dataclass(frozen=True)
@@ -88,6 +110,19 @@ def card_fingerprint(card: SourceCard) -> str:
         "venue": card.venue,
         "doi": normalize_doi(card.doi),
         "url": card.url,
+        "pdf": card.pdf,
+    }
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def abstract_fingerprint(card: SourceCard) -> str:
+    payload = {
+        "title": card.title,
+        "authors": card.authors or None,
+        "authors_preview": card.authors_preview,
+        "year": card.year,
+        "doi": normalize_doi(card.doi),
         "pdf": card.pdf,
     }
     encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
@@ -131,6 +166,40 @@ def should_skip_card(card: SourceCard, options: EnrichmentOptions) -> str | None
     return None
 
 
+def should_skip_abstract_card(card: SourceCard, options: EnrichmentOptions) -> str | None:
+    fingerprint = abstract_fingerprint(card)
+    if options.citekey and card.citekey != options.citekey:
+        return "citekey filter"
+    if card.metadata_lock and not options.force:
+        return "metadata_lock"
+    if (card.abstract_lock or card.abstract_status == "manual_lock") and not options.force:
+        return "abstract_lock"
+    if _has_manual_abstract(card) and not options.force:
+        return "manual abstract"
+    if (
+        options.only == "missing-abstract"
+        and card.abstract
+        and card.abstract_status in {"resolved", "verified"}
+        and not options.refresh_abstracts
+    ):
+        return "abstract present"
+    if (
+        card.abstract_status in {"resolved", "verified"}
+        and card.abstract
+        and card.abstract_input_fingerprint == fingerprint
+        and not options.refresh_abstracts
+    ):
+        return "abstract fingerprint unchanged"
+    if (
+        card.abstract_status in {"ambiguous", "unresolved"}
+        and card.abstract_input_fingerprint == fingerprint
+        and not options.retry_failed
+        and not options.refresh_abstracts
+    ):
+        return "abstract previously failed"
+    return None
+
+
 def metadata_dir(paths: VaultPaths, card: SourceCard) -> Path:
     key = card.citekey or card.slug
     return paths.raw_metadata / key
@@ -166,6 +235,119 @@ def detect_local_doi(paths: VaultPaths, card: SourceCard) -> tuple[str | None, s
         if doi:
             return doi, source, confidence
     return None, None, 0.0
+
+
+def _has_manual_abstract(card: SourceCard) -> bool:
+    if not card.abstract:
+        return False
+    if card.abstract_lock or card.abstract_status == "manual_lock":
+        return True
+    return not card.abstract_source
+
+
+def clean_provider_abstract(value: str | None) -> str:
+    if not value:
+        return ""
+    cleaned = html.unescape(value)
+    cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)
+    return cleaned
+
+
+def reconstruct_openalex_abstract(inverted_index: dict[str, Any] | None) -> str:
+    if not inverted_index:
+        return ""
+    positioned: list[tuple[int, str]] = []
+    for token, positions in inverted_index.items():
+        if not isinstance(positions, list):
+            continue
+        for position in positions:
+            if isinstance(position, int):
+                positioned.append((position, token))
+    if not positioned:
+        return ""
+    words = [token for _, token in sorted(positioned)]
+    return clean_provider_abstract(" ".join(words))
+
+
+def extract_pdf_abstract(text: str | None) -> str:
+    if not text:
+        return ""
+    normalized = text.replace("\r\n", "\n")
+    match = re.search(r"(?im)^\s*(abstract|summary)\s*[:—-]?\s*$", normalized)
+    if not match:
+        match = re.search(r"(?im)\babstract\s*[:—-]\s+", normalized)
+    if not match:
+        return ""
+
+    start = match.end()
+    remaining = normalized[start:]
+    stop = re.search(
+        r"(?im)^\s*(keywords?|index terms|introduction|1\.?\s+introduction|i\.?\s+introduction|"
+        r"\d+\s+[A-Z][A-Za-z ]{2,}|references)\b",
+        remaining,
+    )
+    excerpt = remaining[: stop.start()] if stop else remaining
+    cleaned = clean_provider_abstract(excerpt)
+    if len(cleaned.split()) < 20:
+        return ""
+    return cleaned
+
+
+def _abstract_rank(source: str | None) -> int:
+    return ABSTRACT_SOURCE_RANK.get((source or "").casefold(), 0)
+
+
+def _abstracts_materially_disagree(left: str, right: str) -> bool:
+    left_norm = normalize_title(left)
+    right_norm = normalize_title(right)
+    if len(left_norm) < 80 or len(right_norm) < 80:
+        return False
+    if left_norm in right_norm or right_norm in left_norm:
+        return False
+    return fuzz.token_set_ratio(left_norm, right_norm) < 65
+
+
+def _abstract_metadata_consistent(card: SourceCard, candidate: CitationCandidate | None) -> bool:
+    if candidate is None:
+        return True
+    if card.doi and candidate.doi and normalize_doi(card.doi) != normalize_doi(candidate.doi):
+        return False
+    if candidate.doi and card.doi and normalize_doi(candidate.doi) == normalize_doi(card.doi):
+        return candidate.score >= 70
+    return candidate.score >= 88
+
+
+def _best_abstract_candidate(
+    card: SourceCard,
+    candidates: list[AbstractCandidate],
+) -> tuple[AbstractCandidate | None, bool]:
+    consistent = [
+        candidate
+        for candidate in candidates
+        if candidate.text and _abstract_metadata_consistent(card, candidate.metadata)
+    ]
+    if not consistent:
+        return None, False
+    ranked = sorted(
+        consistent,
+        key=lambda candidate: (
+            _abstract_rank(candidate.source),
+            candidate.confidence,
+            len(candidate.text),
+        ),
+        reverse=True,
+    )
+    best = ranked[0]
+    for other in ranked[1:]:
+        if (
+            (_abstract_rank(best.source) >= 4 or best.confidence >= 0.94)
+            and (_abstract_rank(other.source) >= 4 or other.confidence >= 0.94)
+            and _abstracts_materially_disagree(best.text, other.text)
+        ):
+            return best, True
+    return best, False
 
 
 def _first_author(card: SourceCard) -> str | None:
@@ -312,6 +494,169 @@ def europepmc_candidates(payload: dict[str, Any], card: SourceCard) -> list[Cita
                 )
             )
     return sorted(candidates, key=lambda item: item.score, reverse=True)
+
+
+def _crossref_item_candidate(item: dict[str, Any], card: SourceCard) -> CitationCandidate | None:
+    titles = item.get("title") or []
+    title = str(titles[0]) if titles else ""
+    if not title:
+        return None
+    authors = []
+    for author in item.get("author") or []:
+        name = " ".join(
+            part for part in [author.get("given"), author.get("family")] if part
+        ).strip()
+        if name:
+            authors.append(name)
+    year = _date_parts_year(
+        item.get("published-print")
+        or item.get("published-online")
+        or item.get("published")
+        or item.get("issued")
+    )
+    candidate = CitationCandidate(
+        doi=normalize_doi(item.get("DOI")),
+        title=title,
+        authors=authors,
+        year=year,
+        venue=(item.get("container-title") or [None])[0],
+        url=item.get("URL"),
+        source="crossref",
+        raw=item,
+    )
+    return candidate.__class__(
+        **{**candidate.__dict__, "score": score_metadata_candidate(card, candidate)}
+    )
+
+
+def crossref_abstract_candidates(
+    payload: dict[str, Any],
+    card: SourceCard,
+) -> list[AbstractCandidate]:
+    message = payload.get("message") or {}
+    items = message.get("items") if isinstance(message, dict) else None
+    raw_items = items if isinstance(items, list) else [message]
+    candidates: list[AbstractCandidate] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        abstract = clean_provider_abstract(item.get("abstract"))
+        if not abstract:
+            continue
+        metadata = _crossref_item_candidate(item, card)
+        if metadata is None:
+            continue
+        candidates.append(
+            AbstractCandidate(
+                text=abstract,
+                source="crossref",
+                source_url=item.get("URL"),
+                confidence=min(1.0, max(metadata.score / 100, 0.9 if card.doi else 0.0)),
+                metadata=metadata,
+            )
+        )
+    return candidates
+
+
+def europepmc_abstract_candidates(
+    payload: dict[str, Any],
+    card: SourceCard,
+) -> list[AbstractCandidate]:
+    candidates: list[AbstractCandidate] = []
+    for metadata in europepmc_candidates(payload, card):
+        item = metadata.raw or {}
+        abstract = clean_provider_abstract(item.get("abstractText"))
+        if not abstract:
+            continue
+        candidates.append(
+            AbstractCandidate(
+                text=abstract,
+                source="europepmc",
+                source_url=metadata.url,
+                confidence=metadata.score / 100,
+                metadata=metadata,
+            )
+        )
+    return candidates
+
+
+def openalex_abstract_candidates(
+    payload: dict[str, Any],
+    card: SourceCard,
+) -> list[AbstractCandidate]:
+    raw_items = payload.get("results") if isinstance(payload.get("results"), list) else [payload]
+    candidates: list[AbstractCandidate] = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        abstract = reconstruct_openalex_abstract(item.get("abstract_inverted_index"))
+        if not abstract:
+            continue
+        title = item.get("title") or item.get("display_name") or ""
+        authors = [
+            authorship.get("author", {}).get("display_name", "")
+            for authorship in item.get("authorships") or []
+        ]
+        authors = [author for author in authors if author]
+        primary_location = item.get("primary_location") or {}
+        source = primary_location.get("source") or {}
+        metadata = CitationCandidate(
+            doi=normalize_doi(item.get("doi")),
+            title=title,
+            authors=authors,
+            year=item.get("publication_year"),
+            venue=source.get("display_name"),
+            url=primary_location.get("landing_page_url") or item.get("id"),
+            source="openalex",
+            raw=item,
+        )
+        metadata = metadata.__class__(
+            **{**metadata.__dict__, "score": score_metadata_candidate(card, metadata)}
+        )
+        candidates.append(
+            AbstractCandidate(
+                text=abstract,
+                source="openalex_reconstructed",
+                source_url=metadata.url,
+                confidence=metadata.score / 100,
+                metadata=metadata,
+            )
+        )
+    return candidates
+
+
+def datacite_abstract_candidates(
+    payload: dict[str, Any],
+    card: SourceCard,
+) -> list[AbstractCandidate]:
+    metadata = datacite_candidate(payload, card)
+    if metadata is None:
+        return []
+    data = payload.get("data") or {}
+    attributes = data.get("attributes") or {}
+    descriptions = attributes.get("descriptions") or []
+    chosen = ""
+    for description in descriptions:
+        if not isinstance(description, dict):
+            continue
+        value = clean_provider_abstract(description.get("description"))
+        if not value:
+            continue
+        if (description.get("descriptionType") or "").casefold() == "abstract":
+            chosen = value
+            break
+        chosen = chosen or value
+    if not chosen:
+        return []
+    return [
+        AbstractCandidate(
+            text=chosen,
+            source="datacite",
+            source_url=attributes.get("url"),
+            confidence=metadata.score / 100,
+            metadata=metadata,
+        )
+    ]
 
 
 def _safe_int(value: object) -> int | None:
@@ -491,6 +836,198 @@ def _http_text(url: str, cache_path: Path, refresh: bool, headers: dict[str, str
     return None
 
 
+def _record_detected_doi(card: SourceCard, doi: str, source: str | None, confidence: float) -> None:
+    if not card.doi:
+        card.doi = doi
+        card.doi_status = "detected"
+        card.doi_source = source
+        card.doi_confidence = confidence
+    elif card.doi_status == "missing":
+        card.doi_status = "detected"
+        card.doi_source = source
+        card.doi_confidence = confidence
+
+
+def _record_resolved_doi_from_abstract(card: SourceCard, candidate: AbstractCandidate) -> None:
+    metadata = candidate.metadata
+    if not metadata or not metadata.doi:
+        return
+    doi = normalize_doi(metadata.doi)
+    if not doi:
+        return
+    if not card.doi:
+        card.doi = doi
+    if normalize_doi(card.doi) == doi:
+        card.doi_status = "resolved"
+        card.doi_source = card.doi_source or candidate.source
+        card.doi_confidence = max(card.doi_confidence or 0.0, candidate.confidence)
+
+
+def _accept_abstract_candidate(
+    card: SourceCard,
+    candidate: AbstractCandidate,
+    *,
+    checked_at: str,
+) -> None:
+    _record_resolved_doi_from_abstract(card, candidate)
+    if candidate.metadata:
+        _promote_metadata_from_candidate(card, candidate.metadata)
+    card.abstract = candidate.text
+    card.abstract_status = "verified" if candidate.confidence >= 0.94 else "resolved"
+    card.abstract_source = candidate.source
+    card.abstract_source_url = candidate.source_url
+    card.abstract_confidence = round(candidate.confidence, 3)
+    card.abstract_last_checked = checked_at
+    card.abstract_enriched_at = checked_at
+    card.abstract_input_fingerprint = abstract_fingerprint(card)
+
+
+def _existing_abstract_blocks_candidate(
+    card: SourceCard,
+    candidate: AbstractCandidate,
+    *,
+    refresh: bool,
+) -> bool:
+    if not card.abstract:
+        return False
+    if _has_manual_abstract(card):
+        return True
+    existing_rank = _abstract_rank(card.abstract_source)
+    candidate_rank = _abstract_rank(candidate.source)
+    if existing_rank >= candidate_rank:
+        return not refresh or not _abstracts_materially_disagree(card.abstract, candidate.text)
+    return False
+
+
+def enrich_abstract_card(
+    paths: VaultPaths,
+    card: SourceCard,
+    options: EnrichmentOptions,
+    *,
+    fetch_json: FetchJson = _http_json,
+) -> EnrichmentResult:
+    skip_reason = should_skip_abstract_card(card, options)
+    if skip_reason:
+        return EnrichmentResult(card.citekey or card.slug, "skipped", skip_reason, skipped=True)
+
+    checked_at = now_iso()
+    cache_refresh = (
+        options.refresh_abstracts
+        or options.retry_failed
+        or card.abstract_input_fingerprint != abstract_fingerprint(card)
+    )
+    work_dir = metadata_dir(paths, card)
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    doi, doi_source, doi_confidence = detect_local_doi(paths, card)
+    if doi:
+        _record_detected_doi(card, doi, doi_source, doi_confidence)
+
+    candidates: list[AbstractCandidate] = []
+    if card.doi:
+        crossref_payload = fetch_json(
+            _crossref_work_url(card.doi),
+            work_dir / "crossref.json",
+            cache_refresh,
+        )
+        if isinstance(crossref_payload, dict):
+            candidates.extend(crossref_abstract_candidates(crossref_payload, card))
+    else:
+        crossref_payload = fetch_json(
+            _crossref_url(card),
+            work_dir / "crossref.json",
+            cache_refresh,
+        )
+        if isinstance(crossref_payload, dict):
+            candidates.extend(crossref_abstract_candidates(crossref_payload, card))
+
+    # OpenAlex is useful corroboration for DOI records and fallback when Crossref lacks an abstract.
+    if card.doi or not candidates:
+        openalex_payload = fetch_json(
+            _openalex_abstract_url(card),
+            work_dir / "openalex.json",
+            cache_refresh,
+        )
+        if isinstance(openalex_payload, dict):
+            candidates.extend(openalex_abstract_candidates(openalex_payload, card))
+
+    if not candidates:
+        europepmc_payload = fetch_json(
+            _europepmc_abstract_url(card),
+            work_dir / "europepmc.json",
+            cache_refresh,
+        )
+        if isinstance(europepmc_payload, dict):
+            candidates.extend(europepmc_abstract_candidates(europepmc_payload, card))
+
+    if card.doi and not candidates:
+        datacite_payload = fetch_json(
+            f"https://api.datacite.org/dois/{urllib.parse.quote(card.doi)}",
+            work_dir / "datacite.json",
+            cache_refresh,
+        )
+        if isinstance(datacite_payload, dict):
+            candidates.extend(datacite_abstract_candidates(datacite_payload, card))
+
+    if not candidates:
+        pdf_path = _card_pdf_path(paths, card)
+        if pdf_path:
+            pdf_abstract = extract_pdf_abstract(extract_pdf_text_excerpt(pdf_path))
+            if pdf_abstract:
+                candidates.append(
+                    AbstractCandidate(
+                        text=pdf_abstract,
+                        source="pdf_extracted",
+                        source_url=card.pdf,
+                        confidence=0.6,
+                    )
+                )
+
+    best, ambiguous = _best_abstract_candidate(card, candidates)
+    if ambiguous and best:
+        card.abstract_status = "ambiguous"
+        card.abstract_last_checked = checked_at
+        card.abstract_input_fingerprint = abstract_fingerprint(card)
+        return EnrichmentResult(
+            card.citekey or card.slug,
+            "ambiguous",
+            f"ambiguous abstract candidates; best source={best.source}",
+            changed=True,
+        )
+
+    if best:
+        if _existing_abstract_blocks_candidate(
+            card,
+            best,
+            refresh=options.refresh_abstracts,
+        ):
+            card.abstract_last_checked = checked_at
+            card.abstract_input_fingerprint = abstract_fingerprint(card)
+            return EnrichmentResult(
+                card.citekey or card.slug,
+                "skipped",
+                "existing abstract has equal or stronger provenance",
+                skipped=True,
+            )
+        _accept_abstract_candidate(card, best, checked_at=checked_at)
+        return EnrichmentResult(
+            card.citekey or card.slug,
+            card.abstract_status,
+            f"abstract {card.abstract_status} from {best.source}",
+            changed=True,
+        )
+
+    card.abstract_status = "unresolved"
+    card.abstract_last_checked = checked_at
+    card.abstract_input_fingerprint = abstract_fingerprint(card)
+    return EnrichmentResult(
+        card.citekey or card.slug,
+        "unresolved",
+        "no acceptable abstract found",
+        changed=True,
+    )
+
+
 def enrich_card(
     paths: VaultPaths,
     card: SourceCard,
@@ -499,6 +1036,9 @@ def enrich_card(
     fetch_json: FetchJson = _http_json,
     fetch_text: FetchText = _http_text,
 ) -> EnrichmentResult:
+    if options.abstracts:
+        return enrich_abstract_card(paths, card, options, fetch_json=fetch_json)
+
     skip_reason = should_skip_card(card, options)
     if skip_reason:
         card.citation_skip_reason = skip_reason
@@ -693,6 +1233,14 @@ def _crossref_url(card: SourceCard) -> str:
     return "https://api.crossref.org/works?" + urllib.parse.urlencode(params)
 
 
+def _crossref_work_url(doi: str) -> str:
+    params = {"mailto": os.environ.get("SCHOLAR_VAULT_MAILTO", "scholar-vault@example.invalid")}
+    return (
+        f"https://api.crossref.org/works/{urllib.parse.quote(doi)}?"
+        + urllib.parse.urlencode(params)
+    )
+
+
 def _openalex_url(card: SourceCard) -> str:
     query = " ".join(value for value in [card.title, _first_author(card)] if value)
     params = {"search": query, "per-page": "5"}
@@ -703,10 +1251,32 @@ def _openalex_url(card: SourceCard) -> str:
     return "https://api.openalex.org/works?" + urllib.parse.urlencode(params)
 
 
+def _openalex_abstract_url(card: SourceCard) -> str:
+    if card.doi:
+        params = {"filter": f"doi:{normalize_doi(card.doi)}", "per-page": "1"}
+        return "https://api.openalex.org/works?" + urllib.parse.urlencode(params)
+    return _openalex_url(card)
+
+
 def _europepmc_url(card: SourceCard) -> str:
     query = f'TITLE:"{card.title}"'
     if _first_author(card):
         query += f" AND AUTH:{_first_author(card)}"
+    params = {"query": query, "format": "json", "pageSize": "5"}
+    return "https://www.ebi.ac.uk/europepmc/webservices/rest/search?" + urllib.parse.urlencode(
+        params
+    )
+
+
+def _europepmc_abstract_url(card: SourceCard) -> str:
+    if card.doi:
+        query = f'DOI:"{normalize_doi(card.doi)}"'
+    else:
+        query = f'TITLE:"{card.title}"'
+        if _first_author(card):
+            query += f" AND AUTH:{_first_author(card)}"
+        if card.year:
+            query += f" AND PUB_YEAR:{card.year}"
     params = {"query": query, "format": "json", "pageSize": "5"}
     return "https://www.ebi.ac.uk/europepmc/webservices/rest/search?" + urllib.parse.urlencode(
         params

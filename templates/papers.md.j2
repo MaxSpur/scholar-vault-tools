@@ -2,7 +2,7 @@
 
 {% if cards %}
 {% for card in cards -%}
-- [{{ card.title }}](../papers/{{ card.slug }}.md){% if card.year %} ({{ card.year }}){% endif %}{% if card.topics %} | topics: {{ card.topics | join(", ") }}{% endif %}{% if card.pdf %} | pdf: `{{ card.pdf }}`{% endif %}
+- [{{ card.title }}](../papers/{{ card.slug }}.md){% if card.year %} ({{ card.year }}){% endif %} | abstract: `{{ card.abstract_status }}`{% if card.abstract_source %} from `{{ card.abstract_source }}`{% endif %}{% if card.topics %} | topics: {{ card.topics | join(", ") }}{% endif %}{% if card.pdf %} | pdf: `{{ card.pdf }}`{% endif %}
 {% endfor %}
 {% else %}
 No paper cards exist yet.

@@ -100,12 +100,20 @@ OnlyArg = Annotated[
     str,
     typer.Option(
         "--only",
-        help="Limit enrichment: all, missing-doi, or missing-bibtex.",
+        help="Limit enrichment: all, missing-doi, missing-bibtex, or missing-abstract.",
     ),
 ]
 RefreshArg = Annotated[
     bool,
     typer.Option("--refresh", help="Reprocess generated or verified citation metadata."),
+]
+AbstractsArg = Annotated[
+    bool,
+    typer.Option("--abstracts", help="Enrich abstracts instead of the default citation metadata."),
+]
+RefreshAbstractsArg = Annotated[
+    bool,
+    typer.Option("--refresh-abstracts", help="Reprocess resolved or verified abstracts."),
 ]
 RetryFailedArg = Annotated[
     bool,
@@ -265,6 +273,8 @@ def enrich_citations_command(
     citekey: OptionalCitekeyArg = None,
     only: OnlyArg = "all",
     refresh: RefreshArg = False,
+    abstracts: AbstractsArg = False,
+    refresh_abstracts: RefreshAbstractsArg = False,
     retry_failed: RetryFailedArg = False,
     dry_run: DryRunArg = False,
     force: ForceArg = False,
@@ -274,16 +284,26 @@ def enrich_citations_command(
         citekey=citekey,
         only=only,
         refresh=refresh,
+        abstracts=abstracts,
+        refresh_abstracts=refresh_abstracts,
         retry_failed=retry_failed,
         dry_run=dry_run,
         force=force,
     )
-    console.print(
-        f"Enriched citations: processed={summary['processed']}, changed={summary['changed']}, "
-        f"skipped={summary['skipped']}, generated={summary['generated']}, "
-        f"verified={summary['verified']}, ambiguous={summary['ambiguous']}, "
-        f"unresolved={summary['unresolved']}."
-    )
+    if abstracts or refresh_abstracts or only == "missing-abstract":
+        console.print(
+            f"Enriched abstracts: processed={summary['processed']}, changed={summary['changed']}, "
+            f"skipped={summary['skipped']}, resolved={summary['resolved']}, "
+            f"verified={summary['verified']}, ambiguous={summary['ambiguous']}, "
+            f"unresolved={summary['unresolved']}."
+        )
+    else:
+        console.print(
+            f"Enriched citations: processed={summary['processed']}, changed={summary['changed']}, "
+            f"skipped={summary['skipped']}, generated={summary['generated']}, "
+            f"verified={summary['verified']}, ambiguous={summary['ambiguous']}, "
+            f"unresolved={summary['unresolved']}."
+        )
 
 
 @app.command("reset")

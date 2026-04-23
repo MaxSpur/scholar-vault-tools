@@ -60,6 +60,8 @@ def card_to_bibtex(card: SourceCard) -> str | None:
         fields.append(("doi", card.doi))
     if card.url:
         fields.append(("url", card.url))
+    if card.abstract:
+        fields.append(("abstract", card.abstract))
     if card.pdf:
         fields.append(("file", card.pdf))
     if card.topics:

@@ -37,8 +37,9 @@ def test_render_paper_markdown_contains_required_sections() -> None:
 
     rendered = render_paper_markdown(card)
 
-    assert "## Summary" in rendered
-    assert "## Scholar Labs Summaries" in rendered
+    assert "## Abstract" in rendered
+    assert "## Scholar Labs summary" in rendered
+    assert "### Run-specific Scholar Labs summaries" in rendered
     assert "Run-specific summary." in rendered
     assert "## Why this source matters" in rendered
     assert "[pdfs/smith2024rag.pdf](../pdfs/smith2024rag.pdf)" in rendered

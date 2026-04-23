@@ -17,6 +17,14 @@ CitationStatus = Literal[
     "unresolved",
     "manual_lock",
 ]
+AbstractStatus = Literal[
+    "missing",
+    "resolved",
+    "verified",
+    "ambiguous",
+    "unresolved",
+    "manual_lock",
+]
 
 
 class Link(BaseModel):
@@ -141,6 +149,15 @@ class SourceCard(BaseModel):
     citation_retries: int = 0
     citation_skip_reason: str | None = None
     metadata_lock: bool = False
+    abstract: str | None = None
+    abstract_status: AbstractStatus = "missing"
+    abstract_source: str | None = None
+    abstract_source_url: str | None = None
+    abstract_confidence: float | None = None
+    abstract_last_checked: str | None = None
+    abstract_enriched_at: str | None = None
+    abstract_input_fingerprint: str | None = None
+    abstract_lock: bool = False
     links: list[Link] = Field(default_factory=list)
     summary: str = "No summary yet."
     summary_sources: list[SummarySource] = Field(default_factory=list)
@@ -176,6 +193,15 @@ class SourceCard(BaseModel):
             "citation_retries": self.citation_retries,
             "citation_skip_reason": self.citation_skip_reason,
             "metadata_lock": self.metadata_lock,
+            "abstract": self.abstract,
+            "abstract_status": self.abstract_status,
+            "abstract_source": self.abstract_source,
+            "abstract_source_url": self.abstract_source_url,
+            "abstract_confidence": self.abstract_confidence,
+            "abstract_last_checked": self.abstract_last_checked,
+            "abstract_enriched_at": self.abstract_enriched_at,
+            "abstract_input_fingerprint": self.abstract_input_fingerprint,
+            "abstract_lock": self.abstract_lock,
             "links": [link.model_dump(exclude_none=True) for link in self.links],
             "summary_sources": [
                 source.model_dump(exclude_none=True) for source in self.summary_sources

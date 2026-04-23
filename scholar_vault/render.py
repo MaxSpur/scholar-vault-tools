@@ -152,6 +152,7 @@ def render_vault_agents() -> str:
         "- Update topic pages and indexes through `scholar-vault rebuild` after manual edits.\n"
         "- Preserve provenance in `discovered_in` and run pages instead of burying it in notes.\n"
         "- Preserve run-specific Scholar Labs summaries in `summary_sources` on paper cards.\n"
+        "- Keep provider abstracts in `abstract` separate from Scholar Labs summaries.\n"
         "- Do not require Obsidian plugins, Zotero, or a database for normal operation.\n"
     )
 
@@ -160,7 +161,7 @@ def render_zotero_migration() -> str:
     return (
         "# Zotero migration\n\n"
         "When you want Zotero copies later, import `_exports/library.bib` into Zotero.\n\n"
-        "- The exported BibTeX includes DOI, URL, keywords, PDF file paths when known, "
+        "- The exported BibTeX includes DOI, URL, abstracts when known, keywords, PDF file paths, "
         "and note text.\n"
         "- Scholar Labs summaries and rationale bullets are folded into the BibTeX `note` field.\n"
         "- `papers/` remains the canonical archive even after a Zotero import.\n"
@@ -206,6 +207,10 @@ def render_llms_full(
         pdf = card.pdf or "missing"
         topics = ", ".join(card.topics) if card.topics else "none"
         lines.append(f"- {card.title} | papers/{card.slug}.md | topics: {topics} | pdf: {pdf}")
+        lines.append(
+            f"  abstract: status={card.abstract_status}"
+            + (f" source={card.abstract_source}" if card.abstract_source else "")
+        )
         lines.append(f"  summary: {summary}")
     lines.append("")
     lines.append("Candidate Results:")

@@ -1,12 +1,15 @@
 # {{ card.title }}
 
-## Summary
+## Abstract
+{{ card.abstract if card.abstract else "No abstract yet." }}
+
+## Scholar Labs summary
 {{ card.summary }}
 
-## Scholar Labs Summaries
+### Run-specific Scholar Labs summaries
 {% if card.summary_sources %}
 {% for source in card.summary_sources -%}
-### {% if source.run %}[{{ source.run }}](<../{{ source.run }}>){% else %}Imported summary{% endif %}
+#### {% if source.run %}[{{ source.run }}](<../{{ source.run }}>){% else %}Imported summary{% endif %}
 {% if source.prompt %}
 - Prompt: {{ source.prompt }}
 {% endif %}

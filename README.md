@@ -238,7 +238,10 @@ Useful enrichment variants:
 scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --citekey smith2024rag
 scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-doi
 scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-bibtex
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --abstracts
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-abstract
 scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --refresh
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --refresh-abstracts
 scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --retry-failed
 scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --dry-run
 ```
@@ -258,6 +261,34 @@ Interpretation:
 - `unresolved`: no acceptable DOI or citation metadata was found.
 
 Set `metadata_lock: true` in a paper card to prevent automatic metadata overwrites. Use `--refresh` to reprocess generated or verified records, `--retry-failed` to retry unresolved records past the retry limit, and `--force` only when you intentionally want to process locked metadata.
+
+Abstract enrichment is opt-in through the same command:
+
+```fish
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --abstracts
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-abstract
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --citekey smith2024rag --abstracts
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --refresh-abstracts
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --retry-failed --abstracts
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --dry-run --abstracts
+```
+
+The abstract is not the Scholar Labs summary. Scholar Labs summaries explain why the source appeared in a prompt result; abstracts are provider or PDF metadata and are stored separately in `abstract` frontmatter and the `## Abstract` section of each paper card.
+
+Abstract provider order is local DOI detection, Crossref REST metadata, Europe PMC fallback, OpenAlex reconstructed abstracts, DataCite descriptions, then local PDF text extraction. Crossref abstracts may include JATS/XML markup, which the tool strips before writing the card. OpenAlex abstracts are reconstructed from `abstract_inverted_index`. The tool never uses LLM summarization or Scholar Labs summaries as abstracts.
+
+Abstract enrichment writes these fields: `abstract`, `abstract_status`, `abstract_source`, `abstract_source_url`, `abstract_confidence`, `abstract_last_checked`, `abstract_enriched_at`, `abstract_input_fingerprint`, and `abstract_lock`.
+
+Interpretation:
+
+- `missing`: no abstract has been found yet.
+- `resolved`: an abstract was accepted from a provider or local PDF extraction.
+- `verified`: DOI/title/author/year consistency was strong for the accepted abstract source.
+- `ambiguous`: strong sources disagreed or the match was not safe enough to overwrite.
+- `unresolved`: no acceptable abstract was found.
+- `manual_lock`: the abstract should not be changed automatically.
+
+Set `abstract_lock: true` to protect a manually curated abstract. Use `--refresh-abstracts` to deliberately re-check resolved or verified abstracts, including upgrades from weak sources such as `pdf_extracted` to stronger sources such as Crossref. Use `--force` only when you intentionally want to process locked abstract metadata.
 
 Resume a previous run using the export and staging folder already recorded in `runs/<run_id>/index.yaml`:
 

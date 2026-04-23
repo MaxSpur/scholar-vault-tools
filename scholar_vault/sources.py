@@ -459,9 +459,18 @@ def parse_rationale_points(section_text: str) -> list[RationalePoint]:
 def load_source_card(path: Path) -> SourceCard:
     frontmatter, body = read_frontmatter_markdown(path)
     sections = parse_sections(body)
+    abstract_section = sections.get("Abstract", "").strip()
+    if abstract_section and abstract_section != "No abstract yet.":
+        frontmatter["abstract"] = abstract_section
+    summary_section = (
+        sections.get("Scholar Labs summary", "")
+        or sections.get("Scholar Labs Summary", "")
+        or sections.get("Summary", "")
+    )
+    summary_section = re.split(r"(?m)^###\s+", summary_section, maxsplit=1)[0]
     card = SourceCard(
         slug=path.stem,
-        summary=sections.get("Summary", "").strip() or "No summary yet.",
+        summary=summary_section.strip() or "No summary yet.",
         why_this_source_matters=parse_rationale_points(sections.get("Why this source matters", "")),
         notes=sections.get("Notes", "").strip(),
         **frontmatter,

@@ -548,6 +548,7 @@ def _cards_to_csl_json(cards: list[SourceCard]) -> list[dict]:
                 "container-title": card.venue,
                 "DOI": card.doi,
                 "URL": card.url,
+                "abstract": card.abstract,
                 "keyword": ", ".join(card.topics) if card.topics else None,
                 "note": note,
             }
@@ -1600,12 +1601,16 @@ def enrich_citations(
     citekey: str | None = None,
     only: str = "all",
     refresh: bool = False,
+    abstracts: bool = False,
+    refresh_abstracts: bool = False,
     retry_failed: bool = False,
     dry_run: bool = False,
     force: bool = False,
 ) -> dict[str, int]:
-    if only not in {"all", "missing-doi", "missing-bibtex"}:
-        raise ValueError("--only must be one of: missing-doi, missing-bibtex")
+    if only not in {"all", "missing-doi", "missing-bibtex", "missing-abstract"}:
+        raise ValueError("--only must be one of: missing-doi, missing-bibtex, missing-abstract")
+
+    enrich_abstracts = abstracts or refresh_abstracts or only == "missing-abstract"
 
     paths = initialize_vault(vault)
     cards = load_source_cards(paths)
@@ -1613,6 +1618,8 @@ def enrich_citations(
         only=only,  # type: ignore[arg-type]
         citekey=citekey,
         refresh=refresh,
+        abstracts=enrich_abstracts,
+        refresh_abstracts=refresh_abstracts,
         retry_failed=retry_failed,
         dry_run=dry_run,
         force=force,
@@ -1632,7 +1639,15 @@ def enrich_citations(
         "changed": len([result for result in results if result.changed]),
         "skipped": len([result for result in results if result.skipped]),
         "generated": len([result for result in results if result.status == "generated"]),
+        "resolved": len([result for result in results if result.status == "resolved"]),
         "verified": len([result for result in results if result.status == "verified"]),
         "ambiguous": len([result for result in results if result.status == "ambiguous"]),
         "unresolved": len([result for result in results if result.status == "unresolved"]),
+        "abstracts": len(
+            [
+                result
+                for result in results
+                if enrich_abstracts and result.status in {"resolved", "verified"}
+            ]
+        ),
     }
