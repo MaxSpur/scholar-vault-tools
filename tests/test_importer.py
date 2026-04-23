@@ -12,6 +12,7 @@ from scholar_vault.importer import (
     import_scholar_labs_run,
     initialize_vault,
     latest_run_id,
+    rebuild_vault,
     reset_vault,
     resume_run,
     undo_run,
@@ -70,6 +71,16 @@ def _write_export(
         "prompt": prompt,
         "results": results,
     }
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def _rewrite_export(path: Path, **updates: object) -> Path:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload.update({key: value for key, value in updates.items() if key != "result_updates"})
+    result_updates = updates.get("result_updates")
+    if isinstance(result_updates, dict):
+        payload["results"][0].update(result_updates)
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return path
 
@@ -158,6 +169,126 @@ def test_import_run_is_idempotent(tmp_path: Path) -> None:
     assert len(list((vault / "runs").glob("*"))) == 1
     assert len([result for result in run_yaml["results"] if result["status"] == "selected"]) == 1
     assert len(list((vault / "pdfs").glob("*.pdf"))) == 1
+
+
+def test_repeated_labs_result_adds_run_specific_summary_to_existing_card(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    first_export = _rewrite_export(
+        _write_export(exports / "first.json", 1),
+        prompt="first scholar labs prompt about collaborative immersive analytics",
+        exported_at="2026-04-22T16:00:00+02:00",
+        result_updates={"summary": "First Scholar Labs summary."},
+    )
+    second_export = _rewrite_export(
+        _write_export(exports / "second.json", 1),
+        prompt="second scholar labs prompt about mixed reality workspaces",
+        exported_at="2026-04-23T16:00:00+02:00",
+        result_updates={"summary": "Second Scholar Labs summary."},
+    )
+    _write_pdf_with_title(staging / "paper-1.pdf", "Result Paper 1")
+
+    first = import_scholar_labs_run(
+        vault,
+        first_export,
+        staging,
+        commit=True,
+        archive_matched=True,
+    )
+    second = import_scholar_labs_run(vault, second_export, staging, commit=True)
+
+    cards = load_source_cards(initialize_vault(vault))
+    second_run = _run_yaml(vault, str(second["run"]))
+
+    assert len(cards) == 1
+    assert second["selected"] == 1
+    assert second_run["results"][0]["status"] == "selected"
+    assert second_run["results"][0]["paper_card"] == f"papers/{cards[0].slug}.md"
+    assert [source.summary for source in cards[0].summary_sources] == [
+        "First Scholar Labs summary.",
+        "Second Scholar Labs summary.",
+    ]
+    assert cards[0].summary_sources[0].run == f"runs/{first['run']}/{first['run']}.md"
+    assert cards[0].summary_sources[1].run == f"runs/{second['run']}/{second['run']}.md"
+    assert cards[0].discovered_in == [
+        f"runs/{first['run']}/{first['run']}.md",
+        f"runs/{second['run']}/{second['run']}.md",
+    ]
+
+
+def test_run_markdown_uses_obsidian_friendly_filename(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_export(exports / "sample.json", 1)
+
+    summary = import_scholar_labs_run(vault, export_path, staging, commit=True)
+    run_id = str(summary["run"])
+
+    assert (vault / "runs" / run_id / f"{run_id}.md").exists()
+    assert not (vault / "runs" / run_id / "index.md").exists()
+    assert f"../runs/{run_id}/{run_id}.md" in (
+        vault / "_indexes" / "prompts.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_rebuild_migrates_legacy_run_index_links_and_files(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    run_id = "2026-04-22_legacy-index-run"
+    legacy_ref = f"runs/{run_id}/index.md"
+    named_ref = f"runs/{run_id}/{run_id}.md"
+    run_dir = paths.runs / run_id
+    run_dir.mkdir(parents=True)
+    (run_dir / "index.md").write_text("# Legacy index\n", encoding="utf-8")
+    write_yaml(
+        run_dir / "index.yaml",
+        RunRecord(
+            slug=run_id,
+            date="2026-04-22",
+            prompt="legacy index run",
+            exported_at="2026-04-22T16:00:00+02:00",
+            export_file="/tmp/export.json",
+            raw_export_file="raw/scholar-labs/example.json",
+            result_count=1,
+            results=[
+                RunResultRecord(
+                    rank=1,
+                    title="Legacy Paper",
+                    status="selected",
+                    pdf_status="attached",
+                    paper_card="papers/legacy.md",
+                )
+            ],
+        ).model_dump(exclude_none=True),
+    )
+    card = SourceCard(
+        slug="legacy",
+        citekey="legacy",
+        title="Legacy Paper",
+        source_kind="scholar_labs",
+        discovered_in=[legacy_ref],
+        summary="Legacy run summary.",
+    )
+
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    _save_card(paths, card)
+
+    rebuild_vault(vault)
+
+    migrated = load_source_cards(initialize_vault(vault))[0]
+    assert migrated.discovered_in == [named_ref]
+    assert migrated.summary_sources[0].run == named_ref
+    assert (run_dir / f"{run_id}.md").exists()
+    assert not (run_dir / "index.md").exists()
 
 
 def test_import_labs_archives_matched_pdfs_and_leaves_unmatched_in_staging(

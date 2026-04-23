@@ -3,6 +3,31 @@
 ## Summary
 {{ card.summary }}
 
+## Scholar Labs Summaries
+{% if card.summary_sources %}
+{% for source in card.summary_sources -%}
+### {% if source.run %}[{{ source.run }}](../{{ source.run }}){% else %}Imported summary{% endif %}
+{% if source.prompt %}
+- Prompt: {{ source.prompt }}
+{% endif %}
+{% if source.rank %}
+- Result rank: {{ source.rank }}
+{% endif %}
+
+{{ source.summary }}
+
+{% if source.rationale_points %}
+Rationale from this run:
+{% for point in source.rationale_points -%}
+- {% if point.label %}**{{ point.label }}**: {% endif %}{{ point.text }}
+{% endfor %}
+{% endif %}
+
+{% endfor %}
+{% else %}
+No run-specific summaries captured yet.
+{% endif %}
+
 ## Why this source matters
 {% if card.why_this_source_matters %}
 {% for point in card.why_this_source_matters -%}

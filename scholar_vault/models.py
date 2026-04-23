@@ -35,6 +35,16 @@ class RationalePoint(BaseModel):
     text: str
 
 
+class SummarySource(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    run: str
+    prompt: str | None = None
+    rank: int | None = None
+    summary: str
+    rationale_points: list[RationalePoint] = Field(default_factory=list)
+
+
 class ScholarLabsResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -133,6 +143,7 @@ class SourceCard(BaseModel):
     metadata_lock: bool = False
     links: list[Link] = Field(default_factory=list)
     summary: str = "No summary yet."
+    summary_sources: list[SummarySource] = Field(default_factory=list)
     why_this_source_matters: list[RationalePoint] = Field(default_factory=list)
     notes: str = ""
 
@@ -166,6 +177,9 @@ class SourceCard(BaseModel):
             "citation_skip_reason": self.citation_skip_reason,
             "metadata_lock": self.metadata_lock,
             "links": [link.model_dump(exclude_none=True) for link in self.links],
+            "summary_sources": [
+                source.model_dump(exclude_none=True) for source in self.summary_sources
+            ],
         }
 
 

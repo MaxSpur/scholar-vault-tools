@@ -1,4 +1,11 @@
-from scholar_vault.models import Link, RationalePoint, RunRecord, RunResultRecord, SourceCard
+from scholar_vault.models import (
+    Link,
+    RationalePoint,
+    RunRecord,
+    RunResultRecord,
+    SourceCard,
+    SummarySource,
+)
 from scholar_vault.render import render_paper_markdown, render_run_markdown
 
 
@@ -12,8 +19,16 @@ def test_render_paper_markdown_contains_required_sections() -> None:
         year=2024,
         pdf="pdfs/smith2024rag.pdf",
         source_kind="scholar_labs",
-        discovered_in=["runs/2026-04-22_rag/index.md"],
+        discovered_in=["runs/2026-04-22_rag/2026-04-22_rag.md"],
         summary="Short summary.",
+        summary_sources=[
+            SummarySource(
+                run="runs/2026-04-22_rag/2026-04-22_rag.md",
+                prompt="retrieval augmented generation",
+                rank=1,
+                summary="Run-specific summary.",
+            )
+        ],
         why_this_source_matters=[
             RationalePoint(label="Evaluation", text="Useful evaluation framing.")
         ],
@@ -23,9 +38,14 @@ def test_render_paper_markdown_contains_required_sections() -> None:
     rendered = render_paper_markdown(card)
 
     assert "## Summary" in rendered
+    assert "## Scholar Labs Summaries" in rendered
+    assert "Run-specific summary." in rendered
     assert "## Why this source matters" in rendered
     assert "[pdfs/smith2024rag.pdf](../pdfs/smith2024rag.pdf)" in rendered
-    assert "[runs/2026-04-22_rag/index.md](../runs/2026-04-22_rag/index.md)" in rendered
+    assert (
+        "[runs/2026-04-22_rag/2026-04-22_rag.md]"
+        "(../runs/2026-04-22_rag/2026-04-22_rag.md)" in rendered
+    )
 
 
 def test_render_run_markdown_separates_selected_and_candidate_results() -> None:
@@ -66,6 +86,8 @@ def test_render_run_markdown_separates_selected_and_candidate_results() -> None:
 
     rendered = render_run_markdown(run, {"smith2024rag": card})
 
+    assert "type: scholar_labs_run" in rendered
+    assert "# Scholar Labs Run: 2026-04-22" in rendered
     assert "## Selected Papers" in rendered
     assert "## Candidate And Unmatched Results" in rendered
     assert (

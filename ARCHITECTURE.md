@@ -24,7 +24,7 @@
 ## Canonical Data Model
 
 - Canonical source record: `papers/<slug>.md`
-- Scholar Labs provenance record: `runs/<date>_<prompt-slug>/index.md` and `index.yaml`
+- Scholar Labs provenance record: `runs/<date>_<prompt-slug>/<date>_<prompt-slug>.md` for Obsidian plus `index.yaml` for machine-readable state.
 - Raw inputs: `raw/`
 - Raw citation cache: `raw/metadata/<citekey>/`
 - Derived indexes and exports: `_indexes/`, `_exports/`, `llms.txt`, `llms-full.txt`
@@ -33,7 +33,8 @@
 
 - Match existing cards by DOI first, then Scholar CID, citekey, and exact normalized title.
 - Keep the original `source_kind` on an existing card so enrichment imports do not erase provenance.
-- Prefer existing citekeys, summaries, notes, and discovered runs. Fill missing metadata from new imports.
+- Prefer existing citekeys, primary summaries, notes, and discovered runs. Fill missing metadata from new imports.
+- Preserve every Scholar Labs run-specific summary in `summary_sources` on the canonical card, keyed by the run note path, so repeated appearances of the same paper do not overwrite earlier summaries.
 
 ## Rebuild Strategy
 

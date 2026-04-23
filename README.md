@@ -6,12 +6,73 @@ The vault is designed for plain files, Obsidian compatibility, and agent readabi
 
 ## Install
 
-Use the exact macOS / Fish / Conda workflow below:
+The tool is a Python CLI that you install from this repository into a Conda
+environment. It does not require Zotero, Obsidian plugins, or a database.
+
+### Prerequisites
+
+- macOS with a terminal running Fish.
+- Miniforge or another Conda distribution installed and initialized for Fish.
+- Python 3.12 available through Conda.
+- The project folder at `~/Developer/scholar-vault-tools`.
+- Optional but recommended: Obsidian installed for browsing the generated vault.
+
+### Create Or Activate The Conda Environment
+
+If the `scholar-vault` environment already exists:
 
 ```fish
 conda activate scholar-vault
+```
+
+If you are setting up a new machine, create it first:
+
+```fish
+conda create -n scholar-vault python=3.12
+conda activate scholar-vault
+```
+
+Confirm that the active Python comes from the Conda environment:
+
+```fish
+python --version
+which python
+```
+
+### Install The CLI From This Repository
+
+Move into the project folder and install in editable mode:
+
+```fish
+cd ~/Developer/scholar-vault-tools
+python -m pip install --upgrade pip
 python -m pip install -e .
 ```
+
+Editable mode means local code changes take effect without reinstalling the
+package from scratch. If dependencies change later, run the editable install
+command again:
+
+```fish
+python -m pip install -e .
+```
+
+Verify that the command is on your `PATH`:
+
+```fish
+scholar-vault --help
+```
+
+Run the test suite if you are developing the tool:
+
+```fish
+python -m pytest
+python -m ruff check .
+```
+
+If Fish cannot find `scholar-vault`, confirm that `conda activate
+scholar-vault` succeeded, then reinstall from the repository folder with
+`python -m pip install -e .`.
 
 ## Initialize A Vault
 
@@ -74,10 +135,16 @@ Default Scholar Labs behavior is now selected-only:
 - The raw Scholar Labs export is always preserved under `raw/scholar-labs/`.
 - The run page stores all candidate results from the export.
 - Canonical `papers/*.md` cards are created only for results with matched PDFs.
+- If a later Scholar Labs run returns a paper that already has a canonical card and attached PDF, the run links to the existing card and adds that run's summary to the card instead of creating a duplicate.
 - Candidate results stay on the run page unless you explicitly opt in with `--include-without-pdf`.
 - `import-labs` copies accepted PDFs into `pdfs/`, verifies them, and then archives the matched originals out of staging into `raw/imported/`, leaving only unmatched PDFs in staging.
 - After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder without renaming it, for example `~/Downloads/scholar-labs-exports/used/example.json`. The run metadata is updated so `resume` and `rerun` still know where the export went.
 - `import-run` is the lower-level transactional variant. It copies accepted PDFs into `pdfs/` but leaves staging untouched unless you later run `clean-staging`.
+
+Run notes are written as `runs/<run_id>/<run_id>.md` instead of `index.md`.
+This gives Obsidian Graph meaningful run/prompt nodes. Each run note has
+frontmatter `type: scholar_labs_run` and tag `scholar-vault/run`, so Graph
+groups can color prompts separately from paper cards.
 
 Dry-run the import without creating paper cards or copying PDFs:
 
@@ -249,7 +316,9 @@ scholar-vault reset --vault ~/Documents/Research/scholar-labs-vault --yes
 ## Generated Records
 
 - `papers/*.md`: canonical source cards for selected papers by default.
-- `runs/*/index.md`: per-run provenance pages that keep all Scholar Labs candidate results.
+- `papers/*.md` frontmatter field `summary_sources`: run-specific Scholar Labs summaries linked back to the run note that produced them.
+- `runs/<run_id>/<run_id>.md`: Obsidian-friendly per-run provenance pages that keep all Scholar Labs candidate results.
+- `runs/*/index.yaml`: machine-readable run records used by `resume`, `rerun`, and rebuilds.
 - `runs/*/import-manifest.yaml`: transactional record of proposed matches, decisions, copied PDFs, and created cards.
 - `raw/metadata/<citekey>/`: cached citation provider responses and generated citation artifacts.
 - `topics/*.md`: simple topic pages derived from prompt keywords and rationale labels.

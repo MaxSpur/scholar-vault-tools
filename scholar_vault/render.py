@@ -12,6 +12,10 @@ TEMPLATE_ROOT = Path(__file__).resolve().parent.parent / "templates"
 ENVIRONMENT = Environment(loader=FileSystemLoader(str(TEMPLATE_ROOT)), autoescape=False)
 
 
+def run_note_path(run_slug: str) -> str:
+    return f"runs/{run_slug}/{run_slug}.md"
+
+
 def markdown_link(path: str, label: str) -> str:
     return f"[{label}]({path})"
 
@@ -26,14 +30,28 @@ def render_paper_markdown(card: SourceCard) -> str:
 def render_run_markdown(run: RunRecord, cards_by_slug: dict[str, SourceCard]) -> str:
     template = ENVIRONMENT.get_template("run_index.md.j2")
     card_paths = {slug: f"../../papers/{slug}.md" for slug in cards_by_slug}
-    return (
-        template.render(run=run, cards_by_slug=cards_by_slug, card_paths=card_paths).rstrip() + "\n"
-    )
+    body = template.render(run=run, cards_by_slug=cards_by_slug, card_paths=card_paths).strip()
+    prompt_alias = run.prompt[:90].strip()
+    frontmatter = dump_frontmatter(
+        {
+            "type": "scholar_labs_run",
+            "run_id": run.slug,
+            "date": run.date,
+            "prompt": run.prompt,
+            "result_count": run.result_count,
+            "selected_count": len(
+                [result for result in run.results if result.status == "selected"]
+            ),
+            "tags": ["scholar-vault/run"],
+            "aliases": [f"{run.date} Scholar Labs: {prompt_alias}"],
+        }
+    ).strip()
+    return f"---\n{frontmatter}\n---\n\n{body}\n"
 
 
 def render_prompts_index(runs: list[RunRecord]) -> str:
     template = ENVIRONMENT.get_template("prompts.md.j2")
-    return template.render(runs=runs).rstrip() + "\n"
+    return template.render(runs=runs, run_note_path=run_note_path).rstrip() + "\n"
 
 
 def render_papers_index(cards: list[SourceCard]) -> str:
@@ -65,7 +83,7 @@ def render_missing_pdfs(runs: list[RunRecord]) -> str:
         lines.append("")
         return "\n".join(lines)
     for run, result in missing:
-        run_link = f"../runs/{run.slug}/index.md"
+        run_link = f"../{run_note_path(run.slug)}"
         if result.paper_card:
             lines.append(
                 f"- [{result.title}]({run_link}) "
@@ -118,6 +136,7 @@ def render_vault_agents() -> str:
         "- Keep raw inputs under `raw/` immutable where practical.\n"
         "- Update topic pages and indexes through `scholar-vault rebuild` after manual edits.\n"
         "- Preserve provenance in `discovered_in` and run pages instead of burying it in notes.\n"
+        "- Preserve run-specific Scholar Labs summaries in `summary_sources` on paper cards.\n"
         "- Do not require Obsidian plugins, Zotero, or a database for normal operation.\n"
     )
 
@@ -157,7 +176,7 @@ def render_llms_full(
         selected = len([result for result in run.results if result.status == "selected"])
         candidates = len([result for result in run.results if result.status != "selected"])
         lines.append(
-            f"- {run.date} | {run.prompt} | runs/{run.slug}/index.md | "
+            f"- {run.date} | {run.prompt} | {run_note_path(run.slug)} | "
             f"selected={selected} candidate={candidates}"
         )
     lines.append("")
@@ -179,7 +198,7 @@ def render_llms_full(
             if result.status == "selected":
                 continue
             lines.append(
-                f"- {result.title} | runs/{run.slug}/index.md | "
+                f"- {result.title} | {run_note_path(run.slug)} | "
                 f"status={result.status} | pdf_status={result.pdf_status}"
             )
     lines.append("")

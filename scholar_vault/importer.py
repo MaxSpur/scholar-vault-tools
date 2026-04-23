@@ -28,6 +28,7 @@ from .models import (
     ScholarLabsExport,
     ScholarLabsResult,
     SourceCard,
+    SummarySource,
 )
 from .render import (
     group_cards_by_topic,
@@ -89,8 +90,23 @@ def _run_slug(export: ScholarLabsExport, export_path: Path) -> tuple[str, str]:
     return f"{date}_{prompt_slug}", date
 
 
+def _run_markdown_name(run_id: str) -> str:
+    return f"{run_id}.md"
+
+
 def _run_ref(run_id: str) -> str:
+    return f"runs/{run_id}/{_run_markdown_name(run_id)}"
+
+
+def _legacy_run_ref(run_id: str) -> str:
     return f"runs/{run_id}/index.md"
+
+
+def _normalize_run_ref(ref: str) -> str:
+    parts = Path(ref).parts
+    if len(parts) == 3 and parts[0] == "runs" and parts[2] == "index.md":
+        return _run_ref(parts[1])
+    return ref
 
 
 def _result_key(result: ScholarLabsResult | RunResultRecord) -> str:
@@ -158,6 +174,64 @@ def _merge_rationale(
     return merged
 
 
+def _summary_source_from_result(
+    result: ScholarLabsResult,
+    *,
+    run_ref: str,
+    prompt: str,
+) -> SummarySource | None:
+    summary = clean_markdown_text(result.summary)
+    if not _prefer_existing(summary):
+        return None
+    return SummarySource(
+        run=_normalize_run_ref(run_ref),
+        prompt=prompt,
+        rank=result.rank,
+        summary=summary,
+        rationale_points=result.rationale_points,
+    )
+
+
+def _merge_summary_sources(
+    existing: list[SummarySource],
+    incoming: list[SummarySource],
+) -> list[SummarySource]:
+    merged: list[SummarySource] = []
+    by_run: dict[str, int] = {}
+    seen_without_run: set[str] = set()
+    for source in [*existing, *incoming]:
+        source = source.model_copy(deep=True)
+        source.run = _normalize_run_ref(source.run)
+        source.summary = clean_markdown_text(source.summary)
+        if not _prefer_existing(source.summary):
+            continue
+        if source.run:
+            if source.run in by_run:
+                merged[by_run[source.run]] = source
+            else:
+                by_run[source.run] = len(merged)
+                merged.append(source)
+            continue
+        key = normalize_title(source.summary)
+        if key not in seen_without_run:
+            seen_without_run.add(key)
+            merged.append(source)
+    return merged
+
+
+def _backfill_summary_source_from_card(card: SourceCard) -> list[SummarySource]:
+    if not _prefer_existing(card.summary) or card.summary_sources:
+        return card.summary_sources
+    return [
+        SummarySource(
+            run=_normalize_run_ref(run_ref),
+            summary=card.summary,
+            rationale_points=card.why_this_source_matters,
+        )
+        for run_ref in card.discovered_in
+    ]
+
+
 def _merge_unique(existing: list[str], incoming: list[str]) -> list[str]:
     merged: list[str] = []
     seen: set[str] = set()
@@ -223,6 +297,7 @@ def _new_card_from_result(
     existing_cards: list[SourceCard],
 ) -> SourceCard:
     authors = parse_people(result.authors_preview)
+    summary_source = _summary_source_from_result(result, run_ref=run_ref, prompt=prompt)
     citekey = build_citekey(
         result.title,
         authors,
@@ -250,11 +325,15 @@ def _new_card_from_result(
         citation_status="missing",
         links=result.links,
         summary=clean_markdown_text(result.summary) or "No summary yet.",
+        summary_sources=[summary_source] if summary_source else [],
         why_this_source_matters=result.rationale_points,
     )
 
 
 def _merge_cards(existing: SourceCard, incoming: SourceCard) -> SourceCard:
+    existing.discovered_in = [_normalize_run_ref(item) for item in existing.discovered_in]
+    incoming.discovered_in = [_normalize_run_ref(item) for item in incoming.discovered_in]
+    existing.summary_sources = _backfill_summary_source_from_card(existing)
     if _should_replace_title(existing, incoming.title):
         existing.title = incoming.title
     existing.citekey = existing.citekey or incoming.citekey
@@ -271,6 +350,10 @@ def _merge_cards(existing: SourceCard, incoming: SourceCard) -> SourceCard:
     existing.links = _merge_links(existing.links, incoming.links)
     if not _prefer_existing(existing.summary) and incoming.summary:
         existing.summary = incoming.summary
+    existing.summary_sources = _merge_summary_sources(
+        existing.summary_sources,
+        incoming.summary_sources,
+    )
     existing.why_this_source_matters = _merge_rationale(
         existing.why_this_source_matters,
         incoming.why_this_source_matters,
@@ -401,7 +484,10 @@ def _write_run(paths: VaultPaths, run: RunRecord, cards: list[SourceCard]) -> No
     run_dir.mkdir(parents=True, exist_ok=True)
     write_yaml(run_dir / "index.yaml", run.model_dump(exclude_none=True))
     cards_by_slug = {card.slug: card for card in cards}
-    write_text(run_dir / "index.md", render_run_markdown(run, cards_by_slug))
+    write_text(run_dir / _run_markdown_name(run.slug), render_run_markdown(run, cards_by_slug))
+    legacy_index = run_dir / "index.md"
+    if legacy_index.exists():
+        legacy_index.unlink()
 
 
 def _write_manifest(paths: VaultPaths, manifest: ImportManifest) -> None:
@@ -438,6 +524,21 @@ def _cards_to_csl_json(cards: list[SourceCard]) -> list[dict]:
 
 def _rebuild_indexes(paths: VaultPaths) -> None:
     cards = load_source_cards(paths)
+    cards_changed = False
+    for card in cards:
+        normalized_discovered_in = [_normalize_run_ref(item) for item in card.discovered_in]
+        if normalized_discovered_in != card.discovered_in:
+            card.discovered_in = normalized_discovered_in
+            cards_changed = True
+        backfilled_sources = _backfill_summary_source_from_card(card)
+        normalized_sources = _merge_summary_sources(backfilled_sources, [])
+        if normalized_sources != card.summary_sources:
+            card.summary_sources = normalized_sources
+            cards_changed = True
+    if cards_changed:
+        for card in cards:
+            _save_card(paths, card)
+
     runs = load_run_records(paths)
     manifests = load_import_manifests(paths)
     topic_cards = group_cards_by_topic(cards)
@@ -619,6 +720,12 @@ def _find_card_for_run_result(
     result: RunResultRecord | ScholarLabsResult,
     run_ref: str,
 ) -> SourceCard | None:
+    run_ref_parts = Path(run_ref).parts
+    legacy_run_ref = (
+        _legacy_run_ref(run_ref_parts[1])
+        if len(run_ref_parts) >= 2 and run_ref_parts[0] == "runs"
+        else ""
+    )
     if isinstance(result, RunResultRecord) and result.paper_card:
         paper_path = paths.vault / result.paper_card
         if paper_path.exists():
@@ -632,7 +739,7 @@ def _find_card_for_run_result(
     for card in cards:
         if (
             normalize_title(card.title) == normalize_title(result.title)
-            and run_ref in card.discovered_in
+            and (run_ref in card.discovered_in or legacy_run_ref in card.discovered_in)
         ):
             return card
     return None
@@ -726,6 +833,12 @@ def import_scholar_labs_run(
                 if prior_entry.original_path:
                     matched_files.append(Path(prior_entry.original_path).name)
             continue
+
+        existing_card = _find_existing_card(
+            cards,
+            scholar_cid=result.scholar_cid,
+            title=result.title,
+        )
 
         match = best_pdf_match(result.title, remaining)
         proposal = match if match.candidate and match.score >= 70 else None
@@ -824,9 +937,27 @@ def import_scholar_labs_run(
                 )
             )
         else:
-            if existing_paper_card:
+            linked_existing_card = False
+            if existing_card and _card_has_valid_pdf(paths, existing_card) and not dry_run:
+                card, card_created, card_before = _prepare_card_for_result(
+                    cards,
+                    result,
+                    run_ref=run_ref,
+                    prompt=export.prompt,
+                )
+                card_preexisting = not card_created
+                _save_card(paths, card)
+                paper_card = f"papers/{card.slug}.md"
+                destination_path = card.pdf
+                verified = True
+                decision = "accepted"
+                run_status = "selected"
+                pdf_status = "attached"
+                note = "Linked existing paper card already in vault."
+                linked_existing_card = True
+            if not linked_existing_card and existing_paper_card:
                 paper_card = existing_paper_card
-            if include_without_pdf and not dry_run:
+            if not linked_existing_card and include_without_pdf and not dry_run:
                 card, card_created, card_before = _prepare_card_for_result(
                     cards,
                     result,
@@ -837,7 +968,7 @@ def import_scholar_labs_run(
                 card_preexisting = not card_created
                 _save_card(paths, card)
                 paper_card = f"papers/{card.slug}.md"
-            if proposal is not None:
+            if not linked_existing_card and proposal is not None:
                 unmatched_files.append(Path(proposal.candidate.path).name)
                 if decision == "unresolved":
                     run_status = "unmatched"

@@ -13,3 +13,5 @@
 - [x] Make `rerun` default to the latest recorded run when `--run` is omitted.
 - [x] Add canonical-card DOI and BibTeX enrichment with cached provider responses, skip rules, fingerprints, and generated-only BibTeX export.
 - [x] Promote trusted DOI metadata into canonical paper card fields so venues/authors/titles are not left as Scholar preview strings.
+- [ ] Add review workflow for papers whose citation enrichment state is `ambiguous`.
+- [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

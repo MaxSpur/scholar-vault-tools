@@ -13,3 +13,4 @@
 - For "last run" behavior, use manifest `created_at` rather than run page mtimes. Rebuilds can rewrite run pages and make filesystem mtimes misleading.
 - Citation enrichment needs explicit state. Fingerprints, retry counts, `metadata_lock`, and raw provider caches prevent repeatedly hitting APIs or overwriting curated metadata by accident.
 - DOI enrichment should promote canonical provider metadata back onto paper cards when the match is strong. Otherwise DOI discovery succeeds but Scholar preview fields like `IEEE Transactions on …, 2024` remain in the canonical record.
+- Obsidian Graph uses Markdown file basenames, so generated run notes should not be named `index.md`. Use meaningful run filenames and keep machine state in `index.yaml`.

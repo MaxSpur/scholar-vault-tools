@@ -2,7 +2,7 @@
 
 {% if runs %}
 {% for run in runs -%}
-- [{{ run.date }} {{ run.prompt }}](../runs/{{ run.slug }}/index.md) (`{{ run.result_count }}` results)
+- [{{ run.date }} {{ run.prompt }}](../{{ run_note_path(run.slug) }}) (`{{ run.result_count }}` results)
 {% endfor %}
 {% else %}
 No Scholar Labs runs have been imported yet.
