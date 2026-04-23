@@ -206,6 +206,21 @@ Skip automatic citation and abstract enrichment if you only want to match and ar
 scholar-vault import-labs --commit --no-enrich
 ```
 
+Use the desktop review UI for interactive match confirmation:
+
+```fish
+scholar-vault import-labs --ui
+```
+
+The UI shows a large Scholar Labs title, a broad scrollable first-page preview,
+and large confidence, Yes, and No panels. Keyboard shortcuts are `Return`,
+`→`, or `Y` to accept; `←`, `Backspace`, or `N` to reject the current match;
+`Esc` or the Abort Import button to stop the import before later steps such as
+enrichment; `Space` / `⇧Space` to scroll the preview; and `⌘O` or `O` to open
+the PDF.
+If GUI dependencies are unavailable in the current environment, the command
+falls back to terminal prompts.
+
 Set a short Obsidian run title during import:
 
 ```fish
@@ -295,6 +310,15 @@ scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault -
 ```
 
 `enrich-citations` processes canonical `papers/*.md` cards only. It tries local DOI detection first, then cached provider lookups from Crossref, OpenAlex, Europe PMC, DataCite, and DOI content negotiation. Raw provider responses are cached under `raw/metadata/<citekey>/`. When a known DOI resolves to a preprint or repository record with incomplete venue metadata, enrichment may search for a strong published-version match and promote the published DOI and venue instead.
+
+After the one-line count summary, the command prints compact grouped details
+for generated, verified, incomplete, ambiguous, unresolved, and skipped records.
+Use the GUI result browser when you want to filter those groups and open the
+associated paper card or PDF:
+
+```fish
+scholar-vault enrich-citations --ui
+```
 
 The command writes these frontmatter fields: `doi_status`, `doi_source`, `doi_confidence`, `citation_status`, `citation_source`, `citation_last_checked`, `citation_enriched_at`, `citation_input_fingerprint`, `citation_retries`, `citation_skip_reason`, `metadata_lock`, `enrichment_status`, `enrichment_missing`, and `enrichment_refresh`.
 

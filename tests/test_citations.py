@@ -6,6 +6,7 @@ from pathlib import Path
 from scholar_vault.bibtex import write_library_bib
 from scholar_vault.citations import (
     EnrichmentOptions,
+    EnrichmentResult,
     abstract_fingerprint,
     card_fingerprint,
     clean_provider_abstract,
@@ -693,6 +694,82 @@ def test_abstract_dry_run_does_not_write_card(tmp_path: Path) -> None:
     saved = (paths.papers / "smith2024rag.md").read_text(encoding="utf-8")
     assert summary["changed"] == 1
     assert "abstract_status: resolved" not in saved
+
+
+def test_enrich_citations_returns_itemized_details(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    cards = [
+        SourceCard(slug="generated", citekey="generated", title="Generated Paper"),
+        SourceCard(slug="incomplete", citekey="incomplete", title="Incomplete Paper"),
+        SourceCard(slug="ambiguous", citekey="ambiguous", title="Ambiguous Paper"),
+        SourceCard(slug="skipped", citekey="skipped", title="Skipped Paper"),
+    ]
+    for card in cards:
+        (paths.papers / f"{card.slug}.md").write_text(
+            render_paper_markdown(card),
+            encoding="utf-8",
+        )
+
+    def fake_enrich_cards(paths_arg, cards_arg, options, progress=None):
+        del paths_arg, options, progress
+        by_slug = {card.slug: card for card in cards_arg}
+        by_slug["generated"].doi = "10.1000/generated"
+        by_slug["generated"].authors = ["Jane Smith"]
+        by_slug["generated"].year = 2024
+        by_slug["generated"].venue = "Generated Venue"
+        by_slug["generated"].citation_status = "generated"
+        by_slug["generated"].citation_source = "datacite"
+        by_slug["generated"].enrichment_status = "complete"
+        by_slug["incomplete"].doi = "10.1000/incomplete"
+        by_slug["incomplete"].citation_status = "generated"
+        by_slug["incomplete"].citation_source = "crossref"
+        by_slug["incomplete"].enrichment_status = "incomplete"
+        by_slug["incomplete"].enrichment_missing = ["venue"]
+        by_slug["ambiguous"].citation_status = "ambiguous"
+        by_slug["ambiguous"].citation_skip_reason = "ambiguous crossref candidate score=88"
+        results = {
+            "generated": EnrichmentResult(
+                "generated",
+                "generated",
+                "citation generated",
+                changed=True,
+            ),
+            "incomplete": EnrichmentResult(
+                "incomplete",
+                "generated",
+                "incomplete metadata",
+                changed=True,
+            ),
+            "ambiguous": EnrichmentResult(
+                "ambiguous",
+                "ambiguous",
+                "ambiguous crossref",
+                changed=True,
+            ),
+            "skipped": EnrichmentResult(
+                "skipped",
+                "skipped",
+                "citation verified",
+                skipped=True,
+            ),
+        }
+        return [results[card.slug] for card in cards_arg]
+
+    monkeypatch.setattr("scholar_vault.importer.enrich_cards", fake_enrich_cards)
+
+    summary = enrich_citations(vault, dry_run=True)
+    details = {row["citekey"]: row for row in summary["details"]}
+
+    assert summary["generated"] == 2
+    assert summary["ambiguous"] == 1
+    assert summary["skipped"] == 1
+    assert details["generated"]["category"] == "generated"
+    assert details["generated"]["doi"] == "10.1000/generated"
+    assert details["incomplete"]["category"] == "incomplete"
+    assert details["incomplete"]["missing_fields"] == ["venue"]
+    assert details["ambiguous"]["message"] == "ambiguous crossref"
+    assert Path(details["generated"]["paper_file"]).name == "generated.md"
 
 
 def test_paper_template_renders_abstract_section() -> None:

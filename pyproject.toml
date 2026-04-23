@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scholar-vault"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local-first research source wiki and LLM-readable archive."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,7 +16,9 @@ dependencies = [
   "bibtexparser>=1.4.4",
   "Jinja2>=3.1.6",
   "pdfminer.six>=20260107",
+  "PyMuPDF>=1.26.0",
   "pypdf>=6.10.2",
+  "PySide6>=6.10.0",
   "PyYAML>=6.0.3",
   "RapidFuzz>=3.14.5",
   "rich>=15.0.0",

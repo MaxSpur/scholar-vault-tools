@@ -20,5 +20,7 @@
 - [x] Rerender existing paper cards during rebuild so template improvements like Quick access apply retroactively.
 - [x] Add card-level `enrichment_refresh` retry flag plus `enrichment_status` / `enrichment_missing` diagnostics for incomplete citation metadata.
 - [x] Promote strong published-version metadata when an existing DOI points to a preprint record without a proper venue.
-- [ ] Add review workflow for papers whose citation enrichment state is `ambiguous`.
+- [x] Add itemized citation/abstract enrichment output and a GUI result browser for generated, incomplete, ambiguous, unresolved, and skipped records.
+- [x] Add GUI match review for Scholar Labs imports with structured match payloads and terminal fallback.
+- [ ] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

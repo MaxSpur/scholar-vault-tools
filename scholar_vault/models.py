@@ -276,6 +276,31 @@ class MatchDecision(BaseModel):
     reason: str = ""
 
 
+class MatchReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    rank: int
+    scholar_cid: str | None = None
+    result_title: str
+    authors_preview: str | None = None
+    year: int | None = None
+    venue: str | None = None
+    summary: str | None = None
+    pdf_path: str
+    pdf_filename: str
+    score: int
+    match_reason: str
+    proposed_decision: Literal["auto", "review", "skip"]
+    inferred_title: str | None = None
+    inferred_doi: str | None = None
+    inferred_year: int | None = None
+    text_excerpt: str = ""
+
+
+class MatchReviewAbort(RuntimeError):
+    """Raised when a reviewer aborts the whole import instead of rejecting one match."""
+
+
 class ImportManifestEntry(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

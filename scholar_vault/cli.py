@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.table import Table
 
 from .config import configured_path, latest_export_json, load_user_config, save_user_config
 from .importer import (
@@ -27,7 +28,7 @@ from .importer import (
     resume_run,
     undo_run,
 )
-from .models import SourceCard
+from .models import MatchReviewAbort, MatchReviewRequest, SourceCard
 
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
 console = Console()
@@ -141,6 +142,13 @@ ForceArg = Annotated[
     bool,
     typer.Option("--force", help="Process locked metadata records."),
 ]
+UiArg = Annotated[
+    bool,
+    typer.Option(
+        "--ui/--no-ui",
+        help="Use the desktop review UI when available.",
+    ),
+]
 YesArg = Annotated[
     bool,
     typer.Option("--yes", help="Reset without confirmation."),
@@ -149,6 +157,118 @@ YesArg = Annotated[
 
 def _confirm(prompt: str) -> bool:
     return typer.confirm(prompt, default=False)
+
+
+def _match_review_prompt(request: MatchReviewRequest) -> str:
+    return (
+        f"Accept match {request.pdf_filename} -> {request.result_title} "
+        f"(score={request.score}, reason={request.match_reason})?"
+    )
+
+
+def _terminal_match_review(request: MatchReviewRequest) -> bool:
+    console.print()
+    console.print(f"[bold]Scholar Labs title:[/bold] {request.result_title}")
+    console.print(
+        f"[bold]PDF:[/bold] {request.pdf_filename}  "
+        f"[bold]score:[/bold] {request.score}  "
+        f"[bold]reason:[/bold] {request.match_reason}"
+    )
+    if request.inferred_title:
+        console.print(f"[bold]Inferred PDF title:[/bold] {request.inferred_title}")
+    if request.inferred_doi or request.inferred_year:
+        console.print(
+            f"[bold]PDF metadata:[/bold] DOI={request.inferred_doi or '-'}  "
+            f"year={request.inferred_year or '-'}"
+        )
+    return typer.confirm(_match_review_prompt(request), default=False)
+
+
+def _match_reviewer(ui: bool):
+    if not ui:
+        return _terminal_match_review
+    try:
+        from .gui import GuiUnavailable, make_match_reviewer
+    except Exception as exc:  # pragma: no cover - defensive optional import path
+        console.print(f"Review UI unavailable ({exc}). Falling back to terminal prompts.")
+        return _terminal_match_review
+    try:
+        return make_match_reviewer()
+    except GuiUnavailable as exc:
+        console.print(f"Review UI unavailable ({exc}). Falling back to terminal prompts.")
+        return _terminal_match_review
+
+
+def _shorten(value: object, limit: int = 76) -> str:
+    text = "" if value is None else str(value)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def _detail_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = summary.get("details", [])
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _print_enrichment_details(summary: dict[str, Any]) -> None:
+    rows = _detail_rows(summary)
+    if not rows:
+        return
+    order = [
+        "generated",
+        "resolved",
+        "verified",
+        "incomplete",
+        "ambiguous",
+        "unresolved",
+        "skipped",
+    ]
+    for category in order:
+        category_rows = [row for row in rows if row.get("category") == category]
+        if not category_rows:
+            continue
+        table = Table(title=f"{category.title()} ({len(category_rows)})", show_lines=False)
+        table.add_column("Citekey", no_wrap=True)
+        table.add_column("Title")
+        table.add_column("DOI / Source")
+        table.add_column("Missing")
+        table.add_column("Message")
+        for row in category_rows:
+            doi_source = " / ".join(
+                part
+                for part in [
+                    str(row.get("doi") or ""),
+                    str(row.get("source") or ""),
+                ]
+                if part
+            )
+            missing = ", ".join(row.get("missing_fields") or [])
+            table.add_row(
+                str(row.get("citekey") or ""),
+                _shorten(row.get("title")),
+                _shorten(doi_source, 48),
+                missing or "-",
+                _shorten(row.get("message"), 70),
+            )
+        console.print(table)
+
+
+def _show_enrichment_ui(summary: dict[str, Any], *, abstracts: bool) -> bool:
+    rows = _detail_rows(summary)
+    if not rows:
+        return False
+    try:
+        from .gui import GuiUnavailable, show_enrichment_results
+    except Exception as exc:  # pragma: no cover - defensive optional import path
+        console.print(f"Review UI unavailable ({exc}). Showing terminal details instead.")
+        return False
+    try:
+        show_enrichment_results(rows, abstracts=abstracts)
+    except GuiUnavailable as exc:
+        console.print(f"Review UI unavailable ({exc}). Showing terminal details instead.")
+        return False
+    return True
 
 
 def _require_configured_path(
@@ -204,7 +324,24 @@ def _print_run_summary(summary: dict[str, int | str]) -> None:
         console.print(f"Enrichment made {summary['enriched']} selected-paper metadata updates.")
 
 
-def _with_progress(initial_message: str, action):
+def _with_progress(initial_message: str, action, *, interactive: bool = False):
+    if interactive:
+        console.print(initial_message)
+
+        def plain_report(
+            message: str,
+            current: int | None = None,
+            total: int | None = None,
+        ) -> None:
+            prefix = f"[{current}/{total}] " if current is not None and total else ""
+            console.print(f"{prefix}{message}")
+
+        try:
+            return action(plain_report)
+        except MatchReviewAbort as exc:
+            console.print(str(exc) or "Import aborted.")
+            raise typer.Exit(code=130) from exc
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -217,7 +354,12 @@ def _with_progress(initial_message: str, action):
             prefix = f"[{current}/{total}] " if current is not None and total else ""
             progress.update(task, description=f"{prefix}{message}")
 
-        result = action(report)
+        try:
+            result = action(report)
+        except MatchReviewAbort as exc:
+            progress.stop()
+            console.print(str(exc) or "Import aborted.")
+            raise typer.Exit(code=130) from exc
         progress.update(task, description="Complete")
         return result
 
@@ -277,7 +419,9 @@ def import_run_command(
     include_without_pdf: IncludeWithoutPdfArg = False,
     archive_export: ArchiveExportArg = False,
     title: TitleArg = None,
+    ui: UiArg = False,
 ) -> None:
+    review_match = _match_reviewer(ui) if not dry_run and not commit else None
     summary = _with_progress(
         "Importing Scholar Labs run",
         lambda report: import_scholar_labs_run(
@@ -291,8 +435,10 @@ def import_run_command(
             archive_export=archive_export,
             title=title,
             confirm=_confirm,
+            review_match=review_match,
             progress=report,
         ),
+        interactive=review_match is not None,
     )
     _print_run_summary(summary)
 
@@ -308,7 +454,9 @@ def import_labs_command(
     auto_enrich: AutoEnrichArg = True,
     archive_export: ArchiveExportArg = True,
     title: TitleArg = None,
+    ui: UiArg = False,
 ) -> None:
+    review_match = _match_reviewer(ui) if not dry_run and not commit else None
     summary = _with_progress(
         "Importing Scholar Labs run",
         lambda report: import_scholar_labs_run(
@@ -323,8 +471,10 @@ def import_labs_command(
             auto_enrich=auto_enrich,
             title=title,
             confirm=_confirm,
+            review_match=review_match,
             progress=report,
         ),
+        interactive=review_match is not None,
     )
     _print_run_summary(summary)
 
@@ -340,7 +490,9 @@ def import_alias_command(
     auto_enrich: AutoEnrichArg = True,
     archive_export: ArchiveExportArg = True,
     title: TitleArg = None,
+    ui: UiArg = False,
 ) -> None:
+    review_match = _match_reviewer(ui) if not dry_run and not commit else None
     summary = _with_progress(
         "Importing Scholar Labs run",
         lambda report: import_scholar_labs_run(
@@ -355,8 +507,10 @@ def import_alias_command(
             auto_enrich=auto_enrich,
             title=title,
             confirm=_confirm,
+            review_match=review_match,
             progress=report,
         ),
+        interactive=review_match is not None,
     )
     _print_run_summary(summary)
 
@@ -412,6 +566,7 @@ def enrich_citations_command(
     retry_failed: RetryFailedArg = False,
     dry_run: DryRunArg = False,
     force: ForceArg = False,
+    ui: UiArg = False,
 ) -> None:
     summary = _with_progress(
         "Enriching paper cards",
@@ -428,7 +583,8 @@ def enrich_citations_command(
             progress=_enrichment_progress_reporter(report),
         ),
     )
-    if abstracts or refresh_abstracts or only == "missing-abstract":
+    enrich_abstracts = abstracts or refresh_abstracts or only == "missing-abstract"
+    if enrich_abstracts:
         console.print(
             f"Enriched abstracts: processed={summary['processed']}, changed={summary['changed']}, "
             f"skipped={summary['skipped']}, resolved={summary['resolved']}, "
@@ -442,6 +598,9 @@ def enrich_citations_command(
             f"verified={summary['verified']}, ambiguous={summary['ambiguous']}, "
             f"unresolved={summary['unresolved']}."
         )
+    shown_in_ui = _show_enrichment_ui(summary, abstracts=enrich_abstracts) if ui else False
+    if not shown_in_ui:
+        _print_enrichment_details(summary)
 
 
 @app.command("reset")
@@ -464,7 +623,9 @@ def resume_command(
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     auto_enrich: AutoEnrichArg = True,
+    ui: UiArg = False,
 ) -> None:
+    review_match = _match_reviewer(ui) if not dry_run and not commit else None
     summary = _with_progress(
         f"Resuming run {run}",
         lambda report: resume_run(
@@ -474,8 +635,10 @@ def resume_command(
             commit=commit,
             auto_enrich=auto_enrich,
             confirm=_confirm,
+            review_match=review_match,
             progress=report,
         ),
+        interactive=review_match is not None,
     )
     _print_run_summary(summary)
 
@@ -487,9 +650,11 @@ def rerun_command(
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     auto_enrich: AutoEnrichArg = True,
+    ui: UiArg = False,
 ) -> None:
     resolved_vault = _resolve_vault(vault)
     run_id = run or latest_run_id(resolved_vault)
+    review_match = _match_reviewer(ui) if not dry_run and not commit else None
     summary = _with_progress(
         f"Rerunning {run_id}",
         lambda report: resume_run(
@@ -499,8 +664,10 @@ def rerun_command(
             commit=commit,
             auto_enrich=auto_enrich,
             confirm=_confirm,
+            review_match=review_match,
             progress=report,
         ),
+        interactive=review_match is not None,
     )
     _print_run_summary(summary)
 
@@ -512,9 +679,11 @@ def re_run_command(
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     auto_enrich: AutoEnrichArg = True,
+    ui: UiArg = False,
 ) -> None:
     resolved_vault = _resolve_vault(vault)
     run_id = run or latest_run_id(resolved_vault)
+    review_match = _match_reviewer(ui) if not dry_run and not commit else None
     summary = _with_progress(
         f"Rerunning {run_id}",
         lambda report: resume_run(
@@ -524,8 +693,10 @@ def re_run_command(
             commit=commit,
             auto_enrich=auto_enrich,
             confirm=_confirm,
+            review_match=review_match,
             progress=report,
         ),
+        interactive=review_match is not None,
     )
     _print_run_summary(summary)
 

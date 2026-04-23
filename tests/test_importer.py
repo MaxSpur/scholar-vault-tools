@@ -19,7 +19,13 @@ from scholar_vault.importer import (
     resume_run,
     undo_run,
 )
-from scholar_vault.models import RunRecord, RunResultRecord, ScholarLabsResult, SourceCard
+from scholar_vault.models import (
+    MatchReviewAbort,
+    RunRecord,
+    RunResultRecord,
+    ScholarLabsResult,
+    SourceCard,
+)
 from scholar_vault.sources import load_source_cards, run_note_path, write_yaml
 
 
@@ -156,6 +162,77 @@ def test_rejected_match_leaves_pdf_in_staging(tmp_path: Path) -> None:
     assert pdf_path.exists()
     assert len(cards) == 0
     assert any(entry.get("decision") == "rejected" for entry in manifest["entries"])
+
+
+def test_structured_match_review_accepts_pdf(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_fixture_copy("sample_scholar_labs_export.json", exports / "sample.json")
+    pdf_path = staging / "match.pdf"
+    _write_pdf_with_title(pdf_path, "Evaluating Retrieval Augmented Generation Systems")
+    requests = []
+
+    def review_match(request):
+        requests.append(request)
+        return True
+
+    summary = import_scholar_labs_run(
+        vault,
+        export_path,
+        staging,
+        review_match=review_match,
+    )
+    manifest = _manifest_yaml(vault, str(summary["run"]))
+    cards = load_source_cards(initialize_vault(vault))
+
+    assert len(requests) == 1
+    assert requests[0].result_title == "Evaluating Retrieval Augmented Generation Systems"
+    assert requests[0].pdf_filename == "match.pdf"
+    assert requests[0].score == 100
+    assert requests[0].match_reason == "title"
+    assert requests[0].inferred_title == "Evaluating Retrieval Augmented Generation Systems"
+    assert len(cards) == 1
+    assert any(entry.get("decision") == "accepted" for entry in manifest["entries"])
+
+
+def test_match_review_abort_stops_before_enrichment(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_fixture_copy("sample_scholar_labs_export.json", exports / "sample.json")
+    _write_pdf_with_title(
+        staging / "match.pdf",
+        "Evaluating Retrieval Augmented Generation Systems",
+    )
+
+    def review_match(_request):
+        raise MatchReviewAbort("Import aborted from match review.")
+
+    def fail_enrich(*_args, **_kwargs):
+        raise AssertionError("Abort must stop before enrichment.")
+
+    monkeypatch.setattr("scholar_vault.importer.enrich_cards", fail_enrich)
+
+    try:
+        import_scholar_labs_run(
+            vault,
+            export_path,
+            staging,
+            review_match=review_match,
+            auto_enrich=True,
+        )
+    except MatchReviewAbort:
+        pass
+    else:
+        raise AssertionError("Import should abort immediately.")
+
+    cards = load_source_cards(initialize_vault(vault))
+    assert cards == []
 
 
 def test_import_run_is_idempotent(tmp_path: Path) -> None:

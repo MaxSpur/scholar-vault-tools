@@ -17,6 +17,10 @@
 - DOI records can point to preprints rather than final publications. If a preprint DOI lacks a real venue, search for a strong published-version DOI before accepting incomplete venue metadata as final.
 - Keep abstracts separate from Scholar Labs summaries. Abstract enrichment needs its own source, confidence, lock, and fingerprint fields so provider text does not overwrite the reason a source was added.
 - Long-running metadata provider lookups need visible CLI progress. A command that appears idle during enrichment is hard to trust even when it is working correctly.
+- Do not run blocking terminal prompts under Rich live progress. Interactive imports should use plain progress lines so `[y/N]` prompts and GUI handoffs are visible.
+- Keep desktop UI initialization isolated. Non-UI commands should not initialize Qt, and `--ui` should fall back cleanly if the desktop stack is unavailable in the current environment.
+- The match-review GUI is for fast decisions, not metadata inspection. Keep title, PDF preview, confidence, and accept/reject controls dominant; hide non-editable metadata unless it directly improves the decision.
+- In the match-review GUI, distinguish rejecting one candidate from aborting the import. `Esc` should abort the whole process and prevent later steps such as enrichment.
 - Obsidian Graph uses Markdown file basenames, so generated run notes should not be named `index.md`. Use meaningful run filenames and keep machine state in `index.yaml`.
 - Keep run IDs and Obsidian run-note titles separate. The run ID is for idempotence and manifests; the short title is for human navigation and Graph labels.
 - If a user renames a generated run note in Obsidian, preserve that filename through `note_file`; do not slugify it back into a machine-looking name during rebuild.

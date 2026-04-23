@@ -6,11 +6,12 @@ import shutil
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 
 from .bibtex import extract_pdf_paths, parse_bibtex_file, split_bibtex_authors, write_library_bib
-from .citations import EnrichmentOptions, EnrichmentProgress, enrich_cards
+from .citations import EnrichmentOptions, EnrichmentProgress, EnrichmentResult, enrich_cards
 from .matcher import (
     best_pdf_match,
     build_pdf_candidate,
@@ -23,6 +24,7 @@ from .models import (
     ImportManifestEntry,
     Link,
     MatchDecision,
+    MatchReviewRequest,
     RationalePoint,
     RunRecord,
     RunResultRecord,
@@ -74,6 +76,7 @@ from .sources import (
 )
 
 ConfirmCallback = Callable[[str], bool]
+MatchReviewCallback = Callable[[MatchReviewRequest], bool]
 ProgressCallback = Callable[[str, int | None, int | None], None]
 
 
@@ -819,6 +822,34 @@ def _card_has_valid_pdf(paths: VaultPaths, card: SourceCard) -> bool:
     return pdf_path.exists()
 
 
+def _build_match_review_request(
+    result: ScholarLabsResult,
+    proposal: MatchDecision,
+) -> MatchReviewRequest:
+    if proposal.candidate is None:
+        raise ValueError("Cannot review a match proposal without a PDF candidate.")
+    candidate = proposal.candidate
+    pdf_path = Path(candidate.path)
+    return MatchReviewRequest(
+        rank=result.rank,
+        scholar_cid=result.scholar_cid,
+        result_title=result.title,
+        authors_preview=result.authors_preview,
+        year=result.year,
+        venue=result.venue,
+        summary=result.summary,
+        pdf_path=candidate.path,
+        pdf_filename=pdf_path.name,
+        score=proposal.score,
+        match_reason=proposal.reason,
+        proposed_decision=proposal.decision,
+        inferred_title=candidate.title,
+        inferred_doi=candidate.doi,
+        inferred_year=candidate.year,
+        text_excerpt=candidate.text_excerpt,
+    )
+
+
 def import_scholar_labs_run(
     vault: Path | str,
     export_path: Path | str,
@@ -832,6 +863,7 @@ def import_scholar_labs_run(
     auto_enrich: bool = False,
     title: str | None = None,
     confirm: ConfirmCallback | None = None,
+    review_match: MatchReviewCallback | None = None,
     progress: ProgressCallback | None = None,
 ) -> dict[str, int | str]:
     if dry_run and commit:
@@ -966,14 +998,15 @@ def import_scholar_labs_run(
                     run_status = "unmatched"
                     pdf_status = "unmatched"
             elif interactive:
-                accepted = (
-                    confirm(
+                if review_match is not None:
+                    accepted = review_match(_build_match_review_request(result, proposal))
+                elif confirm is not None:
+                    accepted = confirm(
                         f"Accept match {Path(proposal.candidate.path).name} -> {result.title} "
                         f"(score={proposal.score})?"
                     )
-                    if confirm is not None
-                    else proposal.decision == "auto"
-                )
+                else:
+                    accepted = proposal.decision == "auto"
                 if accepted:
                     decision = "accepted"
                 else:
@@ -1234,6 +1267,7 @@ def resume_run(
     commit: bool = False,
     auto_enrich: bool = False,
     confirm: ConfirmCallback | None = None,
+    review_match: MatchReviewCallback | None = None,
     progress: ProgressCallback | None = None,
 ) -> dict[str, int | str]:
     paths = initialize_vault(vault)
@@ -1254,6 +1288,7 @@ def resume_run(
         auto_enrich=auto_enrich,
         title=run.title,
         confirm=confirm,
+        review_match=review_match,
         progress=progress,
     )
 
@@ -1697,6 +1732,39 @@ def import_doi(vault: Path | str, doi: str) -> dict[str, int]:
     return {"imported": 1}
 
 
+def _enrichment_detail(
+    paths: VaultPaths,
+    card: SourceCard,
+    result: EnrichmentResult,
+    *,
+    abstracts: bool,
+) -> dict[str, Any]:
+    if result.skipped:
+        category = "skipped"
+    elif not abstracts and card.enrichment_status == "incomplete":
+        category = "incomplete"
+    else:
+        category = result.status
+
+    source = card.abstract_source if abstracts else card.citation_source or card.doi_source
+    return {
+        "category": category,
+        "status": result.status,
+        "citekey": card.citekey or card.slug,
+        "title": card.title,
+        "paper_path": f"papers/{card.slug}.md",
+        "paper_file": str(paths.papers / f"{card.slug}.md"),
+        "pdf": card.pdf,
+        "pdf_file": str(paths.vault / card.pdf) if card.pdf else None,
+        "doi": card.doi,
+        "source": source,
+        "missing_fields": list(card.enrichment_missing),
+        "message": result.message,
+        "changed": result.changed,
+        "skipped": result.skipped,
+    }
+
+
 def rebuild_vault(vault: Path | str) -> None:
     paths = initialize_vault(vault)
     _rebuild_indexes(paths)
@@ -1720,7 +1788,7 @@ def enrich_citations(
     dry_run: bool = False,
     force: bool = False,
     progress: EnrichmentProgress | None = None,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     if only not in {"all", "missing-doi", "missing-bibtex", "missing-abstract"}:
         raise ValueError("--only must be one of: missing-doi, missing-bibtex, missing-abstract")
 
@@ -1741,6 +1809,11 @@ def enrich_citations(
     results = enrich_cards(paths, cards, options, progress=progress)
     if citekey and all(result.skipped and result.message == "citekey filter" for result in results):
         raise ValueError(f"No paper card found for citekey: {citekey}")
+
+    details = [
+        _enrichment_detail(paths, card, result, abstracts=enrich_abstracts)
+        for card, result in zip(cards, results, strict=False)
+    ]
 
     if not dry_run:
         for card, result in zip(cards, results, strict=False):
@@ -1764,4 +1837,5 @@ def enrich_citations(
                 if enrich_abstracts and result.status in {"resolved", "verified"}
             ]
         ),
+        "details": details,
     }

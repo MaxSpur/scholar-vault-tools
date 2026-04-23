@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -89,10 +89,27 @@ class EnrichmentResult:
     message: str
     changed: bool = False
     skipped: bool = False
+    title: str | None = None
+    paper_path: str | None = None
+    doi: str | None = None
+    source: str | None = None
+    missing_fields: tuple[str, ...] = ()
 
 
 def now_iso() -> str:
     return datetime.now().astimezone().replace(microsecond=0).isoformat()
+
+
+def _result_with_card_context(result: EnrichmentResult, card: SourceCard) -> EnrichmentResult:
+    source = card.abstract_source or card.citation_source or card.doi_source
+    return replace(
+        result,
+        title=card.title,
+        paper_path=f"papers/{card.slug}.md",
+        doi=card.doi,
+        source=source,
+        missing_fields=tuple(card.enrichment_missing),
+    )
 
 
 def extract_doi_from_text(text: str | None) -> str | None:
@@ -1439,5 +1456,5 @@ def enrich_cards(
         )
         if progress:
             progress(card, index, total, result.status)
-        results.append(result)
+        results.append(_result_with_card_context(result, card))
     return results
