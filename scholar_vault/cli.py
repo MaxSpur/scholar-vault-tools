@@ -5,6 +5,7 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from .config import configured_path, latest_export_json, load_user_config, save_user_config
 from .importer import (
@@ -26,6 +27,7 @@ from .importer import (
     resume_run,
     undo_run,
 )
+from .models import SourceCard
 
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
 console = Console()
@@ -90,6 +92,13 @@ IncludeWithoutPdfArg = Annotated[
     typer.Option(
         "--include-without-pdf",
         help="Create candidate paper cards for results that do not have matched PDFs.",
+    ),
+]
+AutoEnrichArg = Annotated[
+    bool,
+    typer.Option(
+        "--enrich/--no-enrich",
+        help="Run citation and abstract enrichment after accepted Scholar Labs matches.",
     ),
 ]
 ArchiveExportArg = Annotated[
@@ -191,6 +200,33 @@ def _print_run_summary(summary: dict[str, int | str]) -> None:
     )
     if summary.get("export_archived"):
         console.print(f"Archived used export JSON to {summary['export_archived']}.")
+    if summary.get("enriched"):
+        console.print(f"Enrichment made {summary['enriched']} selected-paper metadata updates.")
+
+
+def _with_progress(initial_message: str, action):
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(initial_message, total=None)
+
+        def report(message: str, current: int | None = None, total: int | None = None) -> None:
+            prefix = f"[{current}/{total}] " if current is not None and total else ""
+            progress.update(task, description=f"{prefix}{message}")
+
+        result = action(report)
+        progress.update(task, description="Complete")
+        return result
+
+
+def _enrichment_progress_reporter(report):
+    def progress(card: SourceCard, index: int, total: int, status: str) -> None:
+        report(f"{card.citekey or card.slug}: {status}", index, total)
+
+    return progress
 
 
 @app.command("configure")
@@ -242,17 +278,21 @@ def import_run_command(
     archive_export: ArchiveExportArg = False,
     title: TitleArg = None,
 ) -> None:
-    summary = import_scholar_labs_run(
-        _resolve_vault(vault),
-        export,
-        _resolve_staging(staging),
-        dry_run=dry_run,
-        commit=commit,
-        include_without_pdf=include_without_pdf,
-        archive_matched=False,
-        archive_export=archive_export,
-        title=title,
-        confirm=_confirm,
+    summary = _with_progress(
+        "Importing Scholar Labs run",
+        lambda report: import_scholar_labs_run(
+            _resolve_vault(vault),
+            export,
+            _resolve_staging(staging),
+            dry_run=dry_run,
+            commit=commit,
+            include_without_pdf=include_without_pdf,
+            archive_matched=False,
+            archive_export=archive_export,
+            title=title,
+            confirm=_confirm,
+            progress=report,
+        ),
     )
     _print_run_summary(summary)
 
@@ -265,20 +305,26 @@ def import_labs_command(
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
+    auto_enrich: AutoEnrichArg = True,
     archive_export: ArchiveExportArg = True,
     title: TitleArg = None,
 ) -> None:
-    summary = import_scholar_labs_run(
-        _resolve_vault(vault),
-        _resolve_latest_export(export),
-        _resolve_staging(staging),
-        dry_run=dry_run,
-        commit=commit,
-        include_without_pdf=include_without_pdf,
-        archive_matched=True,
-        archive_export=archive_export,
-        title=title,
-        confirm=_confirm,
+    summary = _with_progress(
+        "Importing Scholar Labs run",
+        lambda report: import_scholar_labs_run(
+            _resolve_vault(vault),
+            _resolve_latest_export(export),
+            _resolve_staging(staging),
+            dry_run=dry_run,
+            commit=commit,
+            include_without_pdf=include_without_pdf,
+            archive_matched=True,
+            archive_export=archive_export,
+            auto_enrich=auto_enrich,
+            title=title,
+            confirm=_confirm,
+            progress=report,
+        ),
     )
     _print_run_summary(summary)
 
@@ -291,20 +337,26 @@ def import_alias_command(
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
+    auto_enrich: AutoEnrichArg = True,
     archive_export: ArchiveExportArg = True,
     title: TitleArg = None,
 ) -> None:
-    summary = import_scholar_labs_run(
-        _resolve_vault(vault),
-        _resolve_latest_export(export),
-        _resolve_staging(staging),
-        dry_run=dry_run,
-        commit=commit,
-        include_without_pdf=include_without_pdf,
-        archive_matched=True,
-        archive_export=archive_export,
-        title=title,
-        confirm=_confirm,
+    summary = _with_progress(
+        "Importing Scholar Labs run",
+        lambda report: import_scholar_labs_run(
+            _resolve_vault(vault),
+            _resolve_latest_export(export),
+            _resolve_staging(staging),
+            dry_run=dry_run,
+            commit=commit,
+            include_without_pdf=include_without_pdf,
+            archive_matched=True,
+            archive_export=archive_export,
+            auto_enrich=auto_enrich,
+            title=title,
+            confirm=_confirm,
+            progress=report,
+        ),
     )
     _print_run_summary(summary)
 
@@ -361,16 +413,20 @@ def enrich_citations_command(
     dry_run: DryRunArg = False,
     force: ForceArg = False,
 ) -> None:
-    summary = enrich_citations(
-        _resolve_vault(vault),
-        citekey=citekey,
-        only=only,
-        refresh=refresh,
-        abstracts=abstracts,
-        refresh_abstracts=refresh_abstracts,
-        retry_failed=retry_failed,
-        dry_run=dry_run,
-        force=force,
+    summary = _with_progress(
+        "Enriching paper cards",
+        lambda report: enrich_citations(
+            _resolve_vault(vault),
+            citekey=citekey,
+            only=only,
+            refresh=refresh,
+            abstracts=abstracts,
+            refresh_abstracts=refresh_abstracts,
+            retry_failed=retry_failed,
+            dry_run=dry_run,
+            force=force,
+            progress=_enrichment_progress_reporter(report),
+        ),
     )
     if abstracts or refresh_abstracts or only == "missing-abstract":
         console.print(
@@ -407,13 +463,19 @@ def resume_command(
     vault: VaultArg = None,
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
+    auto_enrich: AutoEnrichArg = True,
 ) -> None:
-    summary = resume_run(
-        _resolve_vault(vault),
-        run,
-        dry_run=dry_run,
-        commit=commit,
-        confirm=_confirm,
+    summary = _with_progress(
+        f"Resuming run {run}",
+        lambda report: resume_run(
+            _resolve_vault(vault),
+            run,
+            dry_run=dry_run,
+            commit=commit,
+            auto_enrich=auto_enrich,
+            confirm=_confirm,
+            progress=report,
+        ),
     )
     _print_run_summary(summary)
 
@@ -424,10 +486,22 @@ def rerun_command(
     run: OptionalRunIdArg = None,
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
+    auto_enrich: AutoEnrichArg = True,
 ) -> None:
     resolved_vault = _resolve_vault(vault)
     run_id = run or latest_run_id(resolved_vault)
-    summary = resume_run(resolved_vault, run_id, dry_run=dry_run, commit=commit, confirm=_confirm)
+    summary = _with_progress(
+        f"Rerunning {run_id}",
+        lambda report: resume_run(
+            resolved_vault,
+            run_id,
+            dry_run=dry_run,
+            commit=commit,
+            auto_enrich=auto_enrich,
+            confirm=_confirm,
+            progress=report,
+        ),
+    )
     _print_run_summary(summary)
 
 
@@ -437,10 +511,22 @@ def re_run_command(
     run: OptionalRunIdArg = None,
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
+    auto_enrich: AutoEnrichArg = True,
 ) -> None:
     resolved_vault = _resolve_vault(vault)
     run_id = run or latest_run_id(resolved_vault)
-    summary = resume_run(resolved_vault, run_id, dry_run=dry_run, commit=commit, confirm=_confirm)
+    summary = _with_progress(
+        f"Rerunning {run_id}",
+        lambda report: resume_run(
+            resolved_vault,
+            run_id,
+            dry_run=dry_run,
+            commit=commit,
+            auto_enrich=auto_enrich,
+            confirm=_confirm,
+            progress=report,
+        ),
+    )
     _print_run_summary(summary)
 
 

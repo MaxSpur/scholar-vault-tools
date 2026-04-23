@@ -9,12 +9,16 @@
 {% set selected = run.results | selectattr("status", "equalto", "selected") | list %}
 {% if selected %}
 {% for result in selected %}
-## {{ result.rank }}. {% if result.paper_card %}[{{ result.title }}](../../{{ result.paper_card }}){% else %}{{ result.title }}{% endif %}
+{% set card = card_for_run_result(result, cards_by_slug) %}
+## {{ result.rank }}. {% if result.paper_card %}[{{ card.title if card else result.title }}](../../{{ result.paper_card }}){% else %}{{ result.title }}{% endif %}
 
-- Authors: {{ result.authors_preview or "Unknown" }}
-- Year: {{ result.year or "Unknown" }}
-- Venue: {{ result.venue or "Unknown" }}
-- Canonical card: {% if result.paper_card %}`{{ result.paper_card }}`{% else %}Not linked{% endif %}
+- Authors: {% if card and card.authors %}{{ card.authors | join(", ") }}{% else %}{{ result.authors_preview or "Unknown" }}{% endif %}
+- Year: {{ (card.year if card else result.year) or "Unknown" }}
+- Venue: {{ (card.venue if card else result.venue) or "Unknown" }}
+- DOI: {% if card and card.doi %}[{{ card.doi }}]({{ doi_url(card.doi) }}){% else %}Missing{% endif %}
+- Topics: {% if card and card.topics %}{{ card.topics | join(", ") }}{% else %}None{% endif %}
+- Canonical card: {% if result.paper_card %}[{{ result.paper_card }}](../../{{ result.paper_card }}){% else %}Not linked{% endif %}
+- PDF: {% if card and card.pdf %}[{{ card.pdf }}](../../{{ card.pdf }}){% else %}Missing{% endif %}
 - PDF status: `{{ result.pdf_status }}`
 
 ### Summary

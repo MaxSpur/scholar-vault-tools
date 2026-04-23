@@ -16,6 +16,8 @@
 - Keep raw failed Scholar Labs exports for debugging, but do not import them into runs or paper cards.
 - Keep Scholar Labs PDF handling non-destructive: prefer copy-and-verify into `pdfs/`, leave staging files in place unless the command explicitly archives them, and record decisions in the run manifest.
 - `import-labs` is the explicit Scholar Labs convenience flow. It should archive matched PDFs out of staging only after the verified vault copy exists, while unmatched PDFs stay in staging.
+- `import-labs`, `import`, `resume`, and `rerun` should run citation and abstract enrichment for selected papers by default after committed matches. Keep `--no-enrich` available as the fast/offline escape hatch.
+- Keep terminal progress feedback for import and enrichment workflows because provider lookups and PDF scans can take noticeable time.
 - After successful non-dry-run `import-labs`, move used browser-export JSON files into a sibling `used/` folder without renaming them and update run/manifest `export_file` paths. Do not move export JSON on dry-runs or invalid exports.
 - If the exporter changes, verify these browser diagnostics on a live Scholar Labs results page before accepting the change:
   `document.querySelectorAll('div.gs_r[data-cid], div.gs_or[data-cid]').length`

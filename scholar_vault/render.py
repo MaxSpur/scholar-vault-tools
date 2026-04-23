@@ -20,6 +20,19 @@ def markdown_link(path: str, label: str) -> str:
     return f"[{label}]({path})"
 
 
+def card_for_run_result(result: object, cards_by_slug: dict[str, SourceCard]) -> SourceCard | None:
+    paper_card = getattr(result, "paper_card", None)
+    if not paper_card:
+        return None
+    return cards_by_slug.get(Path(paper_card).stem)
+
+
+def doi_url(doi: str | None) -> str | None:
+    if not doi:
+        return None
+    return f"https://doi.org/{doi}"
+
+
 def render_paper_markdown(card: SourceCard) -> str:
     template = ENVIRONMENT.get_template("paper.md.j2")
     body = template.render(card=card).strip()
@@ -37,6 +50,8 @@ def render_run_markdown(run: RunRecord, cards_by_slug: dict[str, SourceCard]) ->
         run_title=title,
         cards_by_slug=cards_by_slug,
         card_paths=card_paths,
+        card_for_run_result=card_for_run_result,
+        doi_url=doi_url,
     ).strip()
     frontmatter = dump_frontmatter(
         {

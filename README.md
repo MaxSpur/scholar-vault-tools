@@ -175,9 +175,11 @@ Default Scholar Labs behavior is now selected-only:
 - If a later Scholar Labs run returns a paper that already has a canonical card and attached PDF, the run links to the existing card and adds that run's summary to the card instead of creating a duplicate.
 - Candidate results stay on the run page unless you explicitly opt in with `--include-without-pdf`.
 - `import-labs` copies accepted PDFs into `pdfs/`, verifies them, and then archives the matched originals out of staging into `raw/imported/`, leaving only unmatched PDFs in staging.
+- After committed matches, `import-labs`, `import`, `resume`, and `rerun` run citation and abstract enrichment for selected paper cards by default. Use `--no-enrich` when you want a faster import that skips provider lookups.
 - After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder without renaming it, for example `~/Downloads/scholar-labs-exports/used/example.json`. The run metadata is updated so `resume` and `rerun` still know where the export went.
 - `import-run` is the lower-level transactional variant. It copies accepted PDFs into `pdfs/` but leaves staging untouched unless you later run `clean-staging`.
 - Most commands that accept `--vault`, and commands that accept `--staging`, can use configured defaults when those options are omitted.
+- Import and enrichment commands show terminal progress while scanning PDFs, matching results, querying metadata providers, and rebuilding derived files.
 
 Run notes are written as `runs/<run_id>/<Short Title.md>` instead of
 `index.md`. This gives Obsidian Graph and the file sidebar meaningful run/prompt
@@ -196,6 +198,12 @@ Auto-commit only high-confidence matches:
 
 ```fish
 scholar-vault import-labs --vault ~/Documents/Research/scholar-labs-vault --export ~/Downloads/scholar-labs-exports/example.json --staging ~/Downloads/scholar-labs-staging --commit
+```
+
+Skip automatic citation and abstract enrichment if you only want to match and archive PDFs:
+
+```fish
+scholar-vault import-labs --commit --no-enrich
 ```
 
 Set a short Obsidian run title during import:

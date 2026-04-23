@@ -17,6 +17,8 @@ def test_render_paper_markdown_contains_required_sections() -> None:
         authors_preview="Jane Smith, Omar Lee",
         authors=["Jane Smith", "Omar Lee"],
         year=2024,
+        doi="10.1145/example",
+        url="https://doi.org/10.1145/example",
         pdf="pdfs/smith2024rag.pdf",
         source_kind="scholar_labs",
         discovered_in=["runs/2026-04-22_rag/2026-04-22_rag.md"],
@@ -38,6 +40,9 @@ def test_render_paper_markdown_contains_required_sections() -> None:
     rendered = render_paper_markdown(card)
 
     assert "## Abstract" in rendered
+    assert "## Quick access" in rendered
+    assert "[Open local PDF](../pdfs/smith2024rag.pdf)" in rendered
+    assert "[10.1145/example](https://doi.org/10.1145/example)" in rendered
     assert "## Scholar Labs summary" in rendered
     assert "### Run-specific Scholar Labs summaries" in rendered
     assert "Run-specific summary." in rendered
@@ -81,6 +86,11 @@ def test_render_run_markdown_separates_selected_and_candidate_results() -> None:
     card = SourceCard(
         slug="smith2024rag",
         title=selected.title,
+        authors=["Jane Smith", "Omar Lee"],
+        year=2025,
+        venue="Journal of Local Knowledge Stores",
+        doi="10.1145/example",
+        topics=["Retrieval", "Evaluation"],
         source_kind="scholar_labs",
         pdf="pdfs/smith2024rag.pdf",
     )
@@ -96,4 +106,10 @@ def test_render_run_markdown_separates_selected_and_candidate_results() -> None:
         "[Evaluating Retrieval Augmented Generation Systems](../../papers/smith2024rag.md)"
         in rendered
     )
+    assert "Authors: Jane Smith, Omar Lee" in rendered
+    assert "Year: 2025" in rendered
+    assert "Venue: Journal of Local Knowledge Stores" in rendered
+    assert "[10.1145/example](https://doi.org/10.1145/example)" in rendered
+    assert "Topics: Retrieval, Evaluation" in rendered
+    assert "[pdfs/smith2024rag.pdf](../../pdfs/smith2024rag.pdf)" in rendered
     assert "Grounded Generation from Local Knowledge Stores" in rendered

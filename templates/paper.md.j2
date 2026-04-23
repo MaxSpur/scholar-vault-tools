@@ -1,5 +1,18 @@
 # {{ card.title }}
 
+## Quick access
+{% if card.pdf %}
+- PDF: [Open local PDF](../{{ card.pdf }})
+{% else %}
+- PDF: Missing
+{% endif %}
+{% if card.doi %}
+- DOI: [{{ card.doi }}](https://doi.org/{{ card.doi }})
+{% endif %}
+{% if card.url %}
+- Primary URL: [{{ card.url }}]({{ card.url }})
+{% endif %}
+
 ## Abstract
 {{ card.abstract if card.abstract else "No abstract yet." }}
 

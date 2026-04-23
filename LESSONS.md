@@ -15,6 +15,7 @@
 - Citation enrichment needs explicit state. Fingerprints, retry counts, `metadata_lock`, and raw provider caches prevent repeatedly hitting APIs or overwriting curated metadata by accident.
 - DOI enrichment should promote canonical provider metadata back onto paper cards when the match is strong. Otherwise DOI discovery succeeds but Scholar preview fields like `IEEE Transactions on …, 2024` remain in the canonical record.
 - Keep abstracts separate from Scholar Labs summaries. Abstract enrichment needs its own source, confidence, lock, and fingerprint fields so provider text does not overwrite the reason a source was added.
+- Long-running metadata provider lookups need visible CLI progress. A command that appears idle during enrichment is hard to trust even when it is working correctly.
 - Obsidian Graph uses Markdown file basenames, so generated run notes should not be named `index.md`. Use meaningful run filenames and keep machine state in `index.yaml`.
 - Keep run IDs and Obsidian run-note titles separate. The run ID is for idempotence and manifests; the short title is for human navigation and Graph labels.
 - If a user renames a generated run note in Obsidian, preserve that filename through `note_file`; do not slugify it back into a machine-looking name during rebuild.

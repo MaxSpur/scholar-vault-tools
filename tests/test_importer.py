@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 from pypdf import PdfWriter
 
+from scholar_vault.citations import EnrichmentResult
 from scholar_vault.importer import (
     cleanup_run_selected_only,
     import_pdf_dropins,
@@ -449,6 +450,62 @@ def test_import_labs_archives_matched_pdfs_and_leaves_unmatched_in_staging(
     assert accepted[0]["moved"] is True
     assert accepted[0]["archived_original_path"] is not None
     assert (vault / accepted[0]["archived_original_path"]).exists()
+
+
+def test_import_labs_auto_enriches_selected_cards_and_run_markdown(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_export(exports / "sample.json", 1)
+    _write_pdf_with_title(staging / "paper-1.pdf", "Result Paper 1")
+
+    def fake_enrich_cards(paths, cards, options, progress=None):
+        del paths
+        for card in cards:
+            if progress:
+                progress(card, 1, len(cards), "verified")
+            if options.abstracts:
+                card.abstract = "Recovered provider abstract."
+                card.abstract_status = "resolved"
+                card.abstract_source = "crossref"
+            else:
+                card.authors = ["Jane Smith", "Omar Lee"]
+                card.venue = "Journal of Enriched Metadata"
+                card.doi = "10.1145/example"
+                card.url = "https://doi.org/10.1145/example"
+                card.citation_status = "verified"
+        return [
+            EnrichmentResult(card.citekey or card.slug, "verified", "enriched", changed=True)
+            for card in cards
+        ]
+
+    monkeypatch.setattr("scholar_vault.importer.enrich_cards", fake_enrich_cards)
+
+    summary = import_scholar_labs_run(
+        vault,
+        export_path,
+        staging,
+        commit=True,
+        archive_matched=True,
+        auto_enrich=True,
+    )
+    cards = load_source_cards(initialize_vault(vault))
+    run_markdown = (vault / _run_note_path(vault, str(summary["run"]))).read_text(
+        encoding="utf-8"
+    )
+
+    assert summary["enriched"] == 2
+    assert cards[0].venue == "Journal of Enriched Metadata"
+    assert cards[0].doi == "10.1145/example"
+    assert cards[0].abstract == "Recovered provider abstract."
+    assert "Venue: Journal of Enriched Metadata" in run_markdown
+    assert "[10.1145/example](https://doi.org/10.1145/example)" in run_markdown
+    assert "[pdfs/" in run_markdown
 
 
 def test_import_labs_archives_used_export_json_and_updates_run_metadata(

@@ -33,6 +33,7 @@ from .sources import (
 OnlyMode = Literal["all", "missing-doi", "missing-bibtex", "missing-abstract"]
 FetchJson = Callable[[str, Path, bool], dict[str, Any] | list[Any] | None]
 FetchText = Callable[[str, Path, bool, dict[str, str]], str | None]
+EnrichmentProgress = Callable[[SourceCard, int, int, str], None]
 
 GENERATED_CITATION_STATUSES = {"generated", "verified"}
 FAILED_CITATION_STATUSES = {"ambiguous", "unresolved"}
@@ -1290,9 +1291,13 @@ def enrich_cards(
     *,
     fetch_json: FetchJson = _http_json,
     fetch_text: FetchText = _http_text,
+    progress: EnrichmentProgress | None = None,
 ) -> list[EnrichmentResult]:
     results: list[EnrichmentResult] = []
-    for card in cards:
+    total = len(cards)
+    for index, card in enumerate(cards, start=1):
+        if progress:
+            progress(card, index, total, "checking")
         result = enrich_card(
             paths,
             card,
@@ -1300,5 +1305,7 @@ def enrich_cards(
             fetch_json=fetch_json,
             fetch_text=fetch_text,
         )
+        if progress:
+            progress(card, index, total, result.status)
         results.append(result)
     return results

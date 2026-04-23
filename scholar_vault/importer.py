@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from .bibtex import extract_pdf_paths, parse_bibtex_file, split_bibtex_authors, write_library_bib
-from .citations import EnrichmentOptions, enrich_cards
+from .citations import EnrichmentOptions, EnrichmentProgress, enrich_cards
 from .matcher import (
     best_pdf_match,
     build_pdf_candidate,
@@ -73,6 +73,7 @@ from .sources import (
 )
 
 ConfirmCallback = Callable[[str], bool]
+ProgressCallback = Callable[[str, int | None, int | None], None]
 
 
 def _now_iso() -> str:
@@ -801,8 +802,10 @@ def import_scholar_labs_run(
     include_without_pdf: bool = False,
     archive_matched: bool = False,
     archive_export: bool = False,
+    auto_enrich: bool = False,
     title: str | None = None,
     confirm: ConfirmCallback | None = None,
+    progress: ProgressCallback | None = None,
 ) -> dict[str, int | str]:
     if dry_run and commit:
         raise ValueError("Use either dry-run or commit, not both.")
@@ -810,6 +813,8 @@ def import_scholar_labs_run(
     paths = initialize_vault(vault)
     export_file = Path(export_path).expanduser().resolve()
     staging_dir = Path(staging_path).expanduser().resolve()
+    if progress:
+        progress(f"Reading Scholar Labs export {export_file.name}", None, None)
     export = _load_validated_scholar_export(paths, export_file)
     run_slug, run_date = _run_slug(export, export_file)
     existing_run = _load_run_record(paths, run_slug)
@@ -846,7 +851,14 @@ def import_scholar_labs_run(
         else {}
     )
 
-    candidates = [build_pdf_candidate(path) for path in sorted(staging_dir.glob("*.pdf"))]
+    staged_pdf_paths = sorted(staging_dir.glob("*.pdf"))
+    if progress:
+        progress(f"Scanning {len(staged_pdf_paths)} staged PDFs", 0, len(staged_pdf_paths))
+    candidates = []
+    for index, path in enumerate(staged_pdf_paths, start=1):
+        if progress:
+            progress(f"Scanning staged PDF {path.name}", index, len(staged_pdf_paths))
+        candidates.append(build_pdf_candidate(path))
     remaining = list(candidates)
     run_results: list[RunResultRecord] = []
     manifest_entries: list[ImportManifestEntry] = []
@@ -856,7 +868,15 @@ def import_scholar_labs_run(
     archived_files: list[str] = []
     interactive = not dry_run and not commit
 
-    for result in sorted(export.results, key=lambda item: item.rank):
+    sorted_results = sorted(export.results, key=lambda item: item.rank)
+    total_results = len(sorted_results)
+    for index, result in enumerate(sorted_results, start=1):
+        if progress:
+            progress(
+                f"Matching Scholar Labs result {result.rank}: {result.title}",
+                index,
+                total_results,
+            )
         key = _result_key(result)
         prior_result = existing_results.get(key)
         prior_entry = existing_entries.get(key)
@@ -1073,6 +1093,7 @@ def import_scholar_labs_run(
         created_at=_now_iso(),
         entries=manifest_entries,
     )
+
     run_record = RunRecord(
         slug=run_slug,
         date=run_date,
@@ -1090,10 +1111,70 @@ def import_scholar_labs_run(
         matched_files=sorted(set(matched_files)),
         unmatched_files=sorted(set(unmatched_files)),
     )
+    if progress:
+        progress("Writing run manifest", None, None)
     _write_manifest(paths, manifest)
     _write_run(paths, run_record, cards)
+
+    enrichment_results = []
+    if auto_enrich and not dry_run:
+        selected_slugs = {
+            Path(result.paper_card).stem
+            for result in run_results
+            if result.status == "selected" and result.paper_card
+        }
+        selected_cards = [card for card in cards if card.slug in selected_slugs]
+        if selected_cards:
+
+            def report_citation_progress(
+                card: SourceCard,
+                index: int,
+                total: int,
+                status: str,
+            ) -> None:
+                if progress:
+                    progress(
+                        f"Enriching citations [{status}]: {card.citekey or card.slug}",
+                        index,
+                        total,
+                    )
+
+            def report_abstract_progress(
+                card: SourceCard,
+                index: int,
+                total: int,
+                status: str,
+            ) -> None:
+                if progress:
+                    progress(
+                        f"Enriching abstracts [{status}]: {card.citekey or card.slug}",
+                        index,
+                        total,
+                    )
+
+            enrichment_results.extend(
+                enrich_cards(
+                    paths,
+                    selected_cards,
+                    EnrichmentOptions(),
+                    progress=report_citation_progress,
+                )
+            )
+            enrichment_results.extend(
+                enrich_cards(
+                    paths,
+                    selected_cards,
+                    EnrichmentOptions(abstracts=True),
+                    progress=report_abstract_progress,
+                )
+            )
+            for card in selected_cards:
+                _save_card(paths, card)
+
     if log_entries:
         _write_log(paths, "import-labs" if archive_matched else "import-run", log_entries)
+    if progress:
+        progress("Rebuilding indexes and exports", None, None)
     _rebuild_indexes(paths)
 
     archived_export_path = ""
@@ -1113,6 +1194,7 @@ def import_scholar_labs_run(
         "unmatched": len(sorted(set(unmatched_files))),
         "archived": len(sorted(set(archived_files))),
         "export_archived": archived_export_path,
+        "enriched": len([result for result in enrichment_results if result.changed]),
         "run": run_slug,
     }
 
@@ -1123,7 +1205,9 @@ def resume_run(
     *,
     dry_run: bool = False,
     commit: bool = False,
+    auto_enrich: bool = False,
     confirm: ConfirmCallback | None = None,
+    progress: ProgressCallback | None = None,
 ) -> dict[str, int | str]:
     paths = initialize_vault(vault)
     run = _load_run_record(paths, run_id)
@@ -1140,8 +1224,10 @@ def resume_run(
         include_without_pdf=run.include_without_pdf,
         archive_matched=run.archive_matched_from_staging,
         archive_export=run.archive_matched_from_staging,
+        auto_enrich=auto_enrich,
         title=run.title,
         confirm=confirm,
+        progress=progress,
     )
 
 
@@ -1606,6 +1692,7 @@ def enrich_citations(
     retry_failed: bool = False,
     dry_run: bool = False,
     force: bool = False,
+    progress: EnrichmentProgress | None = None,
 ) -> dict[str, int]:
     if only not in {"all", "missing-doi", "missing-bibtex", "missing-abstract"}:
         raise ValueError("--only must be one of: missing-doi, missing-bibtex, missing-abstract")
@@ -1624,7 +1711,7 @@ def enrich_citations(
         dry_run=dry_run,
         force=force,
     )
-    results = enrich_cards(paths, cards, options)
+    results = enrich_cards(paths, cards, options, progress=progress)
     if citekey and all(result.skipped and result.message == "citekey filter" for result in results):
         raise ValueError(f"No paper card found for citekey: {citekey}")
 
