@@ -34,6 +34,12 @@
 - [x] Redesign the follow-up UI as a flat issue queue and add a missing-abstract manual resolution workflow.
 - [x] Make GUI progress report explicit workflow stages, substages, current item, and recent steps.
 - [x] Apply the dark import-summary style and high-visibility button treatment across GUI panels.
+- [x] Convert GUI progress history into a color-coded scrolling log.
+- [x] Redesign match review as a white paper-like surface with light action controls and score-source detail.
+- [x] Make match review avoid horizontal PDF scrolling and use only a simplified vertical preview scrollbar.
+- [x] Increase manual abstract paste-editor readability for copied PDF prose.
 - [x] Retry previously failed abstract enrichment by default instead of skipping with `abstract previously failed`.
+- [x] Refine GUI progress into one main output stream plus a compact top-right identifier stream with status color.
+- [x] Emit granular Scholar Labs matching progress for prior-manifest, vault-card, staged-PDF, review, and final decision substeps.
 - [ ] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 from pathlib import Path
 from typing import Any
@@ -129,6 +130,36 @@ def _dark_dialog_stylesheet() -> str:
     """
 
 
+def _match_review_stylesheet() -> str:
+    return """
+        QDialog { background: #ffffff; }
+        QLabel { color: #111111; }
+        QScrollArea {
+            background: #ffffff;
+            border: 1px solid #bfc7c2;
+        }
+        QScrollArea > QWidget > QWidget { background: #ffffff; }
+        QScrollBar:vertical {
+            background: #f4f6f5;
+            width: 10px;
+            margin: 0;
+        }
+        QScrollBar::handle:vertical {
+            background: #91a79b;
+            min-height: 28px;
+        }
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical {
+            height: 0;
+            background: transparent;
+        }
+        QScrollBar::add-page:vertical,
+        QScrollBar::sub-page:vertical {
+            background: transparent;
+        }
+    """
+
+
 def _button_stylesheet(tone: str = "neutral") -> str:
     tones = {
         "primary": ("#69ffad", "#f3fff7", "#0b2417"),
@@ -157,8 +188,41 @@ def _button_stylesheet(tone: str = "neutral") -> str:
     """
 
 
+def _light_button_stylesheet(tone: str = "neutral", *, large: bool = False) -> str:
+    tones = {
+        "success": ("#087a4b", "#f2fff8", "#087a4b", "#e6fff2"),
+        "danger": ("#b00020", "#fff4f6", "#b00020", "#ffe9ee"),
+        "neutral": ("#14563d", "#ffffff", "#14563d", "#eef8f2"),
+        "muted": ("#5f6f68", "#ffffff", "#1f2a25", "#f2f4f3"),
+    }
+    border, background, text, hover = tones.get(tone, tones["neutral"])
+    size = "font-size: 34px; font-weight: 800;" if large else "font-size: 15px;"
+    return f"""
+        QPushButton {{
+            background: {background};
+            color: {text};
+            border: 2px solid {border};
+            padding: 8px 16px;
+            min-height: 34px;
+            font-family: "Helvetica Neue";
+            {size}
+        }}
+        QPushButton:hover {{ background: {hover}; }}
+        QPushButton:pressed {{ background: #ddeee5; }}
+        QPushButton:disabled {{
+            color: #9aa8a1;
+            border-color: #c7d4cd;
+            background: #f4f6f5;
+        }}
+    """
+
+
 def _style_button(button: Any, tone: str = "neutral") -> None:
     button.setStyleSheet(_button_stylesheet(tone))
+
+
+def _style_light_button(button: Any, tone: str = "neutral", *, large: bool = False) -> None:
+    button.setStyleSheet(_light_button_stylesheet(tone, large=large))
 
 
 def _style_dialog_buttons(button_box: Any, tone: str = "neutral") -> None:
@@ -535,6 +599,69 @@ def _metadata_line(request: MatchReviewRequest) -> str:
     return " | ".join(parts)
 
 
+def _score_source_label(reason: str | None) -> str:
+    labels = {
+        "doi": "DOI match",
+        "title": "PDF title text",
+        "filename": "PDF filename",
+        "text": "first-page text",
+    }
+    return labels.get(str(reason or "").strip().lower(), str(reason or "unknown source"))
+
+
+def _confidence_detail_text(request: MatchReviewRequest) -> str:
+    details = _confidence_detail_model(request)
+    if request.score >= 100:
+        return f"source: {details['source']}\nexact match"
+    return f"source: {details['source']}\n-{details['deficit']} from exact: {details['cause']}"
+
+
+def _confidence_detail_model(request: MatchReviewRequest) -> dict[str, str]:
+    if request.score >= 100:
+        return {
+            "source": _score_source_label(request.match_reason),
+            "deficit": "0",
+            "cause": "exact match",
+            "verdict": "AUTO",
+        }
+    deficit = 100 - request.score
+    if request.match_reason == "filename":
+        cause = "filename similarity, not confirmed by extracted title"
+    elif request.match_reason == "text":
+        cause = "first-page text similarity, not an exact title match"
+    elif request.match_reason == "title":
+        cause = "fuzzy PDF-title similarity"
+    elif request.match_reason == "doi":
+        cause = "DOI matched but score was reduced upstream"
+    else:
+        cause = "non-exact match evidence"
+    verdict = "REVIEW" if request.score >= 70 else "LOW"
+    return {
+        "source": _score_source_label(request.match_reason),
+        "deficit": str(deficit),
+        "cause": cause,
+        "verdict": verdict,
+    }
+
+
+def _confidence_info_row(qt: dict[str, Any], label: str, value: str, color: str = "#27352e") -> Any:
+    row = qt["QWidget"]()
+    layout = qt["QHBoxLayout"](row)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(10)
+    label_widget = qt["QLabel"](label)
+    label_widget.setFixedWidth(58)
+    label_widget.setFont(_summary_font(qt, 10, mono=True, bold=True))
+    label_widget.setStyleSheet("border: none; color: #50645a;")
+    value_widget = qt["QLabel"](value)
+    value_widget.setWordWrap(True)
+    value_widget.setFont(_summary_font(qt, 13))
+    value_widget.setStyleSheet(f"border: none; color: {color};")
+    layout.addWidget(label_widget)
+    layout.addWidget(value_widget, 1)
+    return row
+
+
 def _build_match_dialog(qt: dict[str, Any], request: MatchReviewRequest):
     class MatchDialog(qt["QDialog"]):
         def keyPressEvent(self, event):  # noqa: N802 - Qt override name
@@ -543,6 +670,12 @@ def _build_match_dialog(qt: dict[str, Any], request: MatchReviewRequest):
                 return
             super().keyPressEvent(event)
 
+        def resizeEvent(self, event):  # noqa: N802 - Qt override name
+            super().resizeEvent(event)
+            refresh = getattr(self, "_refresh_preview", None)
+            if callable(refresh):
+                refresh(reset_scroll=False)
+
         def closeEvent(self, event):  # noqa: N802 - Qt override name
             event.ignore()
             self.done(_ABORT_DIALOG_CODE)
@@ -550,10 +683,11 @@ def _build_match_dialog(qt: dict[str, Any], request: MatchReviewRequest):
     dialog = MatchDialog()
     dialog.setWindowTitle("Scholar Vault Match Review")
     dialog.resize(1560, 960)
+    dialog.setStyleSheet(_match_review_stylesheet())
 
     layout = qt["QVBoxLayout"](dialog)
-    layout.setContentsMargins(38, 28, 38, 28)
-    layout.setSpacing(18)
+    layout.setContentsMargins(36, 26, 36, 24)
+    layout.setSpacing(14)
 
     body = qt["QHBoxLayout"]()
     body.setSpacing(34)
@@ -568,9 +702,10 @@ def _build_match_dialog(qt: dict[str, Any], request: MatchReviewRequest):
     title.setWordWrap(True)
     title.setAlignment(qt["Qt"].AlignmentFlag.AlignCenter)
     title_font = qt["QFont"]()
-    title_font.setPointSize(30)
+    title_font.setPointSize(31)
     title_font.setBold(True)
     title.setFont(title_font)
+    title.setStyleSheet("color: #050505;")
     document_layout.addWidget(title)
 
     metadata = qt["QLabel"](_metadata_line(request))
@@ -579,6 +714,7 @@ def _build_match_dialog(qt: dict[str, Any], request: MatchReviewRequest):
     metadata_font = qt["QFont"]()
     metadata_font.setPointSize(15)
     metadata.setFont(metadata_font)
+    metadata.setStyleSheet("color: #2d3430;")
     document_layout.addWidget(metadata)
 
     preview = qt["QLabel"]()
@@ -586,9 +722,10 @@ def _build_match_dialog(qt: dict[str, Any], request: MatchReviewRequest):
     preview.setWordWrap(True)
 
     scroll = qt["QScrollArea"]()
-    scroll.setWidgetResizable(True)
+    scroll.setWidgetResizable(False)
     scroll.setWidget(preview)
-    scroll.setHorizontalScrollBarPolicy(qt["Qt"].ScrollBarPolicy.ScrollBarAsNeeded)
+    scroll.viewport().setStyleSheet("background: #ffffff;")
+    scroll.setHorizontalScrollBarPolicy(qt["Qt"].ScrollBarPolicy.ScrollBarAlwaysOff)
     scroll.setVerticalScrollBarPolicy(qt["Qt"].ScrollBarPolicy.ScrollBarAlwaysOn)
     document_layout.addWidget(scroll, 0, qt["Qt"].AlignmentFlag.AlignTop)
     document_layout.addStretch(1)
@@ -597,18 +734,29 @@ def _build_match_dialog(qt: dict[str, Any], request: MatchReviewRequest):
     side = _build_match_side_panel(qt, request, dialog, scroll)
     body.addWidget(side, 0, qt["Qt"].AlignmentFlag.AlignTop)
 
-    def refresh_preview() -> None:
+    preview_source: dict[str, Any] = {"pixmap": None}
+
+    def refresh_preview(*, reset_scroll: bool = True) -> None:
         try:
-            image = _render_pdf_image(qt, request.pdf_path, full_page=True)
-            pixmap = qt["QPixmap"].fromImage(image)
-            scaled = pixmap.scaledToWidth(
-                1100,
+            if preview_source["pixmap"] is None:
+                image = _render_pdf_image(qt, request.pdf_path, full_page=True)
+                preview_source["pixmap"] = qt["QPixmap"].fromImage(image)
+            pixmap = preview_source["pixmap"]
+            viewport_width = scroll.viewport().width()
+            if viewport_width <= 24:
+                viewport_width = scroll.width() - scroll.verticalScrollBar().sizeHint().width() - 4
+            available_width = max(1, viewport_width - 2)
+            scaled = pixmap.scaled(
+                available_width,
+                max(1, int(pixmap.height() * (available_width / max(1, pixmap.width())))),
+                qt["Qt"].AspectRatioMode.KeepAspectRatio,
                 qt["Qt"].TransformationMode.SmoothTransformation,
             )
             preview.setPixmap(scaled)
-            preview.setMinimumSize(scaled.size())
+            preview.setFixedSize(scaled.size())
             scroll.setFixedHeight(_preview_viewport_height(scaled.height()))
-            scroll.verticalScrollBar().setValue(0)
+            if reset_scroll:
+                scroll.verticalScrollBar().setValue(0)
             preview.setText("")
         except Exception as exc:
             preview.setPixmap(qt["QPixmap"]())
@@ -624,6 +772,7 @@ def _build_match_dialog(qt: dict[str, Any], request: MatchReviewRequest):
         "Esc aborts import, Space scrolls preview, O opens PDF."
     )
     hint.setAlignment(qt["Qt"].AlignmentFlag.AlignCenter)
+    hint.setStyleSheet("color: #323a35;")
     layout.addWidget(hint)
 
     qt["QShortcut"](qt["QKeySequence"]("Y"), dialog).activated.connect(dialog.accept)
@@ -651,6 +800,7 @@ def _build_match_dialog(qt: dict[str, Any], request: MatchReviewRequest):
     qt["QShortcut"](qt["QKeySequence"]("Ctrl+O"), dialog).activated.connect(
         lambda: _open_path(qt, request.pdf_path)
     )
+    dialog._refresh_preview = refresh_preview  # type: ignore[attr-defined]
     refresh_preview()
     return dialog
 
@@ -662,72 +812,101 @@ def _build_match_side_panel(
     scroll: Any,
 ) -> Any:
     side = qt["QWidget"]()
-    side.setFixedWidth(340)
+    rail_width = 340
+    side.setFixedWidth(rail_width)
     side_layout = qt["QVBoxLayout"](side)
     side_layout.setContentsMargins(0, 0, 0, 0)
-    side_layout.setSpacing(24)
+    side_layout.setSpacing(12)
 
     confidence = qt["QFrame"]()
     confidence.setFrameShape(qt["QFrame"].Shape.StyledPanel)
-    confidence.setMinimumHeight(145)
+    confidence.setStyleSheet("QFrame { background: #ffffff; border: 1px solid #aab4af; }")
+    confidence.setFixedSize(rail_width, 190)
     confidence_layout = qt["QVBoxLayout"](confidence)
-    confidence_label = qt["QLabel"]("Confidence")
-    confidence_label.setAlignment(qt["Qt"].AlignmentFlag.AlignCenter)
+    confidence_layout.setContentsMargins(16, 12, 16, 12)
+    confidence_layout.setSpacing(5)
+
+    confidence_model = _confidence_detail_model(request)
+    confidence_header = qt["QHBoxLayout"]()
+    confidence_label = qt["QLabel"]("CONFIDENCE")
     confidence_label_font = qt["QFont"]()
-    confidence_label_font.setPointSize(18)
+    confidence_label_font.setPointSize(13)
     confidence_label_font.setBold(True)
     confidence_label.setFont(confidence_label_font)
+    confidence_label.setStyleSheet("border: none; color: #111111;")
+    confidence_header.addWidget(confidence_label)
+    confidence_layout.addLayout(confidence_header)
+
     confidence_value = qt["QLabel"](f"{request.score}%")
-    confidence_value.setAlignment(qt["Qt"].AlignmentFlag.AlignCenter)
+    confidence_value.setAlignment(qt["Qt"].AlignmentFlag.AlignLeft)
     confidence_value_font = qt["QFont"]("Menlo")
     confidence_value_font.setStyleHint(qt["QFont"].StyleHint.Monospace)
-    confidence_value_font.setPointSize(43)
+    confidence_value_font.setPointSize(52)
     confidence_value_font.setBold(True)
     confidence_value.setFont(confidence_value_font)
-    confidence_value.setStyleSheet(f"color: {_confidence_color(request.score)};")
-    confidence_layout.addWidget(confidence_label)
-    confidence_layout.addWidget(confidence_value)
+    confidence_value.setStyleSheet(f"border: none; color: {_confidence_color(request.score)};")
+    confidence_body = qt["QHBoxLayout"]()
+    confidence_body.setContentsMargins(0, 0, 0, 0)
+    confidence_body.setSpacing(14)
+    confidence_body.addWidget(confidence_value, 0, qt["Qt"].AlignmentFlag.AlignTop)
+    confidence_details = qt["QVBoxLayout"]()
+    confidence_details.setContentsMargins(0, 4, 0, 0)
+    confidence_details.setSpacing(6)
+    confidence_details.addWidget(
+        _confidence_info_row(qt, "SOURCE", confidence_model["source"])
+    )
+    confidence_details.addWidget(
+        _confidence_info_row(
+            qt,
+            "GAP",
+            f"{confidence_model['deficit']} below exact",
+            _confidence_color(request.score),
+        )
+    )
+    confidence_details.addWidget(
+        _confidence_info_row(
+            qt,
+            "WHY",
+            confidence_model["cause"],
+            _confidence_color(request.score),
+        )
+    )
+    confidence_body.addLayout(confidence_details, 1)
+    confidence_layout.addLayout(confidence_body)
     side_layout.addWidget(confidence)
 
     accept = qt["QPushButton"]("YES")
-    accept.setMinimumHeight(185)
+    accept.setFixedSize(rail_width, 185)
     accept.setFocusPolicy(qt["Qt"].FocusPolicy.NoFocus)
     accept_font = qt["QFont"]()
     accept_font.setPointSize(40)
     accept_font.setBold(True)
     accept.setFont(accept_font)
-    _style_button(accept, "success")
+    _style_light_button(accept, "success", large=True)
     accept.clicked.connect(dialog.accept)
     side_layout.addWidget(accept)
 
     reject = qt["QPushButton"]("NO")
-    reject.setMinimumHeight(185)
+    reject.setFixedSize(rail_width, 185)
     reject.setFocusPolicy(qt["Qt"].FocusPolicy.NoFocus)
     reject.setFont(accept_font)
-    _style_button(reject, "danger")
+    _style_light_button(reject, "danger", large=True)
     reject.clicked.connect(dialog.reject)
     side_layout.addWidget(reject)
 
     abort = qt["QPushButton"]("Abort Import")
-    abort.setMinimumHeight(52)
+    abort.setFixedSize(rail_width, 54)
     abort.setFocusPolicy(qt["Qt"].FocusPolicy.NoFocus)
-    _style_button(abort, "danger")
+    _style_light_button(abort, "danger")
     abort.clicked.connect(lambda: dialog.done(_ABORT_DIALOG_CODE))
     side_layout.addWidget(abort)
 
     open_pdf = qt["QPushButton"]("Open PDF")
-    open_pdf.setMinimumHeight(44)
+    open_pdf.setFixedSize(rail_width, 54)
     open_pdf.setFocusPolicy(qt["Qt"].FocusPolicy.NoFocus)
-    _style_button(open_pdf, "neutral")
+    _style_light_button(open_pdf, "neutral")
     open_pdf.clicked.connect(lambda: _open_path(qt, request.pdf_path))
     side_layout.addWidget(open_pdf)
-
-    scroll_down = qt["QPushButton"]("Scroll Preview")
-    scroll_down.setMinimumHeight(44)
-    scroll_down.setFocusPolicy(qt["Qt"].FocusPolicy.NoFocus)
-    _style_button(scroll_down, "neutral")
-    scroll_down.clicked.connect(lambda: _scroll_preview(qt, scroll, direction=1))
-    side_layout.addWidget(scroll_down)
 
     side_layout.addStretch(1)
     return side
@@ -755,12 +934,22 @@ def _progress_parts(message: str) -> tuple[str, str, str]:
             "Extracting PDF title, DOI, year, and first-page text",
             text.removeprefix("Scanning staged PDF "),
         )
+    match = re.fullmatch(r"Matching Scholar Labs result (\d+) \[([^\]]+)\]: (.+)", text)
+    if match:
+        rank, status, rest = match.groups()
+        detail, _, identifier = rest.partition(" // ")
+        return (
+            "MATCHING",
+            f"{status.upper()} // {detail}",
+            f"rank {rank} // {identifier or f'r{int(rank):02d}'}",
+        )
     match = re.fullmatch(r"Checking Scholar Labs result (\d+): (.+)", text)
     if match:
+        rank, title = match.groups()
         return (
             "MATCHING",
             "Comparing this result with prior decisions, vault cards, and staged PDFs",
-            f"rank {match.group(1)} // {match.group(2)}",
+            f"rank {rank} // {_progress_rank_identifier(rank, title)}",
         )
     if text == "Writing run manifest":
         return "WRITING", "Saving run manifest, card links, and match decisions", ""
@@ -769,7 +958,7 @@ def _progress_parts(message: str) -> tuple[str, str, str]:
         status = match.group(1)
         return (
             "CITATION ENRICHMENT",
-            f"{status.upper()} // resolving DOI, source metadata, BibTeX, and missing fields",
+            f"{status.upper()} // {_enrichment_status_detail(status, abstracts=False)}",
             match.group(2),
         )
     match = re.fullmatch(r"Enriching abstracts \[([^\]]+)\]: (.+)", text)
@@ -777,7 +966,7 @@ def _progress_parts(message: str) -> tuple[str, str, str]:
         status = match.group(1)
         return (
             "ABSTRACT ENRICHMENT",
-            f"{status.upper()} // searching provider metadata and attached PDFs",
+            f"{status.upper()} // {_enrichment_status_detail(status, abstracts=True)}",
             match.group(2),
         )
     match = re.fullmatch(r"([^:]+): ([A-Za-z_-]+)", text)
@@ -792,6 +981,29 @@ def _progress_parts(message: str) -> tuple[str, str, str]:
     return "PROCESSING", "Running current workflow step", text
 
 
+def _enrichment_status_detail(status: str, *, abstracts: bool) -> str:
+    normalized = status.lower().replace("-", "_")
+    if normalized == "checking":
+        return (
+            "checking providers, cache, DOI, and PDF text"
+            if abstracts
+            else "checking DOI providers, cache, BibTeX, and missing fields"
+        )
+    if normalized == "skipped":
+        return "no change; existing state, lock, cache, or retry rule"
+    if normalized in {"verified", "resolved"}:
+        return "ok; trusted metadata present"
+    if normalized == "generated":
+        return "generated metadata; review if needed"
+    if normalized == "ambiguous":
+        return "issue; multiple plausible candidates"
+    if normalized == "unresolved":
+        return "issue; no acceptable provider or PDF result"
+    if normalized == "incomplete":
+        return "issue; important fields still missing"
+    return "processing canonical paper card"
+
+
 def _progress_step_text(
     message: str,
     current: int | None = None,
@@ -803,15 +1015,237 @@ def _progress_step_text(
     return f"{prefix}{stage}: {substage}{suffix}"
 
 
+def _progress_log_color(message: str) -> str:
+    lowered = message.lower()
+    if (
+        "complete" in lowered
+        or "[verified]" in lowered
+        or "[resolved]" in lowered
+        or "[accepted]" in lowered
+        or "[linked]" in lowered
+        or "[reused]" in lowered
+    ):
+        return "#69ffad"
+    if "[generated]" in lowered or "[manual_lock]" in lowered:
+        return "#8bffd0"
+    if (
+        "[checking]" in lowered
+        or "[prior]" in lowered
+        or "[card]" in lowered
+        or "[pdf]" in lowered
+        or "[review]" in lowered
+        or "[proposed]" in lowered
+        or "[card-found]" in lowered
+    ):
+        return "#ffb000"
+    if (
+        "[skipped]" in lowered
+        or "[card-none]" in lowered
+        or "[below-threshold]" in lowered
+        or "[pdf-none]" in lowered
+        or "[dry-run]" in lowered
+    ):
+        return "#a7b2aa"
+    if "[ambiguous]" in lowered:
+        return "#ffd34d"
+    if (
+        "[unresolved]" in lowered
+        or "[rejected]" in lowered
+        or "failed" in lowered
+        or "canceled" in lowered
+    ):
+        return "#ff3b4f"
+    if "matching" in lowered or "scanning" in lowered or "reading" in lowered:
+        return "#8ce7b8"
+    return "#baffdc"
+
+
+def _progress_log_html(
+    message: str,
+    current: int | None = None,
+    total: int | None = None,
+    *,
+    include_context: bool = True,
+) -> str:
+    color = _progress_log_color(message)
+    stage, substage, item = _progress_parts(message)
+    counter = f"{current}/{total}" if current is not None and total else "..."
+    item_html = _progress_log_item_html(stage, item, include_context=include_context)
+    return (
+        f'<div style="margin-bottom:5px; white-space:nowrap; color:{color};">'
+        f'<span style="background-color:{color}; color:#030504; font-weight:700;">'
+        f"&nbsp;{html.escape(counter)}&nbsp;</span>"
+        f' <span style="color:{color}; font-weight:700;">{html.escape(stage)}</span>'
+        f" {_progress_substage_html(substage, color)}"
+        f"{item_html}"
+        "</div>"
+    )
+
+
+def _progress_substage_html(substage: str, color: str) -> str:
+    if " // " not in substage:
+        return f'<span style="color:#8ce7b8;">{html.escape(substage)}</span>'
+    status, detail = substage.split(" // ", 1)
+    return (
+        f'<span style="color:{color}; font-weight:800;">{html.escape(status)}</span>'
+        f' <span style="color:{color};">{html.escape(detail)}</span>'
+    )
+
+
+def _progress_log_item_html(stage: str, item: str, *, include_context: bool = True) -> str:
+    if not item:
+        return ""
+    if stage in {"CITATION ENRICHMENT", "ABSTRACT ENRICHMENT"}:
+        parts = [part.strip() for part in item.split(" // ")]
+        identifier = parts[0]
+        context = parts[2] if len(parts) >= 3 else ""
+        if context and include_context:
+            return (
+                f' <span style="color:#f3fff7;">// {html.escape(identifier)} // </span>'
+                f"{_progress_context_html(context)}"
+            )
+        return f' <span style="color:#f3fff7;">// {html.escape(identifier)}</span>'
+    if stage == "MATCHING":
+        parts = [part.strip() for part in item.split(" // ")]
+        item = parts[1] if len(parts) >= 2 and parts[1] else parts[0]
+    return f' <span style="color:#f3fff7;">// {html.escape(item)}</span>'
+
+
+def _progress_context_html(context: str) -> str:
+    parts: list[str] = []
+    for raw_part in context.split(";"):
+        part = raw_part.strip()
+        if not part:
+            continue
+        if "=" in part:
+            key, value = part.split("=", 1)
+            parts.append(
+                '<span style="color:#8ce7b8; font-weight:800;">'
+                f"{html.escape(key.strip())}"
+                "</span>"
+                f'<span style="color:#f3fff7;">={html.escape(value.strip())}</span>'
+            )
+        else:
+            parts.append(
+                '<span style="color:#8ce7b8; font-weight:800;">'
+                f"{html.escape(part)}"
+                "</span>"
+            )
+    return '<span style="color:#6f8f7d;">; </span>'.join(parts)
+
+
+def _short_identifier(text: str, *, limit: int = 42) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return compact
+    head = max(12, (limit - 3) // 2)
+    tail = max(8, limit - head - 3)
+    return f"{compact[:head]}...{compact[-tail:]}"
+
+
+def _progress_rank_identifier(rank: str, title: str) -> str:
+    words = re.findall(r"[a-z0-9]+", title.lower())
+    filtered = [word for word in words if len(word) > 2][:5]
+    compact = "".join(filtered)[:34]
+    return f"r{int(rank):02d}-{compact or 'result'}"
+
+
+def _progress_item_text(message: str) -> str:
+    stage, _substage, item = _progress_parts(message)
+    if not item:
+        return ""
+    if stage in {"CITATION ENRICHMENT", "ABSTRACT ENRICHMENT"}:
+        parts = [part.strip() for part in item.split(" // ")]
+        return parts[0]
+    if stage == "MATCHING":
+        parts = [part.strip() for part in item.split(" // ")]
+        if len(parts) >= 2 and parts[1]:
+            return parts[1]
+        rank = re.search(r"\d+", parts[0] if parts else item)
+        return f"r{int(rank.group(0)):02d}" if rank else "result"
+    return _short_identifier(item)
+
+
+def _progress_context_key(message: str) -> tuple[str, str] | None:
+    stage, _substage, item = _progress_parts(message)
+    if stage not in {"CITATION ENRICHMENT", "ABSTRACT ENRICHMENT"}:
+        return None
+    parts = [part.strip() for part in item.split(" // ")]
+    if len(parts) < 3 or not parts[0] or not parts[2]:
+        return None
+    return parts[0], parts[2]
+
+
+def _progress_item_html(
+    message: str,
+    current: int | None = None,
+    total: int | None = None,
+    *,
+    active: bool = False,
+) -> str:
+    item = _progress_item_text(message)
+    if not item:
+        return ""
+    color = _progress_log_color(message)
+    counter = f"{current}/{total}" if current is not None and total else "..."
+    background = "#123624" if active else "transparent"
+    border = f"border-left: 3px solid {color};" if active else "border-left: 3px solid transparent;"
+    return (
+        f'<div style="margin-bottom:4px; white-space:nowrap; background:{background}; {border}">'
+        f'<span style="background-color:{color}; color:#030504; font-weight:700;">'
+        f"&nbsp;{html.escape(counter)}&nbsp;</span>"
+        f' <span style="color:{color}; font-weight:700;">{html.escape(item)}</span>'
+        "</div>"
+    )
+
+
+def _progress_stream_label(qt: dict[str, Any], text: str) -> Any:
+    label = qt["QLabel"](text)
+    label.setFont(_summary_font(qt, 10, mono=True, bold=True))
+    label.setStyleSheet("color: #69ffad;")
+    return label
+
+
+def _progress_stream(
+    qt: dict[str, Any],
+    *,
+    minimum_height: int = 150,
+    compact: bool = False,
+) -> Any:
+    stream = qt["QTextEdit"]()
+    stream.setReadOnly(True)
+    stream.setFont(_summary_font(qt, 10 if compact else 11, mono=True))
+    stream.setLineWrapMode(qt["QTextEdit"].LineWrapMode.NoWrap)
+    stream.setHorizontalScrollBarPolicy(qt["Qt"].ScrollBarPolicy.ScrollBarAlwaysOff)
+    stream.setStyleSheet(
+        "QTextEdit { color: #baffdc; background: #07100b; "
+        "border: 1px solid #26553b; padding: 8px; }"
+    )
+    stream.setMinimumHeight(minimum_height)
+    return stream
+
+
+def _append_progress_stream(stream: Any, html_text: str) -> None:
+    if not html_text:
+        return
+    stream.append(html_text)
+    bar = stream.verticalScrollBar()
+    bar.setValue(bar.maximum())
+
+
 class _ProgressReporter:
     def __init__(self, qt: dict[str, Any], title: str) -> None:
         self._qt = qt
         self._app = _application(qt)
         self._cancelled = False
-        self._recent: list[str] = []
+        self._last_step = ""
+        self._active_item = ""
+        self._item_order: list[str] = []
+        self._item_events: dict[str, tuple[str, int | None, int | None]] = {}
+        self._last_context_by_item: dict[str, str] = {}
         self._dialog = qt["QDialog"]()
         self._dialog.setWindowTitle(title)
-        self._dialog.resize(820, 380)
+        self._dialog.resize(1280, 720)
         self._dialog.setStyleSheet(_dark_dialog_stylesheet())
 
         layout = qt["QVBoxLayout"](self._dialog)
@@ -832,34 +1266,47 @@ class _ProgressReporter:
         header.addWidget(self._counter)
         layout.addLayout(header)
 
+        status_row = qt["QHBoxLayout"]()
+        status_row.setSpacing(18)
+
+        status_copy = qt["QVBoxLayout"]()
+        status_copy.setSpacing(12)
+
         self._stage = qt["QLabel"]("STARTING")
         self._stage.setFont(_summary_font(qt, 30, bold=True))
         self._stage.setStyleSheet("color: #f3fff7;")
-        layout.addWidget(self._stage)
+        status_copy.addWidget(self._stage)
 
         self._substage = qt["QLabel"]("Preparing workflow")
         self._substage.setFont(_summary_font(qt, 15, bold=True))
         self._substage.setStyleSheet("color: #baffdc;")
         self._substage.setWordWrap(True)
-        layout.addWidget(self._substage)
+        status_copy.addWidget(self._substage)
+        status_copy.addStretch(1)
+        status_row.addLayout(status_copy, 1)
 
-        self._item = qt["QLabel"]("")
-        self._item.setFont(_summary_font(qt, 12))
-        self._item.setStyleSheet("color: #8ce7b8;")
-        self._item.setWordWrap(True)
-        layout.addWidget(self._item)
+        item_column = qt["QVBoxLayout"]()
+        item_column.setSpacing(6)
+        item_column.addWidget(_progress_stream_label(qt, "CITEKEYS / ITEMS"))
+        self._item_log = _progress_stream(qt, minimum_height=130, compact=True)
+        self._item_log.setFixedWidth(430)
+        self._item_log.setFixedHeight(150)
+        item_column.addWidget(self._item_log)
+        status_row.addLayout(item_column, 0)
+
+        layout.addLayout(status_row)
 
         self._bar = qt["QProgressBar"]()
         self._bar.setRange(0, 0)
+        self._bar.setTextVisible(False)
         layout.addWidget(self._bar)
 
-        self._log = qt["QLabel"]("")
-        self._log.setFont(_summary_font(qt, 11))
-        self._log.setStyleSheet(
-            "color: #8ce7b8; background: #07100b; border: 1px solid #26553b; padding: 9px;"
-        )
-        self._log.setWordWrap(True)
-        layout.addWidget(self._log)
+        output_column = qt["QVBoxLayout"]()
+        output_column.setSpacing(6)
+        output_column.addWidget(_progress_stream_label(qt, "FULL OUTPUT"))
+        self._log = _progress_stream(qt, minimum_height=270)
+        output_column.addWidget(self._log, 1)
+        layout.addLayout(output_column, 1)
 
         buttons = qt["QHBoxLayout"]()
         buttons.addStretch(1)
@@ -891,7 +1338,6 @@ class _ProgressReporter:
         stage, substage, item = _progress_parts(message)
         self._stage.setText(stage)
         self._substage.setText(substage)
-        self._item.setText(item)
         if current is not None and total:
             self._bar.setRange(0, total)
             self._bar.setValue(current)
@@ -900,13 +1346,49 @@ class _ProgressReporter:
             self._bar.setRange(0, 0)
             self._counter.setText("BUSY")
         step = _progress_step_text(message, current, total)
-        if not self._recent or self._recent[-1] != step:
-            self._recent.append(step)
-            self._recent = self._recent[-5:]
-        self._log.setText("\n".join(self._recent))
+        if self._last_step != step:
+            self._last_step = step
+            context = _progress_context_key(message)
+            include_context = True
+            if context is not None:
+                context_item, context_value = context
+                include_context = self._last_context_by_item.get(context_item) != context_value
+                self._last_context_by_item[context_item] = context_value
+            _append_progress_stream(
+                self._log,
+                _progress_log_html(
+                    message,
+                    current,
+                    total,
+                    include_context=include_context,
+                ),
+            )
+        item_step = _progress_item_text(message)
+        if item_step:
+            self._active_item = item_step
+            if item_step in self._item_order:
+                self._item_order.remove(item_step)
+            self._item_order.append(item_step)
+            self._item_events[item_step] = (message, current, total)
+            self._render_item_log()
         self._app.processEvents()
         if self._cancelled and not complete:
             raise MatchReviewAbort("Import canceled from progress window.")
+
+    def _render_item_log(self) -> None:
+        rows = [
+            _progress_item_html(
+                message,
+                current,
+                total,
+                active=item == self._active_item,
+            )
+            for item in self._item_order
+            for message, current, total in [self._item_events[item]]
+        ]
+        self._item_log.setHtml("".join(rows))
+        bar = self._item_log.verticalScrollBar()
+        bar.setValue(bar.maximum())
 
     def close(self) -> None:
         self._dialog.accept()
@@ -1359,7 +1841,7 @@ def show_enrichment_results(
             empty.setStyleSheet("color: #45ffb0; padding: 20px;")
             list_layout.addWidget(empty)
         for index, row in enumerate(visible):
-            list_layout.addWidget(_issue_row(qt, row, refresh_list))
+            list_layout.addWidget(_issue_row(qt, row, refresh_list, dialog))
             if index < len(visible) - 1:
                 list_layout.addWidget(_issue_separator(qt))
         list_layout.addStretch(1)
@@ -1398,7 +1880,12 @@ def _issue_separator(qt: dict[str, Any]) -> Any:
     return separator
 
 
-def _issue_row(qt: dict[str, Any], detail: dict[str, Any], refresh) -> Any:
+def _issue_row(
+    qt: dict[str, Any],
+    detail: dict[str, Any],
+    refresh,
+    parent: Any | None = None,
+) -> Any:
     color = _issue_color(detail)
     row = qt["QWidget"]()
     row.setObjectName("issueRow")
@@ -1426,7 +1913,7 @@ def _issue_row(qt: dict[str, Any], detail: dict[str, Any], refresh) -> Any:
     message_text = str(detail.get("message") or detail.get("status") or "Follow-up needed")
     if _can_resolve_missing_abstract(detail):
         message = qt["QPushButton"](message_text)
-        message.clicked.connect(lambda: _resolve_missing_abstract(qt, detail, refresh))
+        message.clicked.connect(lambda: _resolve_missing_abstract(qt, detail, refresh, parent))
         message.setStyleSheet(
             _button_stylesheet("danger")
             + "QPushButton { text-align: left; padding: 10px 12px; font-size: 20px; }"
@@ -1460,7 +1947,7 @@ def _issue_row(qt: dict[str, Any], detail: dict[str, Any], refresh) -> Any:
     if _can_resolve_missing_abstract(detail):
         resolve = qt["QPushButton"]("Resolve Abstract")
         _style_button(resolve, "danger")
-        resolve.clicked.connect(lambda: _resolve_missing_abstract(qt, detail, refresh))
+        resolve.clicked.connect(lambda: _resolve_missing_abstract(qt, detail, refresh, parent))
         actions.addWidget(resolve)
     open_card = qt["QPushButton"]("Open Card")
     open_pdf = qt["QPushButton"]("Open PDF")
@@ -1503,12 +1990,19 @@ def _vault_from_detail(detail: dict[str, Any]) -> Path:
     return Path(str(paper_file)).expanduser().resolve().parent.parent
 
 
-def _resolve_missing_abstract(qt: dict[str, Any], detail: dict[str, Any], refresh) -> None:
+def _resolve_missing_abstract(
+    qt: dict[str, Any],
+    detail: dict[str, Any],
+    refresh,
+    parent: Any | None = None,
+) -> None:
     pdf_file = str(detail.get("pdf_file") or "")
     if pdf_file:
         _open_path(qt, pdf_file)
 
-    dialog = qt["QDialog"]()
+    dialog = qt["QDialog"](parent)
+    if parent is not None:
+        dialog.setWindowModality(qt["Qt"].WindowModality.WindowModal)
     dialog.setWindowTitle("Resolve Missing Abstract")
     dialog.resize(880, 620)
     dialog.setStyleSheet(_dark_dialog_stylesheet())
@@ -1531,7 +2025,13 @@ def _resolve_missing_abstract(qt: dict[str, Any], detail: dict[str, Any], refres
 
     editor = qt["QTextEdit"]()
     editor.setAcceptRichText(False)
-    editor.setFont(_summary_font(qt, 13))
+    editor_font = qt["QFont"]("Georgia")
+    editor_font.setPointSize(18)
+    editor.setFont(editor_font)
+    editor.setStyleSheet(
+        "QTextEdit { background: #07100b; color: #f3fff7; border: 1px solid #078a5d; "
+        "padding: 14px; selection-background-color: #1d6f4b; }"
+    )
     layout.addWidget(editor, 1)
 
     buttons = qt["QDialogButtonBox"](
@@ -1575,6 +2075,9 @@ def _resolve_missing_abstract(qt: dict[str, Any], detail: dict[str, Any], refres
 
     buttons.accepted.connect(save)
     buttons.rejected.connect(dialog.reject)
+    dialog.show()
+    dialog.raise_()
+    dialog.activateWindow()
     dialog.exec()
 
 

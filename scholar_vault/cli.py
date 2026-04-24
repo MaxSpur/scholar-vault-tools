@@ -698,10 +698,32 @@ def _with_progress(
 
 def _enrichment_progress_reporter(report, *, abstracts: bool = False):
     def progress(card: SourceCard, index: int, total: int, status: str) -> None:
-        stage = "abstracts" if abstracts else "citations"
-        report(f"Enriching {stage} [{status}]: {card.citekey or card.slug}", index, total)
+        report(_enrichment_progress_message(card, status, abstracts=abstracts), index, total)
 
     return progress
+
+
+def _enrichment_progress_message(card: SourceCard, status: str, *, abstracts: bool = False) -> str:
+    stage = "abstracts" if abstracts else "citations"
+    identifier = card.citekey or card.slug
+    title = " ".join((card.title or identifier).split())
+    context: list[str] = []
+    if abstracts:
+        context.append(f"state={card.abstract_status}")
+        if card.abstract_source:
+            context.append(f"source={card.abstract_source}")
+        context.append(f"pdf={'yes' if card.pdf else 'no'}")
+        if card.abstract_lock:
+            context.append("locked")
+    else:
+        context.append(f"state={card.citation_status}")
+        if card.citation_source:
+            context.append(f"source={card.citation_source}")
+        if card.enrichment_missing:
+            context.append(f"missing={','.join(card.enrichment_missing)}")
+        if card.doi:
+            context.append(f"doi={card.doi}")
+    return f"Enriching {stage} [{status}]: {identifier} // {title} // {'; '.join(context)}"
 
 
 @app.command("configure")

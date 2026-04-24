@@ -97,7 +97,13 @@ def test_import_summary_model_highlights_reused_manifest() -> None:
 
 
 def test_progress_parts_name_import_substages() -> None:
-    from scholar_vault.gui import _progress_parts, _progress_step_text
+    from scholar_vault.gui import (
+        _progress_item_text,
+        _progress_log_color,
+        _progress_log_html,
+        _progress_parts,
+        _progress_step_text,
+    )
 
     assert _progress_parts("Reading Scholar Labs export export.json") == (
         "READING EXPORT",
@@ -111,14 +117,69 @@ def test_progress_parts_name_import_substages() -> None:
     )
     assert _progress_parts("Enriching abstracts [skipped]: nafis2024paper") == (
         "ABSTRACT ENRICHMENT",
-        "SKIPPED // searching provider metadata and attached PDFs",
+        "SKIPPED // no change; existing state, lock, cache, or retry rule",
         "nafis2024paper",
+    )
+    assert (
+        _progress_item_text(
+            "Enriching abstracts [checking]: nafis2024paper // Are We There Yet? // "
+            "state=unresolved; pdf=yes"
+        )
+        == "nafis2024paper"
+    )
+    assert (
+        _progress_item_text("Checking Scholar Labs result 3: Example Paper")
+        == "r03-examplepaper"
+    )
+    assert (
+        _progress_item_text(
+            "Matching Scholar Labs result 12 [pdf]: scoring 4 staged PDF candidates // "
+            "r12-collaborativeimmersiveanalytics"
+        )
+        == "r12-collaborativeimmersiveanalytics"
     )
     assert (
         _progress_step_text("Checking Scholar Labs result 3: Example Paper", 3, 20)
         == "[3/20] MATCHING: Comparing this result with prior decisions, vault cards, "
-        "and staged PDFs // rank 3 // Example Paper"
+        "and staged PDFs // rank 3 // r03-examplepaper"
     )
+    assert _progress_log_color("Enriching abstracts [unresolved]: example") == "#ff3b4f"
+    log_html = _progress_log_html("Enriching citations [verified]: example", 1, 3)
+    assert "&nbsp;1/3&nbsp;" in log_html
+    assert "CITATION ENRICHMENT" in log_html
+    assert "ok; trusted metadata present" in log_html
+    assert "example" in log_html
+    assert "Example Title" not in _progress_log_html(
+        "Enriching citations [verified]: example // Example Title // state=verified",
+        1,
+        3,
+    )
+    assert "state" in _progress_log_html(
+        "Enriching abstracts [checking]: example // Example Title // state=missing; pdf=yes",
+        1,
+        3,
+    )
+
+
+def test_match_confidence_detail_explains_score_source() -> None:
+    from scholar_vault.gui import _confidence_detail_text
+    from scholar_vault.models import MatchReviewRequest
+
+    request = MatchReviewRequest(
+        rank=5,
+        result_title="Visualization in virtual reality: a systematic review",
+        pdf_path="/tmp/example.pdf",
+        pdf_filename="example.pdf",
+        score=76,
+        match_reason="title",
+        proposed_decision="review",
+    )
+
+    detail = _confidence_detail_text(request)
+
+    assert "source: PDF title text" in detail
+    assert "-24 from exact" in detail
+    assert "fuzzy PDF-title similarity" in detail
 
 
 def test_confirmation_model_makes_existing_run_prompt_readable() -> None:

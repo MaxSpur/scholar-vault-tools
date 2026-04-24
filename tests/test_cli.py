@@ -72,6 +72,15 @@ def test_enrichment_progress_reporter_includes_stage() -> None:
     class Card:
         citekey = "example2024paper"
         slug = "example-paper"
+        title = "Example Paper"
+        abstract_status = "unresolved"
+        abstract_source = None
+        abstract_lock = False
+        pdf = "pdfs/example.pdf"
+        citation_status = "missing"
+        citation_source = None
+        enrichment_missing = []
+        doi = None
 
     progress = _enrichment_progress_reporter(
         lambda message, current, total: calls.append((message, current, total)),
@@ -79,7 +88,14 @@ def test_enrichment_progress_reporter_includes_stage() -> None:
     )
     progress(Card(), 2, 5, "skipped")
 
-    assert calls == [("Enriching abstracts [skipped]: example2024paper", 2, 5)]
+    assert calls == [
+        (
+            "Enriching abstracts [skipped]: example2024paper // Example Paper // "
+            "state=unresolved; pdf=yes",
+            2,
+            5,
+        )
+    ]
 
 
 def test_import_canceled_exits_cleanly(capsys) -> None:
