@@ -10,6 +10,7 @@
 - When moving user-facing input files for workflow hygiene, update all provenance paths that future commands use. Archiving a used JSON export is only useful if `resume` still points at the moved file.
 - Prefer moving used exports into a folder over renaming them. Scholar Labs prompt-derived JSON names can already be long enough to approach filesystem limits.
 - When defaulting to the "latest" browser export, only consider top-level `.json` files in the configured exports folder or staging fallback. Ignore `used/` so reruns do not accidentally re-ingest archived exports.
+- Represent shared Scholar Labs downloads by omitting the `exports` config key. That keeps CLI, GUI, and import fallback behavior on one data model instead of adding a second mode flag to persisted config.
 - PDF title metadata and first extracted text lines are often journal headers, especially for IEEE papers. Match against filename and compact no-space title text as fallbacks before declaring a staged PDF unmatched.
 - For "last run" behavior, use manifest `created_at` rather than run page mtimes. Rebuilds can rewrite run pages and make filesystem mtimes misleading.
 - Citation enrichment needs explicit state. Fingerprints, retry counts, `metadata_lock`, and raw provider caches prevent repeatedly hitting APIs or overwriting curated metadata by accident.

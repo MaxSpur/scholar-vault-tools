@@ -62,6 +62,16 @@ ConfigPathArg = Annotated[
     Path | None,
     typer.Option(exists=True, file_okay=False, dir_okay=True, resolve_path=True),
 ]
+FolderModeArg = Annotated[
+    str | None,
+    typer.Option(
+        "--folder-mode",
+        help=(
+            "Scholar Labs download layout: 'shared' uses the staging folder for PDFs and "
+            "JSON exports; 'separate' uses --exports."
+        ),
+    ),
+]
 RunIdArg = Annotated[str, typer.Option(..., help="Run id, for example 2026-04-22_example-prompt.")]
 OptionalRunIdArg = Annotated[
     str | None,
@@ -166,7 +176,7 @@ UiArg = Annotated[
     bool,
     typer.Option(
         "--ui/--no-ui",
-        help="Use the desktop review UI when available.",
+        help="Use the desktop UI when available.",
     ),
 ]
 YesArg = Annotated[
@@ -232,6 +242,74 @@ def _confirm_callback(ui: bool):
     except GuiUnavailable as exc:
         console.print(f"Confirmation UI unavailable ({exc}). Falling back to terminal prompts.")
         return _confirm
+
+
+def _configure_ui(config: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        from .gui import GuiUnavailable, edit_configuration
+    except Exception as exc:  # pragma: no cover - defensive optional import path
+        console.print(f"Configuration UI unavailable ({exc}). Falling back to terminal output.")
+        return None
+    try:
+        return edit_configuration(config)
+    except GuiUnavailable as exc:
+        console.print(f"Configuration UI unavailable ({exc}). Falling back to terminal output.")
+        return None
+
+
+def _apply_config_options(
+    config: dict[str, Any],
+    *,
+    vault: Path | None,
+    staging: Path | None,
+    exports: Path | None,
+    code: Path | None,
+    folder_mode: str | None,
+) -> bool:
+    changed = False
+    if vault is not None:
+        config["vault"] = str(vault.expanduser().resolve())
+        changed = True
+    if staging is not None:
+        config["staging"] = str(staging.expanduser().resolve())
+        changed = True
+    if code is not None:
+        config["code"] = str(code.expanduser().resolve())
+        changed = True
+
+    normalized_mode = folder_mode.casefold() if folder_mode else None
+    if normalized_mode not in (None, "shared", "separate"):
+        raise typer.BadParameter("--folder-mode must be 'shared' or 'separate'.")
+    if exports is not None and normalized_mode == "shared":
+        raise typer.BadParameter("--exports cannot be used with --folder-mode shared.")
+    if exports is not None:
+        config["exports"] = str(exports.expanduser().resolve())
+        changed = True
+    if normalized_mode == "shared":
+        if "exports" in config:
+            config.pop("exports", None)
+            changed = True
+    if normalized_mode == "separate":
+        if not config.get("exports"):
+            raise typer.BadParameter("--folder-mode separate requires --exports.")
+        changed = True
+    return changed
+
+
+def _print_config(config: dict[str, Any]) -> None:
+    if not config:
+        console.print("No scholar-vault defaults configured.")
+        return
+
+    console.print("Configured scholar-vault defaults:")
+    for key in ("code", "vault", "staging", "exports"):
+        value = config.get(key)
+        if value:
+            console.print(f"- {key}: {value}")
+    if config.get("staging") and not config.get("exports"):
+        console.print("- folder_mode: shared (staging folder also contains JSON exports)")
+    elif config.get("exports"):
+        console.print("- folder_mode: separate (staging PDFs and JSON exports are separate)")
 
 
 def _shorten(value: object, limit: int = 76) -> str:
@@ -539,30 +617,37 @@ def configure_command(
     staging: ConfigPathArg = None,
     exports: ConfigPathArg = None,
     code: ConfigPathArg = None,
+    folder_mode: FolderModeArg = None,
+    ui: UiArg = False,
 ) -> None:
     config = load_user_config()
-    if vault is not None:
-        config["vault"] = str(vault.expanduser().resolve())
-    if staging is not None:
-        config["staging"] = str(staging.expanduser().resolve())
-    if exports is not None:
-        config["exports"] = str(exports.expanduser().resolve())
-    if code is not None:
-        config["code"] = str(code.expanduser().resolve())
+    changed = _apply_config_options(
+        config,
+        vault=vault,
+        staging=staging,
+        exports=exports,
+        code=code,
+        folder_mode=folder_mode,
+    )
 
-    if any(path is not None for path in (vault, staging, exports, code)):
+    if ui:
+        updated = _configure_ui(config)
+        if updated is None:
+            if changed:
+                config_path = save_user_config(config)
+                console.print(f"Wrote scholar-vault defaults to {config_path}.")
+            else:
+                console.print("Configuration unchanged.")
+            _print_config(config)
+            return
+        config = updated
+        changed = True
+
+    if changed:
         config_path = save_user_config(config)
         console.print(f"Wrote scholar-vault defaults to {config_path}.")
 
-    if not config:
-        console.print("No scholar-vault defaults configured.")
-        return
-
-    console.print("Configured scholar-vault defaults:")
-    for key in ("code", "vault", "staging", "exports"):
-        value = config.get(key)
-        if value:
-            console.print(f"- {key}: {value}")
+    _print_config(config)
 
 
 @app.command("init")

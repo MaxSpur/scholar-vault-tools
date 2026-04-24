@@ -79,18 +79,33 @@ scholar-vault` succeeded, then reinstall from the repository folder with
 Store your normal project paths once so routine commands can omit them:
 
 ```fish
+scholar-vault configure --ui
+```
+
+The UI uses native folder pickers and lets you choose whether Scholar Labs JSON
+exports live in the same staging folder as PDFs or in a separate exports folder.
+The same configuration is also available in the terminal:
+
+```fish
 scholar-vault configure \
   --code ~/Developer/scholar-vault-tools \
   --vault ~/Documents/Research/scholar-labs-vault \
-  --staging ~/Downloads/scholar-labs-staging
+  --staging ~/Downloads/scholar-labs-staging \
+  --folder-mode shared
 ```
 
 The defaults are written to `~/.config/scholar-vault/config.yaml`. Run
 `scholar-vault configure` without options to inspect the current values.
 Explicit command-line paths always override configured defaults.
-You may also configure a separate `--exports` folder, but it is optional:
-`import-labs` can use the staging folder for both PDFs and Scholar Labs JSON
-exports.
+`--folder-mode shared` means `import-labs` uses the staging folder for both PDFs
+and Scholar Labs JSON exports. To keep JSON exports separate, configure:
+
+```fish
+scholar-vault configure \
+  --staging ~/Downloads/scholar-labs-staging \
+  --exports ~/Downloads/scholar-labs-exports \
+  --folder-mode separate
+```
 
 With defaults configured, commands can be shorter:
 

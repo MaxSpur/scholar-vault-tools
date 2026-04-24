@@ -62,6 +62,86 @@ def test_latest_export_json_ignores_used_subfolder(tmp_path: Path) -> None:
     assert latest_export_json(exports) == new.resolve()
 
 
+def test_configure_folder_mode_shared_removes_exports(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    monkeypatch.setenv("SCHOLAR_VAULT_CONFIG", str(config_path))
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    for folder in (vault, staging, exports):
+        folder.mkdir()
+
+    runner = CliRunner()
+    separate = runner.invoke(
+        app,
+        [
+            "configure",
+            "--vault",
+            str(vault),
+            "--staging",
+            str(staging),
+            "--exports",
+            str(exports),
+        ],
+    )
+    assert separate.exit_code == 0
+    shared = runner.invoke(app, ["configure", "--folder-mode", "shared"])
+
+    assert shared.exit_code == 0
+    stored = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert stored["vault"] == str(vault.resolve())
+    assert stored["staging"] == str(staging.resolve())
+    assert "exports" not in stored
+    assert "folder_mode: shared" in shared.output
+
+
+def test_configure_folder_mode_separate_requires_exports(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("SCHOLAR_VAULT_CONFIG", str(tmp_path / "config.yaml"))
+
+    result = CliRunner().invoke(app, ["configure", "--folder-mode", "separate"])
+
+    assert result.exit_code != 0
+    assert "--folder-mode separate requires --exports" in result.output
+
+
+def test_configure_ui_saves_returned_config(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    monkeypatch.setenv("SCHOLAR_VAULT_CONFIG", str(config_path))
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    for folder in (vault, staging):
+        folder.mkdir()
+
+    seen: list[dict[str, object]] = []
+
+    def fake_configure_ui(config: dict[str, object]) -> dict[str, object]:
+        seen.append(dict(config))
+        return {
+            "vault": str(vault.resolve()),
+            "staging": str(staging.resolve()),
+        }
+
+    monkeypatch.setattr("scholar_vault.cli._configure_ui", fake_configure_ui)
+
+    result = CliRunner().invoke(app, ["configure", "--ui"])
+
+    assert result.exit_code == 0
+    assert seen == [{}]
+    stored = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert stored["vault"] == str(vault.resolve())
+    assert stored["staging"] == str(staging.resolve())
+    assert "exports" not in stored
+
+
 def test_import_labs_uses_configured_paths_and_latest_export(
     tmp_path: Path,
     monkeypatch,

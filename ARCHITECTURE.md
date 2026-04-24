@@ -11,14 +11,14 @@
 - `scholar_vault/render.py`: Jinja-backed Markdown rendering for cards, run pages, indexes, topics, and LLM summary files.
 - `scholar_vault/bibtex.py`: BibTeX parsing and export helpers.
 - `scholar_vault/citations.py`: DOI detection, provider response caching, citation and abstract enrichment, candidate scoring, abstract provenance, and BibTeX normalization.
-- `scholar_vault/gui.py`: PySide6/PyMuPDF desktop review UI for Scholar Labs match decisions, import/enrichment progress, and enrichment result browsing. GUI imports stay isolated so non-UI commands do not initialize Qt.
+- `scholar_vault/gui.py`: PySide6/PyMuPDF desktop UI for configuration, Scholar Labs match decisions, import/enrichment progress, and enrichment result browsing. GUI imports stay isolated so non-UI commands do not initialize Qt.
 - `templates/`: Markdown body templates for the generated paper, run, and index documents.
 - `browser/`: browser-side exporter for visible Google Scholar Labs results.
 - `tests/`: regression coverage for naming, parsing, matching, rendering, and idempotence.
 
 ## CLI Workflows
 
-- `configure`: stores user-level defaults for the vault, staging folder, optional export folder, and code directory in `~/.config/scholar-vault/config.yaml`. Commands use these defaults unless explicit paths are passed.
+- `configure`: stores user-level defaults for the vault, staging folder, optional export folder, and code directory in `~/.config/scholar-vault/config.yaml`. `--ui` opens a native folder-picker dialog. `--folder-mode shared` omits `exports` so staging is used for PDFs and Scholar Labs JSON exports; `--folder-mode separate` records an explicit exports folder. Commands use these defaults unless explicit paths are passed.
 - `import-labs`: Scholar Labs convenience flow. It keeps all JSON results on the run record, creates canonical paper cards only for selected results by default, archives matched PDFs out of staging only after the verified vault copy exists, enriches selected paper cards by default, and moves used browser-export JSON unchanged into a sibling `used/` folder after successful non-dry-run imports. If `--export` is omitted, it imports the newest top-level `.json` file from the configured exports folder when that folder has one, otherwise from the staging folder.
 - `import-run`: lower-level transactional Scholar Labs import. It uses the same matching and manifest logic but leaves staging untouched unless another command archives files later.
 - `import-pdf`, `import-bibtex`, and `import-doi`: non-Scholar-Labs ingestion paths that still converge on canonical `papers/*.md` cards.

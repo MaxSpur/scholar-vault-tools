@@ -20,12 +20,17 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
             QApplication,
             QComboBox,
             QDialog,
+            QDialogButtonBox,
+            QFileDialog,
             QFrame,
+            QGridLayout,
             QHBoxLayout,
             QLabel,
+            QLineEdit,
             QMessageBox,
             QProgressBar,
             QPushButton,
+            QRadioButton,
             QScrollArea,
             QTableWidget,
             QTableWidgetItem,
@@ -42,16 +47,21 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
         "QComboBox": QComboBox,
         "QDesktopServices": QDesktopServices,
         "QDialog": QDialog,
+        "QDialogButtonBox": QDialogButtonBox,
+        "QFileDialog": QFileDialog,
         "QFrame": QFrame,
         "QFont": QFont,
+        "QGridLayout": QGridLayout,
         "QHBoxLayout": QHBoxLayout,
         "QImage": QImage,
         "QKeySequence": QKeySequence,
         "QLabel": QLabel,
+        "QLineEdit": QLineEdit,
         "QMessageBox": QMessageBox,
         "QPixmap": QPixmap,
         "QProgressBar": QProgressBar,
         "QPushButton": QPushButton,
+        "QRadioButton": QRadioButton,
         "QScrollArea": QScrollArea,
         "QShortcut": QShortcut,
         "QTableWidget": QTableWidget,
@@ -171,6 +181,137 @@ class _Confirmer:
 
 def make_confirmer(title: str = "Scholar Vault") -> _Confirmer:
     return _Confirmer(_load_qt_modules(require_fitz=False), title)
+
+
+def edit_configuration(config: dict[str, Any]) -> dict[str, Any] | None:
+    qt = _load_qt_modules(require_fitz=False)
+    app = _application(qt)
+    dialog = qt["QDialog"]()
+    dialog.setWindowTitle("Scholar Vault Configuration")
+    dialog.resize(860, 430)
+
+    layout = qt["QVBoxLayout"](dialog)
+    layout.setSpacing(14)
+
+    intro = qt["QLabel"](
+        "Choose default folders for Scholar Vault. Commands still accept explicit paths "
+        "that override these defaults."
+    )
+    intro.setWordWrap(True)
+    layout.addWidget(intro)
+
+    mode_row = qt["QVBoxLayout"]()
+    shared_mode = qt["QRadioButton"](
+        "Use one staging folder for PDFs and Scholar Labs JSON exports"
+    )
+    separate_mode = qt["QRadioButton"]("Use separate folders for PDF staging and JSON exports")
+    separate_mode.setChecked(bool(config.get("exports")))
+    shared_mode.setChecked(not bool(config.get("exports")))
+    mode_row.addWidget(shared_mode)
+    mode_row.addWidget(separate_mode)
+    layout.addLayout(mode_row)
+
+    form = qt["QGridLayout"]()
+    form.setHorizontalSpacing(10)
+    form.setVerticalSpacing(10)
+    layout.addLayout(form, 1)
+
+    edits: dict[str, Any] = {}
+    browse_buttons: dict[str, Any] = {}
+
+    def add_folder_row(row: int, key: str, label: str) -> None:
+        field_label = qt["QLabel"](label)
+        edit = qt["QLineEdit"](str(config.get(key) or ""))
+        edit.setMinimumWidth(580)
+        browse = qt["QPushButton"]("Choose...")
+
+        def choose_folder() -> None:
+            start = edit.text().strip() or str(Path.home())
+            selected = qt["QFileDialog"].getExistingDirectory(dialog, f"Choose {label}", start)
+            if selected:
+                edit.setText(selected)
+
+        browse.clicked.connect(choose_folder)
+        form.addWidget(field_label, row, 0)
+        form.addWidget(edit, row, 1)
+        form.addWidget(browse, row, 2)
+        edits[key] = edit
+        browse_buttons[key] = browse
+
+    add_folder_row(0, "vault", "Vault")
+    add_folder_row(1, "staging", "Staging")
+    add_folder_row(2, "exports", "Exports")
+    add_folder_row(3, "code", "Code")
+    edits["exports"].setPlaceholderText("Only used in separate-folder mode")
+
+    result: dict[str, Any] | None = None
+
+    def set_exports_enabled() -> None:
+        enabled = separate_mode.isChecked()
+        edits["exports"].setEnabled(enabled)
+        browse_buttons["exports"].setEnabled(enabled)
+
+    def show_warning(message: str) -> None:
+        box = qt["QMessageBox"](dialog)
+        box.setWindowTitle("Scholar Vault Configuration")
+        box.setIcon(qt["QMessageBox"].Icon.Warning)
+        box.setText(message)
+        box.exec()
+
+    def normalized_folder(key: str) -> str:
+        raw = edits[key].text().strip()
+        if not raw:
+            return ""
+        path = Path(raw).expanduser()
+        if not path.is_dir():
+            raise ValueError(f"{key} is not an existing folder:\n{path}")
+        return str(path.resolve())
+
+    def save() -> None:
+        nonlocal result
+        keys = ["vault", "staging", "code"]
+        if separate_mode.isChecked():
+            keys.append("exports")
+        try:
+            normalized = {key: normalized_folder(key) for key in keys}
+        except ValueError as exc:
+            show_warning(str(exc))
+            return
+        if shared_mode.isChecked() and not normalized["staging"]:
+            show_warning("Choose a staging folder for shared-folder mode.")
+            return
+        if separate_mode.isChecked() and not normalized.get("exports"):
+            show_warning("Choose an exports folder for separate-folder mode.")
+            return
+
+        updated = dict(config)
+        for key in ("vault", "staging", "code"):
+            if normalized[key]:
+                updated[key] = normalized[key]
+            else:
+                updated.pop(key, None)
+        if separate_mode.isChecked():
+            updated["exports"] = normalized["exports"]
+        else:
+            updated.pop("exports", None)
+        result = updated
+        dialog.accept()
+
+    shared_mode.toggled.connect(set_exports_enabled)
+    separate_mode.toggled.connect(set_exports_enabled)
+    set_exports_enabled()
+
+    buttons = qt["QDialogButtonBox"](
+        qt["QDialogButtonBox"].StandardButton.Save
+        | qt["QDialogButtonBox"].StandardButton.Cancel
+    )
+    buttons.accepted.connect(save)
+    buttons.rejected.connect(dialog.reject)
+    layout.addWidget(buttons)
+
+    dialog.exec()
+    app.processEvents()
+    return result
 
 
 def _match_dialog_result(qt: dict[str, Any], result: int) -> bool:
