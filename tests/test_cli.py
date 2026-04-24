@@ -3,7 +3,12 @@ from __future__ import annotations
 from click.exceptions import Exit
 from typer.testing import CliRunner
 
-from scholar_vault.cli import _import_summary_lines, _with_progress, app
+from scholar_vault.cli import (
+    _enrichment_progress_reporter,
+    _import_summary_lines,
+    _with_progress,
+    app,
+)
 from scholar_vault.importer import initialize_vault
 from scholar_vault.models import ImportCanceled, MatchReviewAbort
 
@@ -58,7 +63,23 @@ def test_progress_reports_to_gui_progress() -> None:
     )
 
     assert result == "done"
-    assert calls == [("Enriching abstracts", 1, 3)]
+    assert calls == [("Enriching abstracts", 1, 3), ("Complete", None, None)]
+
+
+def test_enrichment_progress_reporter_includes_stage() -> None:
+    calls = []
+
+    class Card:
+        citekey = "example2024paper"
+        slug = "example-paper"
+
+    progress = _enrichment_progress_reporter(
+        lambda message, current, total: calls.append((message, current, total)),
+        abstracts=True,
+    )
+    progress(Card(), 2, 5, "skipped")
+
+    assert calls == [("Enriching abstracts [skipped]: example2024paper", 2, 5)]
 
 
 def test_import_canceled_exits_cleanly(capsys) -> None:

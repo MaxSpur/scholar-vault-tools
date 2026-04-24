@@ -639,7 +639,10 @@ def _with_progress(
             console.print(f"{prefix}{message}")
 
         try:
-            return action(plain_report)
+            result = action(plain_report)
+            if gui_progress is not None:
+                gui_progress("Complete", None, None)
+            return result
         except MatchReviewAbort as exc:
             if gui_progress is not None:
                 gui_progress.close()
@@ -687,13 +690,16 @@ def _with_progress(
             if gui_progress is not None:
                 gui_progress.close()
             raise
+        if gui_progress is not None:
+            gui_progress("Complete", None, None)
         progress.update(task, description="Complete")
         return result
 
 
-def _enrichment_progress_reporter(report):
+def _enrichment_progress_reporter(report, *, abstracts: bool = False):
     def progress(card: SourceCard, index: int, total: int, status: str) -> None:
-        report(f"{card.citekey or card.slug}: {status}", index, total)
+        stage = "abstracts" if abstracts else "citations"
+        report(f"Enriching {stage} [{status}]: {card.citekey or card.slug}", index, total)
 
     return progress
 
@@ -961,7 +967,10 @@ def enrich_citations_command(
             retry_failed=retry_failed,
             dry_run=dry_run,
             force=force,
-            progress=_enrichment_progress_reporter(report),
+            progress=_enrichment_progress_reporter(
+                report,
+                abstracts=abstracts or refresh_abstracts or only == "missing-abstract",
+            ),
         ),
         gui_progress=progress_ui,
     )

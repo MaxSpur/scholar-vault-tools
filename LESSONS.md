@@ -28,6 +28,9 @@
 - Summary dialogs should not mirror terminal prose. Use large counts, status color, and a compact flow/breakdown first, then keep the raw text as a secondary selectable log.
 - Manual abstracts need a command path as well as an Obsidian editing path. Lock manual text by default so later provider refreshes do not erase curated abstracts.
 - Follow-up UI rows should foreground the issue message and route directly to a resolution action. Missing abstracts need PDF opening, paste cleanup, and manual-lock saving in one path.
+- Progress windows should not show raw status strings as the main label. Parse workflow messages into stage, substage, current item, and a short recent-step log so the user can tell what phase is active.
+- Follow-up issue lists read better as flat queues with separators than as nested cards. Keep the issue message and resolution action visually dominant, and keep utility actions secondary.
+- Do not use styled native `QMessageBox` question dialogs for core workflow confirmations. A small custom dialog gives better copy, button labels, spacing, and avoids low-contrast platform icons.
 - A previous abstract failure is not a durable reason to skip future attempts. Keep unresolved abstract cards eligible for another pass so improved extraction/provider logic can help.
 - Do not duplicate long prose in paper-card frontmatter and Markdown body. Keep abstract/summary text in readable sections, and keep YAML to compact metadata/provenance needed by tooling.
 - Maintenance commands should report what they touched. `rebuild` is safer to trust when it summarizes rewritten cards, normalized records, and regenerated derived outputs.

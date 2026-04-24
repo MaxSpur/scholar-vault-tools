@@ -96,6 +96,48 @@ def test_import_summary_model_highlights_reused_manifest() -> None:
     assert model["breakdown"][0][1] == 11
 
 
+def test_progress_parts_name_import_substages() -> None:
+    from scholar_vault.gui import _progress_parts, _progress_step_text
+
+    assert _progress_parts("Reading Scholar Labs export export.json") == (
+        "READING EXPORT",
+        "Validating Scholar Labs JSON and loading prior run state",
+        "export.json",
+    )
+    assert _progress_parts("Scanning staged PDF example.pdf") == (
+        "PDF SCAN",
+        "Extracting PDF title, DOI, year, and first-page text",
+        "example.pdf",
+    )
+    assert _progress_parts("Enriching abstracts [skipped]: nafis2024paper") == (
+        "ABSTRACT ENRICHMENT",
+        "SKIPPED // searching provider metadata and attached PDFs",
+        "nafis2024paper",
+    )
+    assert (
+        _progress_step_text("Checking Scholar Labs result 3: Example Paper", 3, 20)
+        == "[3/20] MATCHING: Comparing this result with prior decisions, vault cards, "
+        "and staged PDFs // rank 3 // Example Paper"
+    )
+
+
+def test_confirmation_model_makes_existing_run_prompt_readable() -> None:
+    from scholar_vault.gui import _confirmation_model
+
+    model = _confirmation_model(
+        "Run 2026-04-23_find-key-papers-on-collaborative-immersive-analytics-for-dat "
+        "already exists. Resume and update it?"
+    )
+
+    assert model["heading"] == "Resume Existing Run?"
+    assert model["detail_label"] == "RUN"
+    assert model["detail"] == (
+        "2026-04-23_find-key-papers-on-collaborative-immersive-analytics-for-dat"
+    )
+    assert model["accept"] == "Resume"
+    assert model["reject"] == "Cancel"
+
+
 def test_missing_abstract_issue_is_resolvable() -> None:
     from scholar_vault.gui import _can_resolve_missing_abstract
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -32,8 +33,6 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
             QPushButton,
             QRadioButton,
             QScrollArea,
-            QTableWidget,
-            QTableWidgetItem,
             QTextEdit,
             QVBoxLayout,
             QWidget,
@@ -65,8 +64,6 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
         "QRadioButton": QRadioButton,
         "QScrollArea": QScrollArea,
         "QShortcut": QShortcut,
-        "QTableWidget": QTableWidget,
-        "QTableWidgetItem": QTableWidgetItem,
         "QTextEdit": QTextEdit,
         "QUrl": QUrl,
         "QVBoxLayout": QVBoxLayout,
@@ -95,6 +92,90 @@ def _open_path(qt: dict[str, Any], path: str | None) -> None:
     if not path:
         return
     qt["QDesktopServices"].openUrl(qt["QUrl"].fromLocalFile(str(Path(path).expanduser())))
+
+
+def _dark_dialog_stylesheet() -> str:
+    return """
+        QDialog, QMessageBox { background: #030504; }
+        QLabel, QRadioButton { color: #baffdc; }
+        QLineEdit, QTextEdit, QComboBox {
+            background: #07100b;
+            color: #f3fff7;
+            border: 1px solid #26553b;
+            padding: 6px;
+            selection-background-color: #1d6f4b;
+        }
+        QScrollArea {
+            background: #030504;
+            border: 1px solid #26553b;
+        }
+        QScrollBar:vertical {
+            background: #030504;
+            width: 12px;
+            margin: 0;
+        }
+        QScrollBar::handle:vertical {
+            background: #2c7b55;
+            min-height: 28px;
+        }
+        QProgressBar {
+            background: #07100b;
+            color: #baffdc;
+            border: 1px solid #26553b;
+            min-height: 14px;
+            text-align: center;
+        }
+        QProgressBar::chunk { background: #45ffb0; }
+    """
+
+
+def _button_stylesheet(tone: str = "neutral") -> str:
+    tones = {
+        "primary": ("#69ffad", "#f3fff7", "#0b2417"),
+        "danger": ("#ff3b4f", "#ffd4d9", "#22050a"),
+        "success": ("#45ffb0", "#f3fff7", "#082116"),
+        "muted": ("#2b6748", "#baffdc", "#07100b"),
+        "neutral": ("#8ce7b8", "#f3fff7", "#07100b"),
+    }
+    border, text, background = tones.get(tone, tones["neutral"])
+    return f"""
+        QPushButton {{
+            background: {background};
+            color: {text};
+            border: 1px solid {border};
+            padding: 7px 14px;
+            min-height: 28px;
+            font-family: "Helvetica Neue";
+        }}
+        QPushButton:hover {{ background: #102719; }}
+        QPushButton:pressed {{ background: #17452f; }}
+        QPushButton:disabled {{
+            color: #426b58;
+            border-color: #1d3328;
+            background: #050805;
+        }}
+    """
+
+
+def _style_button(button: Any, tone: str = "neutral") -> None:
+    button.setStyleSheet(_button_stylesheet(tone))
+
+
+def _style_dialog_buttons(button_box: Any, tone: str = "neutral") -> None:
+    for button in button_box.buttons():
+        _style_button(button, tone)
+
+
+def _style_standard_dialog_button(button_box: Any, standard_button: Any, tone: str) -> None:
+    button = button_box.button(standard_button)
+    if button is not None:
+        _style_button(button, tone)
+
+
+def _style_message_box(qt: dict[str, Any], box: Any) -> None:
+    box.setStyleSheet(_dark_dialog_stylesheet() + _button_stylesheet("neutral"))
+    for button in box.buttons():
+        _style_button(button, "primary")
 
 
 def _render_pdf_image(
@@ -166,23 +247,127 @@ class _Confirmer:
         self._title = title
 
     def __call__(self, prompt: str) -> bool:
-        box = self._qt["QMessageBox"]()
-        box.setWindowTitle(self._title)
-        box.setIcon(self._qt["QMessageBox"].Icon.Question)
-        box.setText(prompt)
-        box.setStandardButtons(
-            self._qt["QMessageBox"].StandardButton.Yes
-            | self._qt["QMessageBox"].StandardButton.No
-        )
-        box.setDefaultButton(self._qt["QMessageBox"].StandardButton.No)
-        box.setEscapeButton(self._qt["QMessageBox"].StandardButton.No)
-        result = box.exec()
+        dialog = _build_confirmation_dialog(self._qt, self._title, prompt)
+        result = dialog.exec()
         self._app.processEvents()
-        return result == self._qt["QMessageBox"].StandardButton.Yes
+        return result == self._qt["QDialog"].DialogCode.Accepted
 
 
 def make_confirmer(title: str = "Scholar Vault") -> _Confirmer:
     return _Confirmer(_load_qt_modules(require_fitz=False), title)
+
+
+def _confirmation_model(prompt: str) -> dict[str, str]:
+    normalized = " ".join(prompt.strip().split())
+    run_match = re.fullmatch(r"Run (.+) already exists\. Resume and update it\?", normalized)
+    if run_match:
+        return {
+            "kicker": "SCHOLAR VAULT // CONFIRM",
+            "heading": "Resume Existing Run?",
+            "body": (
+                "This Scholar Labs run already exists. Resume it to reuse recorded decisions "
+                "and update the manifest, cards, indexes, and follow-up report."
+            ),
+            "detail_label": "RUN",
+            "detail": run_match.group(1),
+            "accept": "Resume",
+            "reject": "Cancel",
+        }
+
+    pdf_match = re.fullmatch(r"Use existing attached PDF for (.+)\?", normalized)
+    if pdf_match:
+        return {
+            "kicker": "SCHOLAR VAULT // CONFIRM",
+            "heading": "Use Existing PDF?",
+            "body": "A vault card already has an attached PDF for this Scholar Labs result.",
+            "detail_label": "RESULT",
+            "detail": pdf_match.group(1),
+            "accept": "Use PDF",
+            "reject": "Skip",
+        }
+
+    return {
+        "kicker": "SCHOLAR VAULT // CONFIRM",
+        "heading": "Confirm Action",
+        "body": normalized,
+        "detail_label": "",
+        "detail": "",
+        "accept": "Yes",
+        "reject": "No",
+    }
+
+
+def _build_confirmation_dialog(qt: dict[str, Any], title: str, prompt: str) -> Any:
+    model = _confirmation_model(prompt)
+    dialog = qt["QDialog"]()
+    dialog.setWindowTitle(title)
+    dialog.resize(720, 320)
+    dialog.setMinimumWidth(640)
+    dialog.setStyleSheet(_dark_dialog_stylesheet())
+
+    layout = qt["QVBoxLayout"](dialog)
+    layout.setContentsMargins(30, 26, 30, 24)
+    layout.setSpacing(14)
+
+    kicker = qt["QLabel"](model["kicker"])
+    kicker.setFont(_summary_font(qt, 11, mono=True, bold=True))
+    kicker.setStyleSheet("color: #69ffad;")
+    layout.addWidget(kicker)
+
+    heading = qt["QLabel"](model["heading"])
+    heading.setFont(_summary_font(qt, 25, bold=True))
+    heading.setStyleSheet("color: #f3fff7;")
+    heading.setWordWrap(True)
+    layout.addWidget(heading)
+
+    body = qt["QLabel"](model["body"])
+    body.setFont(_summary_font(qt, 13))
+    body.setStyleSheet("color: #baffdc;")
+    body.setWordWrap(True)
+    layout.addWidget(body)
+
+    if model["detail"]:
+        detail_label = qt["QLabel"](model["detail_label"])
+        detail_label.setFont(_summary_font(qt, 10, mono=True, bold=True))
+        detail_label.setStyleSheet("color: #8ce7b8;")
+        layout.addWidget(detail_label)
+
+        detail = qt["QLabel"](model["detail"])
+        detail.setFont(_summary_font(qt, 13, mono=True))
+        detail.setStyleSheet(
+            "color: #f3fff7; background: #07100b; border-left: 3px solid #69ffad; "
+            "padding: 9px 11px;"
+        )
+        detail.setWordWrap(True)
+        detail.setTextInteractionFlags(qt["Qt"].TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(detail)
+
+    layout.addStretch(1)
+
+    hint = qt["QLabel"]("Y accepts. N or Esc cancels.")
+    hint.setFont(_summary_font(qt, 10))
+    hint.setStyleSheet("color: #68c792;")
+
+    buttons = qt["QHBoxLayout"]()
+    buttons.addWidget(hint, 1)
+    reject = qt["QPushButton"](model["reject"])
+    reject.setMinimumWidth(112)
+    reject.setMinimumHeight(38)
+    _style_button(reject, "muted")
+    accept = qt["QPushButton"](model["accept"])
+    accept.setMinimumWidth(132)
+    accept.setMinimumHeight(38)
+    _style_button(accept, "primary")
+    reject.clicked.connect(dialog.reject)
+    accept.clicked.connect(dialog.accept)
+    buttons.addWidget(reject)
+    buttons.addWidget(accept)
+    layout.addLayout(buttons)
+
+    qt["QShortcut"](qt["QKeySequence"]("Y"), dialog).activated.connect(dialog.accept)
+    qt["QShortcut"](qt["QKeySequence"]("N"), dialog).activated.connect(dialog.reject)
+    qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.reject)
+    return dialog
 
 
 def edit_configuration(config: dict[str, Any]) -> dict[str, Any] | None:
@@ -190,16 +375,24 @@ def edit_configuration(config: dict[str, Any]) -> dict[str, Any] | None:
     app = _application(qt)
     dialog = qt["QDialog"]()
     dialog.setWindowTitle("Scholar Vault Configuration")
-    dialog.resize(860, 430)
+    dialog.resize(900, 470)
+    dialog.setStyleSheet(_dark_dialog_stylesheet())
 
     layout = qt["QVBoxLayout"](dialog)
+    layout.setContentsMargins(28, 24, 28, 20)
     layout.setSpacing(14)
+
+    heading = qt["QLabel"]("CONFIGURATION")
+    heading.setFont(_summary_font(qt, 26, bold=True))
+    heading.setStyleSheet("color: #f3fff7;")
+    layout.addWidget(heading)
 
     intro = qt["QLabel"](
         "Choose default folders for Scholar Vault. Commands still accept explicit paths "
         "that override these defaults."
     )
     intro.setWordWrap(True)
+    intro.setFont(_summary_font(qt, 12))
     layout.addWidget(intro)
 
     mode_row = qt["QVBoxLayout"]()
@@ -226,6 +419,7 @@ def edit_configuration(config: dict[str, Any]) -> dict[str, Any] | None:
         edit = qt["QLineEdit"](str(config.get(key) or ""))
         edit.setMinimumWidth(580)
         browse = qt["QPushButton"]("Choose...")
+        _style_button(browse, "neutral")
 
         def choose_folder() -> None:
             start = edit.text().strip() or str(Path.home())
@@ -258,6 +452,8 @@ def edit_configuration(config: dict[str, Any]) -> dict[str, Any] | None:
         box.setWindowTitle("Scholar Vault Configuration")
         box.setIcon(qt["QMessageBox"].Icon.Warning)
         box.setText(message)
+        box.setStandardButtons(qt["QMessageBox"].StandardButton.Ok)
+        _style_message_box(qt, box)
         box.exec()
 
     def normalized_folder(key: str) -> str:
@@ -306,6 +502,12 @@ def edit_configuration(config: dict[str, Any]) -> dict[str, Any] | None:
     buttons = qt["QDialogButtonBox"](
         qt["QDialogButtonBox"].StandardButton.Save
         | qt["QDialogButtonBox"].StandardButton.Cancel
+    )
+    _style_dialog_buttons(buttons, "primary")
+    _style_standard_dialog_button(
+        buttons,
+        qt["QDialogButtonBox"].StandardButton.Cancel,
+        "muted",
     )
     buttons.accepted.connect(save)
     buttons.rejected.connect(dialog.reject)
@@ -494,6 +696,7 @@ def _build_match_side_panel(
     accept_font.setPointSize(40)
     accept_font.setBold(True)
     accept.setFont(accept_font)
+    _style_button(accept, "success")
     accept.clicked.connect(dialog.accept)
     side_layout.addWidget(accept)
 
@@ -501,24 +704,28 @@ def _build_match_side_panel(
     reject.setMinimumHeight(185)
     reject.setFocusPolicy(qt["Qt"].FocusPolicy.NoFocus)
     reject.setFont(accept_font)
+    _style_button(reject, "danger")
     reject.clicked.connect(dialog.reject)
     side_layout.addWidget(reject)
 
     abort = qt["QPushButton"]("Abort Import")
     abort.setMinimumHeight(52)
     abort.setFocusPolicy(qt["Qt"].FocusPolicy.NoFocus)
+    _style_button(abort, "danger")
     abort.clicked.connect(lambda: dialog.done(_ABORT_DIALOG_CODE))
     side_layout.addWidget(abort)
 
     open_pdf = qt["QPushButton"]("Open PDF")
     open_pdf.setMinimumHeight(44)
     open_pdf.setFocusPolicy(qt["Qt"].FocusPolicy.NoFocus)
+    _style_button(open_pdf, "neutral")
     open_pdf.clicked.connect(lambda: _open_path(qt, request.pdf_path))
     side_layout.addWidget(open_pdf)
 
     scroll_down = qt["QPushButton"]("Scroll Preview")
     scroll_down.setMinimumHeight(44)
     scroll_down.setFocusPolicy(qt["Qt"].FocusPolicy.NoFocus)
+    _style_button(scroll_down, "neutral")
     scroll_down.clicked.connect(lambda: _scroll_preview(qt, scroll, direction=1))
     side_layout.addWidget(scroll_down)
 
@@ -526,27 +733,138 @@ def _build_match_side_panel(
     return side
 
 
+def _progress_parts(message: str) -> tuple[str, str, str]:
+    text = message.strip()
+    if not text:
+        return "PROCESSING", "Waiting for the next update", ""
+    if text == "Complete":
+        return "COMPLETE", "Workflow finished", ""
+    if text.startswith("Reading Scholar Labs export "):
+        return (
+            "READING EXPORT",
+            "Validating Scholar Labs JSON and loading prior run state",
+            text.removeprefix("Reading Scholar Labs export "),
+        )
+    match = re.fullmatch(r"Scanning (\d+) staged PDFs?", text)
+    if match:
+        count = match.group(1)
+        return "PDF SCAN", "Building the staged PDF candidate list", f"{count} PDFs found"
+    if text.startswith("Scanning staged PDF "):
+        return (
+            "PDF SCAN",
+            "Extracting PDF title, DOI, year, and first-page text",
+            text.removeprefix("Scanning staged PDF "),
+        )
+    match = re.fullmatch(r"Checking Scholar Labs result (\d+): (.+)", text)
+    if match:
+        return (
+            "MATCHING",
+            "Comparing this result with prior decisions, vault cards, and staged PDFs",
+            f"rank {match.group(1)} // {match.group(2)}",
+        )
+    if text == "Writing run manifest":
+        return "WRITING", "Saving run manifest, card links, and match decisions", ""
+    match = re.fullmatch(r"Enriching citations \[([^\]]+)\]: (.+)", text)
+    if match:
+        status = match.group(1)
+        return (
+            "CITATION ENRICHMENT",
+            f"{status.upper()} // resolving DOI, source metadata, BibTeX, and missing fields",
+            match.group(2),
+        )
+    match = re.fullmatch(r"Enriching abstracts \[([^\]]+)\]: (.+)", text)
+    if match:
+        status = match.group(1)
+        return (
+            "ABSTRACT ENRICHMENT",
+            f"{status.upper()} // searching provider metadata and attached PDFs",
+            match.group(2),
+        )
+    match = re.fullmatch(r"([^:]+): ([A-Za-z_-]+)", text)
+    if match:
+        return (
+            "ENRICHMENT",
+            f"{match.group(2).upper()} // processing canonical paper card",
+            match.group(1),
+        )
+    if text == "Rebuilding indexes and exports":
+        return "REBUILD", "Regenerating paper cards, indexes, and export files", ""
+    return "PROCESSING", "Running current workflow step", text
+
+
+def _progress_step_text(
+    message: str,
+    current: int | None = None,
+    total: int | None = None,
+) -> str:
+    stage, substage, item = _progress_parts(message)
+    prefix = f"[{current}/{total}] " if current is not None and total else ""
+    suffix = f" // {item}" if item else ""
+    return f"{prefix}{stage}: {substage}{suffix}"
+
+
 class _ProgressReporter:
     def __init__(self, qt: dict[str, Any], title: str) -> None:
         self._qt = qt
         self._app = _application(qt)
         self._cancelled = False
+        self._recent: list[str] = []
         self._dialog = qt["QDialog"]()
         self._dialog.setWindowTitle(title)
-        self._dialog.resize(620, 150)
+        self._dialog.resize(820, 380)
+        self._dialog.setStyleSheet(_dark_dialog_stylesheet())
 
         layout = qt["QVBoxLayout"](self._dialog)
-        self._label = qt["QLabel"]("Starting...")
-        self._label.setWordWrap(True)
-        layout.addWidget(self._label)
+        layout.setContentsMargins(28, 24, 28, 20)
+        layout.setSpacing(14)
+
+        header = qt["QHBoxLayout"]()
+        kicker = qt["QLabel"]("SCHOLAR VAULT // IMPORT")
+        kicker.setFont(_summary_font(qt, 12, mono=True, bold=True))
+        kicker.setStyleSheet("color: #69ffad;")
+        header.addWidget(kicker)
+        header.addStretch(1)
+        self._counter = qt["QLabel"]("WAITING")
+        self._counter.setFont(_summary_font(qt, 11, mono=True, bold=True))
+        self._counter.setStyleSheet(
+            "color: #030504; background: #69ffad; padding: 4px 8px;"
+        )
+        header.addWidget(self._counter)
+        layout.addLayout(header)
+
+        self._stage = qt["QLabel"]("STARTING")
+        self._stage.setFont(_summary_font(qt, 30, bold=True))
+        self._stage.setStyleSheet("color: #f3fff7;")
+        layout.addWidget(self._stage)
+
+        self._substage = qt["QLabel"]("Preparing workflow")
+        self._substage.setFont(_summary_font(qt, 15, bold=True))
+        self._substage.setStyleSheet("color: #baffdc;")
+        self._substage.setWordWrap(True)
+        layout.addWidget(self._substage)
+
+        self._item = qt["QLabel"]("")
+        self._item.setFont(_summary_font(qt, 12))
+        self._item.setStyleSheet("color: #8ce7b8;")
+        self._item.setWordWrap(True)
+        layout.addWidget(self._item)
 
         self._bar = qt["QProgressBar"]()
         self._bar.setRange(0, 0)
         layout.addWidget(self._bar)
 
+        self._log = qt["QLabel"]("")
+        self._log.setFont(_summary_font(qt, 11))
+        self._log.setStyleSheet(
+            "color: #8ce7b8; background: #07100b; border: 1px solid #26553b; padding: 9px;"
+        )
+        self._log.setWordWrap(True)
+        layout.addWidget(self._log)
+
         buttons = qt["QHBoxLayout"]()
         buttons.addStretch(1)
         self._cancel = qt["QPushButton"]("Cancel Import")
+        _style_button(self._cancel, "danger")
         self._cancel.clicked.connect(self._request_cancel)
         buttons.addWidget(self._cancel)
         layout.addLayout(buttons)
@@ -556,7 +874,9 @@ class _ProgressReporter:
 
     def _request_cancel(self) -> None:
         self._cancelled = True
-        self._label.setText("Canceling after the current step...")
+        self._stage.setText("CANCELING")
+        self._substage.setText("Canceling after the current step...")
+        self._counter.setText("STOP")
         self._app.processEvents()
 
     def __call__(
@@ -565,17 +885,27 @@ class _ProgressReporter:
         current: int | None = None,
         total: int | None = None,
     ) -> None:
-        if self._cancelled:
+        complete = message.strip() == "Complete"
+        if self._cancelled and not complete:
             raise MatchReviewAbort("Import canceled from progress window.")
+        stage, substage, item = _progress_parts(message)
+        self._stage.setText(stage)
+        self._substage.setText(substage)
+        self._item.setText(item)
         if current is not None and total:
             self._bar.setRange(0, total)
             self._bar.setValue(current)
-            self._label.setText(f"[{current}/{total}] {message}")
+            self._counter.setText(f"{current}/{total}")
         else:
             self._bar.setRange(0, 0)
-            self._label.setText(message)
+            self._counter.setText("BUSY")
+        step = _progress_step_text(message, current, total)
+        if not self._recent or self._recent[-1] != step:
+            self._recent.append(step)
+            self._recent = self._recent[-5:]
+        self._log.setText("\n".join(self._recent))
         self._app.processEvents()
-        if self._cancelled:
+        if self._cancelled and not complete:
             raise MatchReviewAbort("Import canceled from progress window.")
 
     def close(self) -> None:
@@ -599,17 +929,7 @@ def show_import_summary(
     dialog = qt["QDialog"]()
     dialog.setWindowTitle(title)
     dialog.resize(1120, 700)
-    dialog.setStyleSheet(
-        """
-        QDialog { background: #030504; }
-        QLabel { color: #baffdc; }
-        QPushButton {
-            min-width: 92px;
-            min-height: 28px;
-            padding: 5px 16px;
-        }
-        """
-    )
+    dialog.setStyleSheet(_dark_dialog_stylesheet())
 
     shell = qt["QHBoxLayout"](dialog)
     shell.setContentsMargins(0, 0, 0, 0)
@@ -672,6 +992,7 @@ def show_import_summary(
     layout.addWidget(log)
 
     buttons = qt["QDialogButtonBox"](qt["QDialogButtonBox"].StandardButton.Ok)
+    _style_dialog_buttons(buttons, "primary")
     buttons.accepted.connect(dialog.accept)
     layout.addWidget(buttons)
     qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.accept)
@@ -937,14 +1258,7 @@ def show_enrichment_results(
     )
     dialog.setWindowTitle(window_title)
     dialog.resize(1180, 760)
-    dialog.setStyleSheet(
-        """
-        QDialog { background: #030504; }
-        QLabel { color: #baffdc; }
-        QPushButton { min-height: 26px; padding: 5px 12px; }
-        QComboBox { min-height: 26px; }
-        """
-    )
+    dialog.setStyleSheet(_dark_dialog_stylesheet())
 
     layout = qt["QVBoxLayout"](dialog)
     layout.setContentsMargins(28, 24, 28, 20)
@@ -973,7 +1287,9 @@ def show_enrichment_results(
     count_label.setStyleSheet("color: #8ce7b8; border: none;")
     count_value = qt["QLabel"](str(len(details)))
     count_value.setFont(_summary_font(qt, 34, mono=True, bold=True))
-    count_value.setStyleSheet("color: #ff3b4f; border: none;")
+    count_value.setStyleSheet(
+        f"color: {'#ff3b4f' if details else '#45ffb0'}; border: none;"
+    )
     count_layout.addWidget(count_label)
     count_layout.addWidget(count_value)
     header.addWidget(count_panel)
@@ -997,6 +1313,7 @@ def show_enrichment_results(
         if category == "all" or _has_category(details, category)
     ]
     category_filter.addItems([category.title() for category in categories])
+    category_filter.setMinimumWidth(140)
     status_label = qt["QLabel"]("FILTER")
     status_label.setFont(_summary_font(qt, 11, mono=True, bold=True))
     filter_row.addWidget(status_label)
@@ -1006,11 +1323,16 @@ def show_enrichment_results(
 
     scroll = qt["QScrollArea"]()
     scroll.setWidgetResizable(True)
-    scroll.setStyleSheet("QScrollArea { border: 1px solid #26553b; background: #030504; }")
+    scroll.setStyleSheet(
+        "QScrollArea { border: 1px solid #26553b; background: #030504; } "
+        "QScrollArea > QWidget > QWidget { background: #030504; }"
+    )
+    scroll.viewport().setStyleSheet("background: #030504;")
     list_widget = qt["QWidget"]()
+    list_widget.setStyleSheet("background: #030504;")
     list_layout = qt["QVBoxLayout"](list_widget)
-    list_layout.setContentsMargins(12, 12, 12, 12)
-    list_layout.setSpacing(12)
+    list_layout.setContentsMargins(18, 10, 18, 10)
+    list_layout.setSpacing(0)
     scroll.setWidget(list_widget)
     layout.addWidget(scroll, 1)
     visible: list[dict[str, Any]] = []
@@ -1036,12 +1358,15 @@ def show_enrichment_results(
             empty.setFont(_summary_font(qt, 18, bold=True))
             empty.setStyleSheet("color: #45ffb0; padding: 20px;")
             list_layout.addWidget(empty)
-        for row in visible:
-            list_layout.addWidget(_issue_card(qt, row, refresh_list))
+        for index, row in enumerate(visible):
+            list_layout.addWidget(_issue_row(qt, row, refresh_list))
+            if index < len(visible) - 1:
+                list_layout.addWidget(_issue_separator(qt))
         list_layout.addStretch(1)
 
     buttons = qt["QHBoxLayout"]()
     close = qt["QPushButton"]("Close")
+    _style_button(close, "primary")
     buttons.addStretch(1)
     buttons.addWidget(close)
     layout.addLayout(buttons)
@@ -1065,12 +1390,22 @@ def _issue_color(detail: dict[str, Any]) -> str:
     return "#69ffad"
 
 
-def _issue_card(qt: dict[str, Any], detail: dict[str, Any], refresh) -> Any:
+def _issue_separator(qt: dict[str, Any]) -> Any:
+    separator = qt["QFrame"]()
+    separator.setFrameShape(qt["QFrame"].Shape.HLine)
+    separator.setStyleSheet("background: #26553b; border: none; max-height: 1px;")
+    separator.setFixedHeight(1)
+    return separator
+
+
+def _issue_row(qt: dict[str, Any], detail: dict[str, Any], refresh) -> Any:
     color = _issue_color(detail)
-    panel = _summary_panel(qt, color)
-    layout = qt["QVBoxLayout"](panel)
-    layout.setContentsMargins(16, 14, 16, 14)
-    layout.setSpacing(10)
+    row = qt["QWidget"]()
+    row.setObjectName("issueRow")
+    row.setStyleSheet("#issueRow { background: #030504; }")
+    layout = qt["QVBoxLayout"](row)
+    layout.setContentsMargins(0, 18, 0, 18)
+    layout.setSpacing(9)
 
     top = qt["QHBoxLayout"]()
     badge = qt["QLabel"](str(detail.get("category") or "issue").upper())
@@ -1093,8 +1428,8 @@ def _issue_card(qt: dict[str, Any], detail: dict[str, Any], refresh) -> Any:
         message = qt["QPushButton"](message_text)
         message.clicked.connect(lambda: _resolve_missing_abstract(qt, detail, refresh))
         message.setStyleSheet(
-            f"QPushButton {{ color: {color}; background: #020403; "
-            f"border: 1px solid {color}; text-align: left; padding: 10px; }}"
+            _button_stylesheet("danger")
+            + "QPushButton { text-align: left; padding: 10px 12px; font-size: 20px; }"
         )
     else:
         message = qt["QLabel"](message_text)
@@ -1124,12 +1459,17 @@ def _issue_card(qt: dict[str, Any], detail: dict[str, Any], refresh) -> Any:
     actions = qt["QHBoxLayout"]()
     if _can_resolve_missing_abstract(detail):
         resolve = qt["QPushButton"]("Resolve Abstract")
+        _style_button(resolve, "danger")
         resolve.clicked.connect(lambda: _resolve_missing_abstract(qt, detail, refresh))
         actions.addWidget(resolve)
     open_card = qt["QPushButton"]("Open Card")
     open_pdf = qt["QPushButton"]("Open PDF")
     copy_citekey = qt["QPushButton"]("Copy Citekey")
     copy_doi = qt["QPushButton"]("Copy DOI")
+    _style_button(open_card, "neutral")
+    _style_button(open_pdf, "neutral")
+    _style_button(copy_citekey, "muted")
+    _style_button(copy_doi, "muted")
     open_card.clicked.connect(lambda: _open_path(qt, str(detail.get("paper_file") or "")))
     open_pdf.clicked.connect(lambda: _open_path(qt, str(detail.get("pdf_file") or "")))
     copy_citekey.clicked.connect(lambda: _copy_detail(qt, detail, "citekey"))
@@ -1140,7 +1480,7 @@ def _issue_card(qt: dict[str, Any], detail: dict[str, Any], refresh) -> Any:
     actions.addWidget(copy_doi)
     actions.addStretch(1)
     layout.addLayout(actions)
-    return panel
+    return row
 
 
 def _can_resolve_missing_abstract(detail: dict[str, Any]) -> bool:
@@ -1171,11 +1511,10 @@ def _resolve_missing_abstract(qt: dict[str, Any], detail: dict[str, Any], refres
     dialog = qt["QDialog"]()
     dialog.setWindowTitle("Resolve Missing Abstract")
     dialog.resize(880, 620)
-    dialog.setStyleSheet(
-        "QDialog { background: #030504; } QLabel { color: #baffdc; } "
-        "QTextEdit { background: #f7f7f7; color: #111; }"
-    )
+    dialog.setStyleSheet(_dark_dialog_stylesheet())
     layout = qt["QVBoxLayout"](dialog)
+    layout.setContentsMargins(24, 22, 24, 18)
+    layout.setSpacing(12)
     title = qt["QLabel"](str(detail.get("title") or "Untitled paper"))
     title.setWordWrap(True)
     title.setFont(_summary_font(qt, 20, bold=True))
@@ -1199,6 +1538,12 @@ def _resolve_missing_abstract(qt: dict[str, Any], detail: dict[str, Any], refres
         qt["QDialogButtonBox"].StandardButton.Save
         | qt["QDialogButtonBox"].StandardButton.Cancel
     )
+    _style_dialog_buttons(buttons, "primary")
+    _style_standard_dialog_button(
+        buttons,
+        qt["QDialogButtonBox"].StandardButton.Cancel,
+        "muted",
+    )
     layout.addWidget(buttons)
 
     def save() -> None:
@@ -1216,6 +1561,8 @@ def _resolve_missing_abstract(qt: dict[str, Any], detail: dict[str, Any], refres
             box.setWindowTitle("Abstract Not Saved")
             box.setIcon(qt["QMessageBox"].Icon.Warning)
             box.setText(str(exc))
+            box.setStandardButtons(qt["QMessageBox"].StandardButton.Ok)
+            _style_message_box(qt, box)
             box.exec()
             return
         detail["category"] = "resolved"
