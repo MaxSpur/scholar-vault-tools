@@ -26,6 +26,7 @@ from .importer import (
     rename_run,
     reset_vault,
     resume_run,
+    set_manual_abstract,
     undo_run,
 )
 from .models import MatchReviewAbort, MatchReviewRequest, SourceCard
@@ -115,6 +116,25 @@ SelectedOnlyArg = Annotated[
 ]
 CitekeyArg = Annotated[str, typer.Option(...)]
 OptionalCitekeyArg = Annotated[str | None, typer.Option("--citekey")]
+AbstractTextArg = Annotated[
+    str | None,
+    typer.Option("--text", help="Manual abstract text. Use --file for longer abstracts."),
+]
+AbstractFileArg = Annotated[
+    Path | None,
+    typer.Option("--file", exists=True, file_okay=True, dir_okay=False, resolve_path=True),
+]
+SourceUrlArg = Annotated[
+    str | None,
+    typer.Option("--source-url", help="URL where the manual abstract was copied from."),
+]
+AbstractLockArg = Annotated[
+    bool,
+    typer.Option(
+        "--lock/--no-lock",
+        help="Protect the manual abstract from future automatic abstract enrichment.",
+    ),
+]
 OnlyArg = Annotated[
     str,
     typer.Option(
@@ -229,6 +249,7 @@ def _print_enrichment_details(summary: dict[str, Any]) -> None:
         if not category_rows:
             continue
         table = Table(title=f"{category.title()} ({len(category_rows)})", show_lines=False)
+        table.add_column("Type", no_wrap=True)
         table.add_column("Citekey", no_wrap=True)
         table.add_column("Title")
         table.add_column("DOI / Source")
@@ -245,6 +266,7 @@ def _print_enrichment_details(summary: dict[str, Any]) -> None:
             )
             missing = ", ".join(row.get("missing_fields") or [])
             table.add_row(
+                str(row.get("kind") or ""),
                 str(row.get("citekey") or ""),
                 _shorten(row.get("title")),
                 _shorten(doi_source, 48),
@@ -254,7 +276,12 @@ def _print_enrichment_details(summary: dict[str, Any]) -> None:
         console.print(table)
 
 
-def _show_enrichment_ui(summary: dict[str, Any], *, abstracts: bool) -> bool:
+def _show_enrichment_ui(
+    summary: dict[str, Any],
+    *,
+    abstracts: bool,
+    title: str | None = None,
+) -> bool:
     rows = _detail_rows(summary)
     if not rows:
         return False
@@ -264,11 +291,73 @@ def _show_enrichment_ui(summary: dict[str, Any], *, abstracts: bool) -> bool:
         console.print(f"Review UI unavailable ({exc}). Showing terminal details instead.")
         return False
     try:
-        show_enrichment_results(rows, abstracts=abstracts)
+        show_enrichment_results(rows, abstracts=abstracts, title=title)
     except GuiUnavailable as exc:
         console.print(f"Review UI unavailable ({exc}). Showing terminal details instead.")
         return False
     return True
+
+
+def _make_gui_progress(enabled: bool, title: str):
+    if not enabled:
+        return None
+    try:
+        from .gui import GuiUnavailable, make_progress_reporter
+    except Exception as exc:  # pragma: no cover - defensive optional import path
+        console.print(f"Progress UI unavailable ({exc}). Showing terminal progress instead.")
+        return None
+    try:
+        return make_progress_reporter(title)
+    except GuiUnavailable as exc:
+        console.print(f"Progress UI unavailable ({exc}). Showing terminal progress instead.")
+        return None
+
+
+def _run_enrichment_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    for key in ("enrichment_details", "abstract_details"):
+        value = summary.get(key, [])
+        rows.extend(row for row in value if isinstance(row, dict))
+    return rows
+
+
+def _problem_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    problem_categories = {"incomplete", "ambiguous", "unresolved"}
+    problem_skip_messages = {
+        "retry limit reached",
+        "abstract previously failed",
+        "metadata_lock",
+    }
+    return [
+        row
+        for row in rows
+        if row.get("category") in problem_categories
+        or (
+            row.get("category") == "skipped"
+            and str(row.get("message") or "") in problem_skip_messages
+        )
+    ]
+
+
+def _show_import_enrichment_followup(summary: dict[str, Any], *, ui: bool) -> None:
+    rows = _run_enrichment_rows(summary)
+    problems = _problem_rows(rows)
+    if ui:
+        if problems:
+            shown = _show_enrichment_ui(
+                {"details": problems},
+                abstracts=False,
+                title="Scholar Vault Import Follow-Up",
+            )
+            if not shown:
+                console.print("Enrichment follow-up issues:")
+                _print_enrichment_details({"details": problems})
+        elif rows:
+            console.print("No enrichment follow-up issues found.")
+        return
+    if problems:
+        console.print("Enrichment follow-up issues:")
+        _print_enrichment_details({"details": problems})
 
 
 def _require_configured_path(
@@ -311,7 +400,7 @@ def _resolve_latest_export(export: Path | None) -> Path:
         raise typer.BadParameter(str(exc)) from exc
 
 
-def _print_run_summary(summary: dict[str, int | str]) -> None:
+def _print_run_summary(summary: dict[str, Any]) -> None:
     console.print(
         f"Processed run {summary['run']} with {summary['papers']} paper cards, "
         f"{summary['selected']} selected results, "
@@ -324,7 +413,13 @@ def _print_run_summary(summary: dict[str, int | str]) -> None:
         console.print(f"Enrichment made {summary['enriched']} selected-paper metadata updates.")
 
 
-def _with_progress(initial_message: str, action, *, interactive: bool = False):
+def _with_progress(
+    initial_message: str,
+    action,
+    *,
+    interactive: bool = False,
+    gui_progress=None,
+):
     if interactive:
         console.print(initial_message)
 
@@ -333,14 +428,22 @@ def _with_progress(initial_message: str, action, *, interactive: bool = False):
             current: int | None = None,
             total: int | None = None,
         ) -> None:
+            if gui_progress is not None:
+                gui_progress(message, current, total)
             prefix = f"[{current}/{total}] " if current is not None and total else ""
             console.print(f"{prefix}{message}")
 
         try:
             return action(plain_report)
         except MatchReviewAbort as exc:
+            if gui_progress is not None:
+                gui_progress.close()
             console.print(str(exc) or "Import aborted.")
             raise typer.Exit(code=130) from exc
+        except Exception:
+            if gui_progress is not None:
+                gui_progress.close()
+            raise
 
     with Progress(
         SpinnerColumn(),
@@ -351,6 +454,8 @@ def _with_progress(initial_message: str, action, *, interactive: bool = False):
         task = progress.add_task(initial_message, total=None)
 
         def report(message: str, current: int | None = None, total: int | None = None) -> None:
+            if gui_progress is not None:
+                gui_progress(message, current, total)
             prefix = f"[{current}/{total}] " if current is not None and total else ""
             progress.update(task, description=f"{prefix}{message}")
 
@@ -358,8 +463,14 @@ def _with_progress(initial_message: str, action, *, interactive: bool = False):
             result = action(report)
         except MatchReviewAbort as exc:
             progress.stop()
+            if gui_progress is not None:
+                gui_progress.close()
             console.print(str(exc) or "Import aborted.")
             raise typer.Exit(code=130) from exc
+        except Exception:
+            if gui_progress is not None:
+                gui_progress.close()
+            raise
         progress.update(task, description="Complete")
         return result
 
@@ -422,6 +533,7 @@ def import_run_command(
     ui: UiArg = False,
 ) -> None:
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
+    progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
     summary = _with_progress(
         "Importing Scholar Labs run",
         lambda report: import_scholar_labs_run(
@@ -439,8 +551,12 @@ def import_run_command(
             progress=report,
         ),
         interactive=review_match is not None,
+        gui_progress=progress_ui,
     )
+    if progress_ui is not None:
+        progress_ui.close()
     _print_run_summary(summary)
+    _show_import_enrichment_followup(summary, ui=ui)
 
 
 @app.command("import-labs")
@@ -457,6 +573,7 @@ def import_labs_command(
     ui: UiArg = False,
 ) -> None:
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
+    progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
     summary = _with_progress(
         "Importing Scholar Labs run",
         lambda report: import_scholar_labs_run(
@@ -475,8 +592,12 @@ def import_labs_command(
             progress=report,
         ),
         interactive=review_match is not None,
+        gui_progress=progress_ui,
     )
+    if progress_ui is not None:
+        progress_ui.close()
     _print_run_summary(summary)
+    _show_import_enrichment_followup(summary, ui=ui)
 
 
 @app.command("import")
@@ -493,6 +614,7 @@ def import_alias_command(
     ui: UiArg = False,
 ) -> None:
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
+    progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
     summary = _with_progress(
         "Importing Scholar Labs run",
         lambda report: import_scholar_labs_run(
@@ -511,8 +633,12 @@ def import_alias_command(
             progress=report,
         ),
         interactive=review_match is not None,
+        gui_progress=progress_ui,
     )
+    if progress_ui is not None:
+        progress_ui.close()
     _print_run_summary(summary)
+    _show_import_enrichment_followup(summary, ui=ui)
 
 
 @app.command("import-pdf")
@@ -568,6 +694,7 @@ def enrich_citations_command(
     force: ForceArg = False,
     ui: UiArg = False,
 ) -> None:
+    progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Enrichment")
     summary = _with_progress(
         "Enriching paper cards",
         lambda report: enrich_citations(
@@ -582,7 +709,10 @@ def enrich_citations_command(
             force=force,
             progress=_enrichment_progress_reporter(report),
         ),
+        gui_progress=progress_ui,
     )
+    if progress_ui is not None:
+        progress_ui.close()
     enrich_abstracts = abstracts or refresh_abstracts or only == "missing-abstract"
     if enrich_abstracts:
         console.print(
@@ -626,6 +756,7 @@ def resume_command(
     ui: UiArg = False,
 ) -> None:
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
+    progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
     summary = _with_progress(
         f"Resuming run {run}",
         lambda report: resume_run(
@@ -639,8 +770,12 @@ def resume_command(
             progress=report,
         ),
         interactive=review_match is not None,
+        gui_progress=progress_ui,
     )
+    if progress_ui is not None:
+        progress_ui.close()
     _print_run_summary(summary)
+    _show_import_enrichment_followup(summary, ui=ui)
 
 
 @app.command("rerun")
@@ -655,6 +790,7 @@ def rerun_command(
     resolved_vault = _resolve_vault(vault)
     run_id = run or latest_run_id(resolved_vault)
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
+    progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
     summary = _with_progress(
         f"Rerunning {run_id}",
         lambda report: resume_run(
@@ -668,8 +804,12 @@ def rerun_command(
             progress=report,
         ),
         interactive=review_match is not None,
+        gui_progress=progress_ui,
     )
+    if progress_ui is not None:
+        progress_ui.close()
     _print_run_summary(summary)
+    _show_import_enrichment_followup(summary, ui=ui)
 
 
 @app.command("re-run")
@@ -684,6 +824,7 @@ def re_run_command(
     resolved_vault = _resolve_vault(vault)
     run_id = run or latest_run_id(resolved_vault)
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
+    progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
     summary = _with_progress(
         f"Rerunning {run_id}",
         lambda report: resume_run(
@@ -697,8 +838,12 @@ def re_run_command(
             progress=report,
         ),
         interactive=review_match is not None,
+        gui_progress=progress_ui,
     )
+    if progress_ui is not None:
+        progress_ui.close()
     _print_run_summary(summary)
+    _show_import_enrichment_followup(summary, ui=ui)
 
 
 @app.command("rename-run")
@@ -734,6 +879,38 @@ def attach_pdf_command(
     console.print(
         f"Attached {summary['pdf']} to {citekey} "
         f"(copied={summary['copied']}, verified={summary['verified']})."
+    )
+
+
+@app.command("set-abstract")
+def set_abstract_command(
+    citekey: CitekeyArg,
+    text: AbstractTextArg = None,
+    abstract_file: AbstractFileArg = None,
+    source_url: SourceUrlArg = None,
+    lock: AbstractLockArg = True,
+    vault: VaultArg = None,
+) -> None:
+    if text and abstract_file:
+        raise typer.BadParameter("Use either --text or --file, not both.")
+    if abstract_file:
+        abstract = abstract_file.read_text(encoding="utf-8")
+    elif text:
+        abstract = text
+    else:
+        raise typer.BadParameter("Provide a manual abstract with --text or --file.")
+
+    summary = set_manual_abstract(
+        _resolve_vault(vault),
+        citekey,
+        abstract,
+        source_url=source_url,
+        lock=lock,
+    )
+    lock_note = "locked" if summary["locked"] else "unlocked"
+    console.print(
+        f"Set manual abstract for {summary['citekey']} ({lock_note}). "
+        f"Updated {summary['paper']}."
     )
 
 

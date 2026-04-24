@@ -218,6 +218,10 @@ and large confidence, Yes, and No panels. Keyboard shortcuts are `Return`,
 `Esc` or the Abort Import button to stop the import before later steps such as
 enrichment; `Space` / `⇧Space` to scroll the preview; and `⌘O` or `O` to open
 the PDF.
+After matching, GUI imports keep a small progress window open for citation and
+abstract enrichment. If enrichment leaves records incomplete, ambiguous, or
+unresolved, a follow-up browser opens with the affected cards and quick actions
+to open the paper card or attached PDF.
 If GUI dependencies are unavailable in the current environment, the command
 falls back to terminal prompts.
 
@@ -362,6 +366,18 @@ Interpretation:
 - `manual_lock`: the abstract should not be changed automatically.
 
 Set `abstract_lock: true` to protect a manually curated abstract. Use `--refresh-abstracts` to deliberately re-check resolved or verified abstracts, including upgrades from weak sources such as `pdf_extracted` to stronger sources such as Crossref. Use `--force` only when you intentionally want to process locked abstract metadata.
+
+To add a manual abstract without editing YAML by hand, put the abstract in a
+plain text file and run:
+
+```fish
+scholar-vault set-abstract --citekey smith2024rag --file ~/Downloads/abstract.txt --source-url https://doi.org/10.1145/example
+```
+
+This writes the `## Abstract` section, marks `abstract_source: manual`, sets
+`abstract_status: manual_lock`, and enables `abstract_lock: true` by default.
+Use `--no-lock` only if you want later automatic abstract enrichment to be able
+to replace it.
 
 Resume a previous run using the export and staging folder already recorded in `runs/<run_id>/index.yaml`:
 

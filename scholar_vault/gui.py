@@ -23,6 +23,7 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
             QFrame,
             QHBoxLayout,
             QLabel,
+            QProgressBar,
             QPushButton,
             QScrollArea,
             QTableWidget,
@@ -47,6 +48,7 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
         "QKeySequence": QKeySequence,
         "QLabel": QLabel,
         "QPixmap": QPixmap,
+        "QProgressBar": QProgressBar,
         "QPushButton": QPushButton,
         "QScrollArea": QScrollArea,
         "QShortcut": QShortcut,
@@ -353,12 +355,80 @@ def _build_match_side_panel(
     return side
 
 
-def show_enrichment_results(details: list[dict[str, Any]], *, abstracts: bool = False) -> None:
+class _ProgressReporter:
+    def __init__(self, qt: dict[str, Any], title: str) -> None:
+        self._qt = qt
+        self._app = _application(qt)
+        self._cancelled = False
+        self._dialog = qt["QDialog"]()
+        self._dialog.setWindowTitle(title)
+        self._dialog.resize(620, 150)
+
+        layout = qt["QVBoxLayout"](self._dialog)
+        self._label = qt["QLabel"]("Starting...")
+        self._label.setWordWrap(True)
+        layout.addWidget(self._label)
+
+        self._bar = qt["QProgressBar"]()
+        self._bar.setRange(0, 0)
+        layout.addWidget(self._bar)
+
+        buttons = qt["QHBoxLayout"]()
+        buttons.addStretch(1)
+        self._cancel = qt["QPushButton"]("Cancel Import")
+        self._cancel.clicked.connect(self._request_cancel)
+        buttons.addWidget(self._cancel)
+        layout.addLayout(buttons)
+
+        self._dialog.show()
+        self._app.processEvents()
+
+    def _request_cancel(self) -> None:
+        self._cancelled = True
+        self._label.setText("Canceling after the current step...")
+        self._app.processEvents()
+
+    def __call__(
+        self,
+        message: str,
+        current: int | None = None,
+        total: int | None = None,
+    ) -> None:
+        if self._cancelled:
+            raise MatchReviewAbort("Import canceled from progress window.")
+        if current is not None and total:
+            self._bar.setRange(0, total)
+            self._bar.setValue(current)
+            self._label.setText(f"[{current}/{total}] {message}")
+        else:
+            self._bar.setRange(0, 0)
+            self._label.setText(message)
+        self._app.processEvents()
+        if self._cancelled:
+            raise MatchReviewAbort("Import canceled from progress window.")
+
+    def close(self) -> None:
+        self._dialog.accept()
+        self._app.processEvents()
+
+
+def make_progress_reporter(title: str):
+    return _ProgressReporter(_load_qt_modules(require_fitz=False), title)
+
+
+def show_enrichment_results(
+    details: list[dict[str, Any]],
+    *,
+    abstracts: bool = False,
+    title: str | None = None,
+) -> None:
     qt = _load_qt_modules(require_fitz=False)
     app = _application(qt)
     dialog = qt["QDialog"]()
-    title = "Scholar Vault Abstract Results" if abstracts else "Scholar Vault Citation Results"
-    dialog.setWindowTitle(title)
+    window_title = title or (
+        "Scholar Vault Abstract Results" if abstracts else "Scholar Vault Citation Results"
+    )
+    dialog.setWindowTitle(window_title)
     dialog.resize(1180, 680)
 
     layout = qt["QVBoxLayout"](dialog)
@@ -386,9 +456,9 @@ def show_enrichment_results(details: list[dict[str, Any]], *, abstracts: bool = 
     layout.addLayout(filter_row)
 
     table = qt["QTableWidget"]()
-    table.setColumnCount(7)
+    table.setColumnCount(8)
     table.setHorizontalHeaderLabels(
-        ["Status", "Citekey", "Title", "DOI", "Source", "Missing", "Message"]
+        ["Type", "Status", "Citekey", "Title", "DOI", "Source", "Missing", "Message"]
     )
     table.setSelectionBehavior(table.SelectionBehavior.SelectRows)
     table.setEditTriggers(table.EditTrigger.NoEditTriggers)
@@ -407,6 +477,7 @@ def show_enrichment_results(details: list[dict[str, Any]], *, abstracts: bool = 
         table.setRowCount(len(visible))
         for row_index, row in enumerate(visible):
             values = [
+                row.get("kind"),
                 row.get("category"),
                 row.get("citekey"),
                 row.get("title"),

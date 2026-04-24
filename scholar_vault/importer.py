@@ -11,7 +11,13 @@ from typing import Any
 from pydantic import ValidationError
 
 from .bibtex import extract_pdf_paths, parse_bibtex_file, split_bibtex_authors, write_library_bib
-from .citations import EnrichmentOptions, EnrichmentProgress, EnrichmentResult, enrich_cards
+from .citations import (
+    EnrichmentOptions,
+    EnrichmentProgress,
+    EnrichmentResult,
+    abstract_fingerprint,
+    enrich_cards,
+)
 from .matcher import (
     best_pdf_match,
     build_pdf_candidate,
@@ -865,7 +871,7 @@ def import_scholar_labs_run(
     confirm: ConfirmCallback | None = None,
     review_match: MatchReviewCallback | None = None,
     progress: ProgressCallback | None = None,
-) -> dict[str, int | str]:
+) -> dict[str, Any]:
     if dry_run and commit:
         raise ValueError("Use either dry-run or commit, not both.")
 
@@ -1176,7 +1182,9 @@ def import_scholar_labs_run(
     _write_manifest(paths, manifest)
     _write_run(paths, run_record, cards)
 
-    enrichment_results = []
+    enrichment_results: list[EnrichmentResult] = []
+    enrichment_details: list[dict[str, Any]] = []
+    abstract_details: list[dict[str, Any]] = []
     if auto_enrich and not dry_run:
         selected_slugs = {
             Path(result.paper_card).stem
@@ -1212,21 +1220,27 @@ def import_scholar_labs_run(
                         total,
                     )
 
-            enrichment_results.extend(
-                enrich_cards(
-                    paths,
-                    selected_cards,
-                    EnrichmentOptions(),
-                    progress=report_citation_progress,
-                )
+            citation_results = enrich_cards(
+                paths,
+                selected_cards,
+                EnrichmentOptions(),
+                progress=report_citation_progress,
             )
-            enrichment_results.extend(
-                enrich_cards(
-                    paths,
-                    selected_cards,
-                    EnrichmentOptions(abstracts=True),
-                    progress=report_abstract_progress,
-                )
+            enrichment_results.extend(citation_results)
+            enrichment_details.extend(
+                _enrichment_detail(paths, card, result, abstracts=False)
+                for card, result in zip(selected_cards, citation_results, strict=False)
+            )
+            abstract_results = enrich_cards(
+                paths,
+                selected_cards,
+                EnrichmentOptions(abstracts=True),
+                progress=report_abstract_progress,
+            )
+            enrichment_results.extend(abstract_results)
+            abstract_details.extend(
+                _enrichment_detail(paths, card, result, abstracts=True)
+                for card, result in zip(selected_cards, abstract_results, strict=False)
             )
             for card in selected_cards:
                 _save_card(paths, card)
@@ -1255,6 +1269,8 @@ def import_scholar_labs_run(
         "archived": len(sorted(set(archived_files))),
         "export_archived": archived_export_path,
         "enriched": len([result for result in enrichment_results if result.changed]),
+        "enrichment_details": enrichment_details,
+        "abstract_details": abstract_details,
         "run": run_slug,
     }
 
@@ -1269,7 +1285,7 @@ def resume_run(
     confirm: ConfirmCallback | None = None,
     review_match: MatchReviewCallback | None = None,
     progress: ProgressCallback | None = None,
-) -> dict[str, int | str]:
+) -> dict[str, Any]:
     paths = initialize_vault(vault)
     run = _load_run_record(paths, run_id)
     if run is None:
@@ -1748,6 +1764,7 @@ def _enrichment_detail(
 
     source = card.abstract_source if abstracts else card.citation_source or card.doi_source
     return {
+        "kind": "abstract" if abstracts else "citation",
         "category": category,
         "status": result.status,
         "citekey": card.citekey or card.slug,
@@ -1762,6 +1779,44 @@ def _enrichment_detail(
         "message": result.message,
         "changed": result.changed,
         "skipped": result.skipped,
+    }
+
+
+def set_manual_abstract(
+    vault: Path | str,
+    citekey: str,
+    abstract: str,
+    *,
+    source_url: str | None = None,
+    lock: bool = True,
+) -> dict[str, str | bool]:
+    paths = initialize_vault(vault)
+    cleaned = clean_markdown_text(abstract)
+    if not cleaned:
+        raise ValueError("Manual abstract text is empty.")
+
+    cards = load_source_cards(paths)
+    card = next((item for item in cards if item.citekey == citekey or item.slug == citekey), None)
+    if card is None:
+        raise ValueError(f"No paper card found for citekey or slug: {citekey}")
+
+    checked_at = _now_iso()
+    card.abstract = cleaned
+    card.abstract_status = "manual_lock" if lock else "resolved"
+    card.abstract_source = "manual"
+    card.abstract_source_url = source_url
+    card.abstract_confidence = 1.0
+    card.abstract_last_checked = checked_at
+    card.abstract_enriched_at = checked_at
+    card.abstract_input_fingerprint = abstract_fingerprint(card)
+    card.abstract_lock = lock
+    card.enrichment_refresh = False
+    _save_card(paths, card)
+    _rebuild_indexes(paths)
+    return {
+        "citekey": card.citekey or card.slug,
+        "paper": f"papers/{card.slug}.md",
+        "locked": lock,
     }
 
 

@@ -17,6 +17,7 @@ from scholar_vault.importer import (
     rename_run,
     reset_vault,
     resume_run,
+    set_manual_abstract,
     undo_run,
 )
 from scholar_vault.models import (
@@ -26,6 +27,7 @@ from scholar_vault.models import (
     ScholarLabsResult,
     SourceCard,
 )
+from scholar_vault.render import render_paper_markdown
 from scholar_vault.sources import load_source_cards, run_note_path, write_yaml
 
 
@@ -639,12 +641,47 @@ def test_import_labs_auto_enriches_selected_cards_and_run_markdown(
     )
 
     assert summary["enriched"] == 2
+    assert len(summary["enrichment_details"]) == 1
+    assert len(summary["abstract_details"]) == 1
+    assert summary["enrichment_details"][0]["kind"] == "citation"
+    assert summary["abstract_details"][0]["kind"] == "abstract"
     assert cards[0].venue == "Journal of Enriched Metadata"
     assert cards[0].doi == "10.1145/example"
     assert cards[0].abstract == "Recovered provider abstract."
     assert "Venue: Journal of Enriched Metadata" in run_markdown
     assert "[10.1145/example](https://doi.org/10.1145/example)" in run_markdown
     assert "[pdfs/" in run_markdown
+
+
+def test_set_manual_abstract_locks_and_rerenders_card(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    card = SourceCard(
+        slug="smith2024rag",
+        citekey="smith2024rag",
+        title="Evaluating Retrieval Augmented Generation Systems",
+    )
+    (paths.papers / "smith2024rag.md").write_text(
+        render_paper_markdown(card),
+        encoding="utf-8",
+    )
+
+    summary = set_manual_abstract(
+        vault,
+        "smith2024rag",
+        "Manual abstract.\n\nSecond paragraph.",
+        source_url="https://example.com/abstract",
+    )
+    saved = load_source_cards(initialize_vault(vault))[0]
+    rendered = (paths.papers / "smith2024rag.md").read_text(encoding="utf-8")
+
+    assert summary["locked"] is True
+    assert saved.abstract == "Manual abstract.\n\nSecond paragraph."
+    assert saved.abstract_status == "manual_lock"
+    assert saved.abstract_source == "manual"
+    assert saved.abstract_source_url == "https://example.com/abstract"
+    assert saved.abstract_lock is True
+    assert "## Abstract\nManual abstract.\n\nSecond paragraph." in rendered
 
 
 def test_import_labs_archives_used_export_json_and_updates_run_metadata(
