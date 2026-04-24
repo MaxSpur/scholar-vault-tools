@@ -26,5 +26,7 @@
 - [x] Add a `set-abstract` command for locked manual abstracts without hand-editing frontmatter.
 - [x] Deduplicate long abstract and Scholar Labs summary prose from paper-card frontmatter while preserving body sections and run-note provenance.
 - [x] Make `rebuild` print a compact summary of rewritten cards, normalized records, and regenerated derived outputs.
+- [x] Let `import-labs` use the staging folder for both Scholar Labs JSON exports and PDFs when no separate exports folder is configured.
+- [x] Route existing-run confirmations through the GUI in `import-labs --ui` so progress windows do not hide terminal prompts.
 - [ ] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

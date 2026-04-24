@@ -29,7 +29,7 @@ from .importer import (
     set_manual_abstract,
     undo_run,
 )
-from .models import MatchReviewAbort, MatchReviewRequest, SourceCard
+from .models import ImportCanceled, MatchReviewAbort, MatchReviewRequest, SourceCard
 
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
 console = Console()
@@ -219,6 +219,21 @@ def _match_reviewer(ui: bool):
         return _terminal_match_review
 
 
+def _confirm_callback(ui: bool):
+    if not ui:
+        return _confirm
+    try:
+        from .gui import GuiUnavailable, make_confirmer
+    except Exception as exc:  # pragma: no cover - defensive optional import path
+        console.print(f"Confirmation UI unavailable ({exc}). Falling back to terminal prompts.")
+        return _confirm
+    try:
+        return make_confirmer("Scholar Vault Import")
+    except GuiUnavailable as exc:
+        console.print(f"Confirmation UI unavailable ({exc}). Falling back to terminal prompts.")
+        return _confirm
+
+
 def _shorten(value: object, limit: int = 76) -> str:
     text = "" if value is None else str(value)
     if len(text) <= limit:
@@ -390,14 +405,39 @@ def _resolve_staging(staging: Path | None) -> Path:
     return _require_configured_path(staging, "staging", label="staging folder")
 
 
-def _resolve_latest_export(export: Path | None) -> Path:
+def _resolve_latest_export(export: Path | None, *, fallback_dir: Path | None = None) -> Path:
     if export is not None:
         return export.expanduser().resolve()
-    exports_dir = _require_configured_path(None, "exports", label="exports folder")
-    try:
-        return latest_export_json(exports_dir)
-    except FileNotFoundError as exc:
-        raise typer.BadParameter(str(exc)) from exc
+
+    exports_dir = configured_path("exports")
+    exports_error = ""
+    if exports_dir is not None:
+        resolved_exports = exports_dir.expanduser().resolve()
+        if not resolved_exports.is_dir():
+            raise typer.BadParameter(
+                f"Configured exports folder is not a directory: {resolved_exports}"
+            )
+        try:
+            return latest_export_json(resolved_exports)
+        except FileNotFoundError as exc:
+            exports_error = str(exc)
+
+    if fallback_dir is not None:
+        try:
+            return latest_export_json(fallback_dir)
+        except FileNotFoundError as exc:
+            fallback_label = f"No JSON export files found in staging folder {fallback_dir}"
+            if exports_error:
+                raise typer.BadParameter(f"{exports_error}; {fallback_label}") from exc
+            raise typer.BadParameter(str(exc)) from exc
+
+    if exports_dir is None:
+        raise typer.BadParameter(
+            "No export was provided and no exports folder is configured. "
+            "Pass --export, configure an exports folder, or configure/use a staging folder "
+            "that contains the Scholar Labs JSON export."
+        )
+    raise typer.BadParameter(exports_error)
 
 
 def _print_run_summary(summary: dict[str, Any]) -> None:
@@ -440,6 +480,11 @@ def _with_progress(
                 gui_progress.close()
             console.print(str(exc) or "Import aborted.")
             raise typer.Exit(code=130) from exc
+        except ImportCanceled as exc:
+            if gui_progress is not None:
+                gui_progress.close()
+            console.print(str(exc) or "Import canceled.")
+            raise typer.Exit(code=0) from exc
         except Exception:
             if gui_progress is not None:
                 gui_progress.close()
@@ -467,6 +512,12 @@ def _with_progress(
                 gui_progress.close()
             console.print(str(exc) or "Import aborted.")
             raise typer.Exit(code=130) from exc
+        except ImportCanceled as exc:
+            progress.stop()
+            if gui_progress is not None:
+                gui_progress.close()
+            console.print(str(exc) or "Import canceled.")
+            raise typer.Exit(code=0) from exc
         except Exception:
             if gui_progress is not None:
                 gui_progress.close()
@@ -533,6 +584,7 @@ def import_run_command(
     ui: UiArg = False,
 ) -> None:
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
+    confirm = _confirm_callback(ui)
     progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
     summary = _with_progress(
         "Importing Scholar Labs run",
@@ -546,7 +598,7 @@ def import_run_command(
             archive_matched=False,
             archive_export=archive_export,
             title=title,
-            confirm=_confirm,
+            confirm=confirm,
             review_match=review_match,
             progress=report,
         ),
@@ -573,13 +625,17 @@ def import_labs_command(
     ui: UiArg = False,
 ) -> None:
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
+    confirm = _confirm_callback(ui)
     progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
+    resolved_vault = _resolve_vault(vault)
+    resolved_staging = _resolve_staging(staging)
+    resolved_export = _resolve_latest_export(export, fallback_dir=resolved_staging)
     summary = _with_progress(
         "Importing Scholar Labs run",
         lambda report: import_scholar_labs_run(
-            _resolve_vault(vault),
-            _resolve_latest_export(export),
-            _resolve_staging(staging),
+            resolved_vault,
+            resolved_export,
+            resolved_staging,
             dry_run=dry_run,
             commit=commit,
             include_without_pdf=include_without_pdf,
@@ -587,7 +643,7 @@ def import_labs_command(
             archive_export=archive_export,
             auto_enrich=auto_enrich,
             title=title,
-            confirm=_confirm,
+            confirm=confirm,
             review_match=review_match,
             progress=report,
         ),
@@ -614,13 +670,17 @@ def import_alias_command(
     ui: UiArg = False,
 ) -> None:
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
+    confirm = _confirm_callback(ui)
     progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
+    resolved_vault = _resolve_vault(vault)
+    resolved_staging = _resolve_staging(staging)
+    resolved_export = _resolve_latest_export(export, fallback_dir=resolved_staging)
     summary = _with_progress(
         "Importing Scholar Labs run",
         lambda report: import_scholar_labs_run(
-            _resolve_vault(vault),
-            _resolve_latest_export(export),
-            _resolve_staging(staging),
+            resolved_vault,
+            resolved_export,
+            resolved_staging,
             dry_run=dry_run,
             commit=commit,
             include_without_pdf=include_without_pdf,
@@ -628,7 +688,7 @@ def import_alias_command(
             archive_export=archive_export,
             auto_enrich=auto_enrich,
             title=title,
-            confirm=_confirm,
+            confirm=confirm,
             review_match=review_match,
             progress=report,
         ),
@@ -775,6 +835,7 @@ def resume_command(
     ui: UiArg = False,
 ) -> None:
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
+    confirm = _confirm_callback(ui)
     progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
     summary = _with_progress(
         f"Resuming run {run}",
@@ -784,7 +845,7 @@ def resume_command(
             dry_run=dry_run,
             commit=commit,
             auto_enrich=auto_enrich,
-            confirm=_confirm,
+            confirm=confirm,
             review_match=review_match,
             progress=report,
         ),
@@ -809,6 +870,7 @@ def rerun_command(
     resolved_vault = _resolve_vault(vault)
     run_id = run or latest_run_id(resolved_vault)
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
+    confirm = _confirm_callback(ui)
     progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
     summary = _with_progress(
         f"Rerunning {run_id}",
@@ -818,7 +880,7 @@ def rerun_command(
             dry_run=dry_run,
             commit=commit,
             auto_enrich=auto_enrich,
-            confirm=_confirm,
+            confirm=confirm,
             review_match=review_match,
             progress=report,
         ),
@@ -843,6 +905,7 @@ def re_run_command(
     resolved_vault = _resolve_vault(vault)
     run_id = run or latest_run_id(resolved_vault)
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
+    confirm = _confirm_callback(ui)
     progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
     summary = _with_progress(
         f"Rerunning {run_id}",
@@ -852,7 +915,7 @@ def re_run_command(
             dry_run=dry_run,
             commit=commit,
             auto_enrich=auto_enrich,
-            confirm=_confirm,
+            confirm=confirm,
             review_match=review_match,
             progress=report,
         ),

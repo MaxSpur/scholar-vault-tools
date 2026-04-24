@@ -297,6 +297,10 @@ class MatchReviewAbort(RuntimeError):
     """Raised when a reviewer aborts the whole import instead of rejecting one match."""
 
 
+class ImportCanceled(RuntimeError):
+    """Raised when a user declines to continue an import before changes are applied."""
+
+
 class ImportManifestEntry(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

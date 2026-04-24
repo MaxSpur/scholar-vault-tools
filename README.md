@@ -82,13 +82,15 @@ Store your normal project paths once so routine commands can omit them:
 scholar-vault configure \
   --code ~/Developer/scholar-vault-tools \
   --vault ~/Documents/Research/scholar-labs-vault \
-  --staging ~/Downloads/scholar-labs-staging \
-  --exports ~/Downloads/scholar-labs-exports
+  --staging ~/Downloads/scholar-labs-staging
 ```
 
 The defaults are written to `~/.config/scholar-vault/config.yaml`. Run
 `scholar-vault configure` without options to inspect the current values.
 Explicit command-line paths always override configured defaults.
+You may also configure a separate `--exports` folder, but it is optional:
+`import-labs` can use the staging folder for both PDFs and Scholar Labs JSON
+exports.
 
 With defaults configured, commands can be shorter:
 
@@ -143,7 +145,7 @@ scholar-labs-vault/
 
 1. Run a Google Scholar Labs search.
 2. Download selected PDFs into `~/Downloads/scholar-labs-staging`.
-3. Run the browser exporter in `browser/scholar_labs_json_exporter.js` on the Scholar Labs page to save a JSON export. This exporter is intentionally tied to Google Scholar `gs_*` selectors and should not be replaced with generic card scraping logic.
+3. Run the browser exporter in `browser/scholar_labs_json_exporter.js` on the Scholar Labs page to save a JSON export into the same staging folder. This exporter is intentionally tied to Google Scholar `gs_*` selectors and should not be replaced with generic card scraping logic.
 4. Import the run:
 
 ```fish
@@ -157,9 +159,10 @@ scholar-vault import-labs --commit
 ```
 
 When `--export` is omitted, `import-labs` uses the newest top-level `.json`
-file in the configured exports folder. It ignores files already moved into the
-`used/` subfolder. Pass `--export PATH` when you want to import a specific JSON
-instead.
+file in the configured exports folder if that folder has one. Otherwise it
+falls back to the staging folder, so PDFs and JSON exports can live together.
+It ignores files already moved into the `used/` subfolder. Pass `--export PATH`
+when you want to import a specific JSON instead.
 
 The compatibility alias still behaves identically:
 
@@ -176,7 +179,7 @@ Default Scholar Labs behavior is now selected-only:
 - Candidate results stay on the run page unless you explicitly opt in with `--include-without-pdf`.
 - `import-labs` copies accepted PDFs into `pdfs/`, verifies them, and then archives the matched originals out of staging into `raw/imported/`, leaving only unmatched PDFs in staging.
 - After committed matches, `import-labs`, `import`, `resume`, and `rerun` run citation and abstract enrichment for selected paper cards by default. Use `--no-enrich` when you want a faster import that skips provider lookups.
-- After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder without renaming it, for example `~/Downloads/scholar-labs-exports/used/example.json`. The run metadata is updated so `resume` and `rerun` still know where the export went.
+- After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder without renaming it, for example `~/Downloads/scholar-labs-staging/used/example.json`. The run metadata is updated so `resume` and `rerun` still know where the export went.
 - `import-run` is the lower-level transactional variant. It copies accepted PDFs into `pdfs/` but leaves staging untouched unless you later run `clean-staging`.
 - Most commands that accept `--vault`, and commands that accept `--staging`, can use configured defaults when those options are omitted.
 - Import and enrichment commands show terminal progress while scanning PDFs, matching results, querying metadata providers, and rebuilding derived files.
@@ -218,6 +221,8 @@ and large confidence, Yes, and No panels. Keyboard shortcuts are `Return`,
 `Esc` or the Abort Import button to stop the import before later steps such as
 enrichment; `Space` / `⇧Space` to scroll the preview; and `⌘O` or `O` to open
 the PDF.
+If the run already exists, the resume/update confirmation is shown in the GUI
+rather than as a hidden terminal prompt.
 After matching, GUI imports keep a small progress window open for citation and
 abstract enrichment. If enrichment leaves records incomplete, ambiguous, or
 unresolved, a follow-up browser opens with the affected cards and quick actions

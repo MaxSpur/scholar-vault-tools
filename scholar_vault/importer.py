@@ -24,6 +24,7 @@ from .matcher import (
     match_candidate_to_cards,
 )
 from .models import (
+    ImportCanceled,
     ImportLog,
     ImportLogEntry,
     ImportManifest,
@@ -915,7 +916,7 @@ def import_scholar_labs_run(
     run_ref = _run_ref_from_parts(run_slug, run_date, run_title, export.prompt, run_note_file)
     if existing_run and not dry_run and not commit and confirm is not None:
         if not confirm(f"Run {run_slug} already exists. Resume and update it?"):
-            raise ValueError(f"Run {run_slug} already exists.")
+            raise ImportCanceled(f"Run {run_slug} already exists. Import canceled.")
 
     raw_export_file = paths.raw_scholar_labs / f"{run_slug}.json"
     if not raw_export_file.exists():

@@ -5,7 +5,7 @@ from typer.testing import CliRunner
 
 from scholar_vault.cli import _with_progress, app
 from scholar_vault.importer import initialize_vault
-from scholar_vault.models import MatchReviewAbort
+from scholar_vault.models import ImportCanceled, MatchReviewAbort
 
 
 def test_interactive_progress_uses_plain_lines(capsys) -> None:
@@ -59,6 +59,21 @@ def test_progress_reports_to_gui_progress() -> None:
 
     assert result == "done"
     assert calls == [("Enriching abstracts", 1, 3)]
+
+
+def test_import_canceled_exits_cleanly(capsys) -> None:
+    def action(_report):
+        raise ImportCanceled("Run example already exists. Import canceled.")
+
+    try:
+        _with_progress("Importing Scholar Labs run", action, interactive=True)
+    except Exit as exc:
+        assert exc.exit_code == 0
+    else:
+        raise AssertionError("Import cancellation should stop the command.")
+
+    captured = capsys.readouterr().out
+    assert "Run example already exists. Import canceled." in captured
 
 
 def test_rebuild_command_prints_summary(tmp_path) -> None:

@@ -18,8 +18,8 @@
 
 ## CLI Workflows
 
-- `configure`: stores user-level defaults for the vault, staging folder, export folder, and code directory in `~/.config/scholar-vault/config.yaml`. Commands use these defaults unless explicit paths are passed.
-- `import-labs`: Scholar Labs convenience flow. It keeps all JSON results on the run record, creates canonical paper cards only for selected results by default, archives matched PDFs out of staging only after the verified vault copy exists, enriches selected paper cards by default, and moves used browser-export JSON unchanged into a sibling `used/` folder after successful non-dry-run imports. If `--export` is omitted, it imports the newest top-level `.json` file from the configured exports folder.
+- `configure`: stores user-level defaults for the vault, staging folder, optional export folder, and code directory in `~/.config/scholar-vault/config.yaml`. Commands use these defaults unless explicit paths are passed.
+- `import-labs`: Scholar Labs convenience flow. It keeps all JSON results on the run record, creates canonical paper cards only for selected results by default, archives matched PDFs out of staging only after the verified vault copy exists, enriches selected paper cards by default, and moves used browser-export JSON unchanged into a sibling `used/` folder after successful non-dry-run imports. If `--export` is omitted, it imports the newest top-level `.json` file from the configured exports folder when that folder has one, otherwise from the staging folder.
 - `import-run`: lower-level transactional Scholar Labs import. It uses the same matching and manifest logic but leaves staging untouched unless another command archives files later.
 - `import-pdf`, `import-bibtex`, and `import-doi`: non-Scholar-Labs ingestion paths that still converge on canonical `papers/*.md` cards.
 - `enrich-citations`: canonical-card-only DOI, citation, and optional abstract metadata enrichment. Default behavior enriches DOI/citation data; `--abstracts`, `--only missing-abstract`, or `--refresh-abstracts` switch to abstract enrichment with separate locks and fingerprints.

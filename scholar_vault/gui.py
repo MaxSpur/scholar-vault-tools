@@ -23,6 +23,7 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
             QFrame,
             QHBoxLayout,
             QLabel,
+            QMessageBox,
             QProgressBar,
             QPushButton,
             QScrollArea,
@@ -47,6 +48,7 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
         "QImage": QImage,
         "QKeySequence": QKeySequence,
         "QLabel": QLabel,
+        "QMessageBox": QMessageBox,
         "QPixmap": QPixmap,
         "QProgressBar": QProgressBar,
         "QPushButton": QPushButton,
@@ -143,6 +145,32 @@ class _MatchReviewer:
 
 def make_match_reviewer():
     return _MatchReviewer(_load_qt_modules(require_fitz=True))
+
+
+class _Confirmer:
+    def __init__(self, qt: dict[str, Any], title: str) -> None:
+        self._qt = qt
+        self._app = _application(qt)
+        self._title = title
+
+    def __call__(self, prompt: str) -> bool:
+        box = self._qt["QMessageBox"]()
+        box.setWindowTitle(self._title)
+        box.setIcon(self._qt["QMessageBox"].Icon.Question)
+        box.setText(prompt)
+        box.setStandardButtons(
+            self._qt["QMessageBox"].StandardButton.Yes
+            | self._qt["QMessageBox"].StandardButton.No
+        )
+        box.setDefaultButton(self._qt["QMessageBox"].StandardButton.No)
+        box.setEscapeButton(self._qt["QMessageBox"].StandardButton.No)
+        result = box.exec()
+        self._app.processEvents()
+        return result == self._qt["QMessageBox"].StandardButton.Yes
+
+
+def make_confirmer(title: str = "Scholar Vault") -> _Confirmer:
+    return _Confirmer(_load_qt_modules(require_fitz=False), title)
 
 
 def _match_dialog_result(qt: dict[str, Any], result: int) -> bool:

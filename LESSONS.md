@@ -9,7 +9,7 @@
 - If a workflow is meant to empty matched PDFs out of staging, make that explicit in the command name. The lower-level importer should stay safe by default, and the user-facing Labs convenience command can opt into verified copy-then-archive behavior.
 - When moving user-facing input files for workflow hygiene, update all provenance paths that future commands use. Archiving a used JSON export is only useful if `resume` still points at the moved file.
 - Prefer moving used exports into a folder over renaming them. Scholar Labs prompt-derived JSON names can already be long enough to approach filesystem limits.
-- When defaulting to the "latest" browser export, only consider top-level `.json` files in the configured exports folder. Ignore `used/` so reruns do not accidentally re-ingest archived exports.
+- When defaulting to the "latest" browser export, only consider top-level `.json` files in the configured exports folder or staging fallback. Ignore `used/` so reruns do not accidentally re-ingest archived exports.
 - PDF title metadata and first extracted text lines are often journal headers, especially for IEEE papers. Match against filename and compact no-space title text as fallbacks before declaring a staged PDF unmatched.
 - For "last run" behavior, use manifest `created_at` rather than run page mtimes. Rebuilds can rewrite run pages and make filesystem mtimes misleading.
 - Citation enrichment needs explicit state. Fingerprints, retry counts, `metadata_lock`, and raw provider caches prevent repeatedly hitting APIs or overwriting curated metadata by accident.
@@ -19,6 +19,7 @@
 - Long-running metadata provider lookups need visible CLI progress. A command that appears idle during enrichment is hard to trust even when it is working correctly.
 - Do not run blocking terminal prompts under Rich live progress. Interactive imports should use plain progress lines so `[y/N]` prompts and GUI handoffs are visible.
 - Keep desktop UI initialization isolated. Non-UI commands should not initialize Qt, and `--ui` should fall back cleanly if the desktop stack is unavailable in the current environment.
+- In `--ui` workflows, every blocking confirmation should be answerable in the GUI. A terminal `[y/N]` behind a focused progress window looks like a hung import.
 - The match-review GUI is for fast decisions, not metadata inspection. Keep title, PDF preview, confidence, and accept/reject controls dominant; hide non-editable metadata unless it directly improves the decision.
 - In the match-review GUI, distinguish rejecting one candidate from aborting the import. `Esc` should abort the whole process and prevent later steps such as enrichment.
 - A GUI import should not go visually silent after matching. Keep post-match enrichment progress visible and finish with only actionable follow-up rows, not every successful or unchanged card.
