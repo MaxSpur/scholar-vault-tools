@@ -718,6 +718,34 @@ def test_set_manual_abstract_locks_and_rerenders_card(tmp_path: Path) -> None:
     assert "## Abstract\nManual abstract.\n\nSecond paragraph." in rendered
 
 
+def test_set_manual_abstract_normalizes_preview_pdf_copy(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    card = SourceCard(
+        slug="nafis2024collaborative",
+        citekey="nafis2024collaborative",
+        title="Collaborative Immersive Analytics",
+    )
+    (paths.papers / "nafis2024collaborative.md").write_text(
+        render_paper_markdown(card),
+        encoding="utf-8",
+    )
+
+    set_manual_abstract(
+        vault,
+        "nafis2024collaborative",
+        "Abstract. Collaborative immersive analytics offers a promising fron-\n"
+        "tier for domain experts. This research studies us-\n"
+        "ability in XR.\n\nKeywords: Immersive Analytics",
+    )
+    saved = load_source_cards(initialize_vault(vault))[0]
+
+    assert saved.abstract == (
+        "Collaborative immersive analytics offers a promising frontier for domain "
+        "experts. This research studies usability in XR."
+    )
+
+
 def test_import_labs_archives_used_export_json_and_updates_run_metadata(
     tmp_path: Path,
 ) -> None:

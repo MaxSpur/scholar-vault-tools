@@ -386,7 +386,12 @@ Interpretation:
 - `unresolved`: no acceptable abstract was found.
 - `manual_lock`: the abstract should not be changed automatically.
 
-Set `abstract_lock: true` to protect a manually curated abstract. Use `--refresh-abstracts` to deliberately re-check resolved or verified abstracts, including upgrades from weak sources such as `pdf_extracted` to stronger sources such as Crossref. Use `--force` only when you intentionally want to process locked abstract metadata.
+Set `abstract_lock: true` to protect a manually curated abstract. Previously
+unresolved or ambiguous abstracts are tried again on later abstract enrichment
+runs instead of being skipped as stale failures. Use `--refresh-abstracts` to
+deliberately re-check resolved or verified abstracts, including upgrades from
+weak sources such as `pdf_extracted` to stronger sources such as Crossref. Use
+`--force` only when you intentionally want to process locked abstract metadata.
 
 To add a manual abstract without editing YAML by hand, put the abstract in a
 plain text file and run:
@@ -399,6 +404,11 @@ This writes the `## Abstract` section, marks `abstract_source: manual`, sets
 `abstract_status: manual_lock`, and enables `abstract_lock: true` by default.
 Use `--no-lock` only if you want later automatic abstract enrichment to be able
 to replace it.
+
+In `import-labs --ui` follow-up windows, missing-abstract issues can be resolved
+directly: the tool opens the PDF, shows a paste field for text copied from
+Preview or another PDF reader, repairs common PDF line breaks and hyphenated
+line wraps, then saves the result through the same locked manual-abstract path.
 
 Resume a previous run using the export and staging folder already recorded in `runs/<run_id>/index.yaml`:
 

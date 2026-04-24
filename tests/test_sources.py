@@ -3,6 +3,7 @@ from scholar_vault.sources import (
     build_pdf_filename,
     infer_run_title,
     load_source_card,
+    normalize_copied_abstract,
     parse_people,
     slugify_text,
 )
@@ -27,6 +28,23 @@ def test_parse_people_handles_comma_and_and() -> None:
         "Omar Lee",
         "Ken Park",
     ]
+
+
+def test_normalize_copied_abstract_repairs_pdf_line_breaks() -> None:
+    raw = """Abstract. In the ever-evolving discipline of high-dimensional scientific
+data, collaborative immersive analytics (CIA) offers a promising fron-
+tier for domain experts in complex data visualization and interpretation.
+This research presents a comprehensive framework for conducting us-
+ability studies.
+
+Keywords: Immersive Analytics · Collaboration"""
+
+    assert normalize_copied_abstract(raw) == (
+        "In the ever-evolving discipline of high-dimensional scientific data, "
+        "collaborative immersive analytics (CIA) offers a promising frontier for "
+        "domain experts in complex data visualization and interpretation. This "
+        "research presents a comprehensive framework for conducting usability studies."
+    )
 
 
 def test_infer_run_title_uses_prompt_topic_phrase() -> None:

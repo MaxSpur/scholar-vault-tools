@@ -31,5 +31,7 @@
 - [x] Add a `configure --ui` folder-picker workflow and explicit `--folder-mode shared|separate` CLI configuration.
 - [x] Split import summaries into reused prior selections, existing vault-card links, newly accepted staged PDFs, review prompts, and unresolved results.
 - [x] Redesign the GUI import summary from plain text into a high-signal dashboard.
+- [x] Redesign the follow-up UI as issue cards and add a missing-abstract manual resolution workflow.
+- [x] Retry previously failed abstract enrichment by default instead of skipping with `abstract previously failed`.
 - [ ] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

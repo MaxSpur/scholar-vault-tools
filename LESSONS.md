@@ -27,6 +27,8 @@
 - Import summaries must distinguish selected results that reused an existing run manifest or vault card from newly accepted staged PDFs. "Matched PDFs" alone is ambiguous when rerunning old Scholar Labs JSON.
 - Summary dialogs should not mirror terminal prose. Use large counts, status color, and a compact flow/breakdown first, then keep the raw text as a secondary selectable log.
 - Manual abstracts need a command path as well as an Obsidian editing path. Lock manual text by default so later provider refreshes do not erase curated abstracts.
+- Follow-up UI rows should foreground the issue message and route directly to a resolution action. Missing abstracts need PDF opening, paste cleanup, and manual-lock saving in one path.
+- A previous abstract failure is not a durable reason to skip future attempts. Keep unresolved abstract cards eligible for another pass so improved extraction/provider logic can help.
 - Do not duplicate long prose in paper-card frontmatter and Markdown body. Keep abstract/summary text in readable sections, and keep YAML to compact metadata/provenance needed by tooling.
 - Maintenance commands should report what they touched. `rebuild` is safer to trust when it summarizes rewritten cards, normalized records, and regenerated derived outputs.
 - Obsidian Graph uses Markdown file basenames, so generated run notes should not be named `index.md`. Use meaningful run filenames and keep machine state in `index.yaml`.

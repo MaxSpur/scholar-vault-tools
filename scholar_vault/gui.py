@@ -34,6 +34,7 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
             QScrollArea,
             QTableWidget,
             QTableWidgetItem,
+            QTextEdit,
             QVBoxLayout,
             QWidget,
         )
@@ -66,6 +67,7 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
         "QShortcut": QShortcut,
         "QTableWidget": QTableWidget,
         "QTableWidgetItem": QTableWidgetItem,
+        "QTextEdit": QTextEdit,
         "QUrl": QUrl,
         "QVBoxLayout": QVBoxLayout,
         "QWidget": QWidget,
@@ -678,9 +680,11 @@ def show_import_summary(
 
 
 def _summary_font(qt: dict[str, Any], size: int, *, mono: bool = False, bold: bool = False):
-    font = qt["QFont"]("Menlo" if mono else "")
     if mono:
-        font.setStyleHint(qt["QFont"].StyleHint.Monospace)
+        family = "Helvetica Neue Condensed Black" if bold else "Helvetica Neue Condensed"
+    else:
+        family = "Helvetica Neue"
+    font = qt["QFont"](family)
     font.setPointSize(size)
     font.setBold(bold)
     return font
@@ -932,9 +936,49 @@ def show_enrichment_results(
         "Scholar Vault Abstract Results" if abstracts else "Scholar Vault Citation Results"
     )
     dialog.setWindowTitle(window_title)
-    dialog.resize(1180, 680)
+    dialog.resize(1180, 760)
+    dialog.setStyleSheet(
+        """
+        QDialog { background: #030504; }
+        QLabel { color: #baffdc; }
+        QPushButton { min-height: 26px; padding: 5px 12px; }
+        QComboBox { min-height: 26px; }
+        """
+    )
 
     layout = qt["QVBoxLayout"](dialog)
+    layout.setContentsMargins(28, 24, 28, 20)
+    layout.setSpacing(16)
+
+    header = qt["QHBoxLayout"]()
+    title_block = qt["QVBoxLayout"]()
+    kicker = qt["QLabel"]("SCHOLAR VAULT // FOLLOW-UP")
+    kicker.setFont(_summary_font(qt, 13, mono=True, bold=True))
+    kicker.setStyleSheet("color: #69ffad;")
+    heading = qt["QLabel"]("ISSUES TO RESOLVE")
+    heading.setFont(_summary_font(qt, 32, bold=True))
+    heading.setStyleSheet("color: #f3fff7;")
+    subheading = qt["QLabel"]("Click an issue action to open the paper context and resolve it.")
+    subheading.setFont(_summary_font(qt, 12))
+    subheading.setStyleSheet("color: #8ce7b8;")
+    title_block.addWidget(kicker)
+    title_block.addWidget(heading)
+    title_block.addWidget(subheading)
+    header.addLayout(title_block, 1)
+    count_panel = _summary_panel(qt, "#ff3b4f" if details else "#45ffb0")
+    count_panel.setFixedWidth(180)
+    count_layout = qt["QVBoxLayout"](count_panel)
+    count_label = qt["QLabel"]("ISSUES")
+    count_label.setFont(_summary_font(qt, 11, mono=True, bold=True))
+    count_label.setStyleSheet("color: #8ce7b8; border: none;")
+    count_value = qt["QLabel"](str(len(details)))
+    count_value.setFont(_summary_font(qt, 34, mono=True, bold=True))
+    count_value.setStyleSheet("color: #ff3b4f; border: none;")
+    count_layout.addWidget(count_label)
+    count_layout.addWidget(count_value)
+    header.addWidget(count_panel)
+    layout.addLayout(header)
+
     filter_row = qt["QHBoxLayout"]()
     category_filter = qt["QComboBox"]()
     ordered = [
@@ -953,23 +997,32 @@ def show_enrichment_results(
         if category == "all" or _has_category(details, category)
     ]
     category_filter.addItems([category.title() for category in categories])
-    filter_row.addWidget(qt["QLabel"]("Status"))
+    status_label = qt["QLabel"]("FILTER")
+    status_label.setFont(_summary_font(qt, 11, mono=True, bold=True))
+    filter_row.addWidget(status_label)
     filter_row.addWidget(category_filter)
     filter_row.addStretch(1)
     layout.addLayout(filter_row)
 
-    table = qt["QTableWidget"]()
-    table.setColumnCount(8)
-    table.setHorizontalHeaderLabels(
-        ["Type", "Status", "Citekey", "Title", "DOI", "Source", "Missing", "Message"]
-    )
-    table.setSelectionBehavior(table.SelectionBehavior.SelectRows)
-    table.setEditTriggers(table.EditTrigger.NoEditTriggers)
-    layout.addWidget(table, 1)
-
+    scroll = qt["QScrollArea"]()
+    scroll.setWidgetResizable(True)
+    scroll.setStyleSheet("QScrollArea { border: 1px solid #26553b; background: #030504; }")
+    list_widget = qt["QWidget"]()
+    list_layout = qt["QVBoxLayout"](list_widget)
+    list_layout.setContentsMargins(12, 12, 12, 12)
+    list_layout.setSpacing(12)
+    scroll.setWidget(list_widget)
+    layout.addWidget(scroll, 1)
     visible: list[dict[str, Any]] = []
 
-    def refresh_table() -> None:
+    def clear_list() -> None:
+        while list_layout.count():
+            item = list_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def refresh_list() -> None:
         selected_category = categories[category_filter.currentIndex()]
         visible.clear()
         visible.extend(
@@ -977,57 +1030,205 @@ def show_enrichment_results(
             for row in details
             if selected_category == "all" or row.get("category") == selected_category
         )
-        table.setRowCount(len(visible))
-        for row_index, row in enumerate(visible):
-            values = [
-                row.get("kind"),
-                row.get("category"),
-                row.get("citekey"),
-                row.get("title"),
-                row.get("doi"),
-                row.get("source"),
-                ", ".join(row.get("missing_fields") or []),
-                row.get("message"),
-            ]
-            for column, value in enumerate(values):
-                table.setItem(row_index, column, qt["QTableWidgetItem"](str(value or "")))
-        table.resizeColumnsToContents()
-
-    def selected_detail() -> dict[str, Any] | None:
-        row = table.currentRow()
-        if row < 0 or row >= len(visible):
-            return None
-        return visible[row]
+        clear_list()
+        if not visible:
+            empty = qt["QLabel"]("No issues in this filter.")
+            empty.setFont(_summary_font(qt, 18, bold=True))
+            empty.setStyleSheet("color: #45ffb0; padding: 20px;")
+            list_layout.addWidget(empty)
+        for row in visible:
+            list_layout.addWidget(_issue_card(qt, row, refresh_list))
+        list_layout.addStretch(1)
 
     buttons = qt["QHBoxLayout"]()
-    open_card = qt["QPushButton"]("Open Card")
-    open_pdf = qt["QPushButton"]("Open PDF")
-    copy_citekey = qt["QPushButton"]("Copy Citekey")
-    copy_doi = qt["QPushButton"]("Copy DOI")
     close = qt["QPushButton"]("Close")
-    buttons.addWidget(open_card)
-    buttons.addWidget(open_pdf)
-    buttons.addWidget(copy_citekey)
-    buttons.addWidget(copy_doi)
     buttons.addStretch(1)
     buttons.addWidget(close)
     layout.addLayout(buttons)
 
-    open_card.clicked.connect(
-        lambda: _open_path(qt, str((selected_detail() or {}).get("paper_file") or ""))
-    )
-    open_pdf.clicked.connect(
-        lambda: _open_path(qt, str((selected_detail() or {}).get("pdf_file") or ""))
-    )
-    copy_citekey.clicked.connect(lambda: _copy_detail(qt, selected_detail(), "citekey"))
-    copy_doi.clicked.connect(lambda: _copy_detail(qt, selected_detail(), "doi"))
     close.clicked.connect(dialog.accept)
-    category_filter.currentIndexChanged.connect(refresh_table)
+    category_filter.currentIndexChanged.connect(refresh_list)
     qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.accept)
 
-    refresh_table()
+    refresh_list()
     dialog.exec()
     app.processEvents()
+
+
+def _issue_color(detail: dict[str, Any]) -> str:
+    category = str(detail.get("category") or "")
+    message = str(detail.get("message") or "")
+    if category in {"unresolved", "ambiguous"} or "failed" in message:
+        return "#ff3b4f"
+    if category == "incomplete":
+        return "#ffb000"
+    return "#69ffad"
+
+
+def _issue_card(qt: dict[str, Any], detail: dict[str, Any], refresh) -> Any:
+    color = _issue_color(detail)
+    panel = _summary_panel(qt, color)
+    layout = qt["QVBoxLayout"](panel)
+    layout.setContentsMargins(16, 14, 16, 14)
+    layout.setSpacing(10)
+
+    top = qt["QHBoxLayout"]()
+    badge = qt["QLabel"](str(detail.get("category") or "issue").upper())
+    badge.setFont(_summary_font(qt, 11, mono=True, bold=True))
+    badge.setStyleSheet(f"color: {color}; border: none;")
+    top.addWidget(badge, 0)
+    kind = qt["QLabel"](str(detail.get("kind") or "").upper())
+    kind.setFont(_summary_font(qt, 11, mono=True, bold=True))
+    kind.setStyleSheet("color: #8ce7b8; border: none;")
+    top.addWidget(kind, 0)
+    top.addStretch(1)
+    citekey = qt["QLabel"](str(detail.get("citekey") or ""))
+    citekey.setFont(_summary_font(qt, 11, mono=True))
+    citekey.setStyleSheet("color: #8ce7b8; border: none;")
+    top.addWidget(citekey, 0)
+    layout.addLayout(top)
+
+    message_text = str(detail.get("message") or detail.get("status") or "Follow-up needed")
+    if _can_resolve_missing_abstract(detail):
+        message = qt["QPushButton"](message_text)
+        message.clicked.connect(lambda: _resolve_missing_abstract(qt, detail, refresh))
+        message.setStyleSheet(
+            f"QPushButton {{ color: {color}; background: #020403; "
+            f"border: 1px solid {color}; text-align: left; padding: 10px; }}"
+        )
+    else:
+        message = qt["QLabel"](message_text)
+        message.setStyleSheet(f"color: {color}; border: none;")
+    message.setFont(_summary_font(qt, 20, bold=True))
+    layout.addWidget(message)
+
+    title = qt["QLabel"](str(detail.get("title") or "Untitled paper"))
+    title.setWordWrap(True)
+    title.setFont(_summary_font(qt, 15, bold=True))
+    title.setStyleSheet("color: #f3fff7; border: none;")
+    layout.addWidget(title)
+
+    meta_parts = [
+        f"DOI {detail.get('doi')}" if detail.get("doi") else "",
+        f"missing {', '.join(detail.get('missing_fields') or [])}"
+        if detail.get("missing_fields")
+        else "",
+        f"source {detail.get('source')}" if detail.get("source") else "",
+    ]
+    meta = qt["QLabel"](" // ".join(part for part in meta_parts if part))
+    meta.setWordWrap(True)
+    meta.setFont(_summary_font(qt, 11))
+    meta.setStyleSheet("color: #8ce7b8; border: none;")
+    layout.addWidget(meta)
+
+    actions = qt["QHBoxLayout"]()
+    if _can_resolve_missing_abstract(detail):
+        resolve = qt["QPushButton"]("Resolve Abstract")
+        resolve.clicked.connect(lambda: _resolve_missing_abstract(qt, detail, refresh))
+        actions.addWidget(resolve)
+    open_card = qt["QPushButton"]("Open Card")
+    open_pdf = qt["QPushButton"]("Open PDF")
+    copy_citekey = qt["QPushButton"]("Copy Citekey")
+    copy_doi = qt["QPushButton"]("Copy DOI")
+    open_card.clicked.connect(lambda: _open_path(qt, str(detail.get("paper_file") or "")))
+    open_pdf.clicked.connect(lambda: _open_path(qt, str(detail.get("pdf_file") or "")))
+    copy_citekey.clicked.connect(lambda: _copy_detail(qt, detail, "citekey"))
+    copy_doi.clicked.connect(lambda: _copy_detail(qt, detail, "doi"))
+    actions.addWidget(open_card)
+    actions.addWidget(open_pdf)
+    actions.addWidget(copy_citekey)
+    actions.addWidget(copy_doi)
+    actions.addStretch(1)
+    layout.addLayout(actions)
+    return panel
+
+
+def _can_resolve_missing_abstract(detail: dict[str, Any]) -> bool:
+    message = str(detail.get("message") or "")
+    return (
+        detail.get("kind") == "abstract"
+        and bool(detail.get("paper_file"))
+        and bool(detail.get("citekey"))
+        and (
+            message in {"abstract previously failed", "no acceptable abstract found"}
+            or detail.get("category") == "unresolved"
+        )
+    )
+
+
+def _vault_from_detail(detail: dict[str, Any]) -> Path:
+    paper_file = detail.get("paper_file")
+    if not paper_file:
+        raise ValueError("Issue does not include a paper file path.")
+    return Path(str(paper_file)).expanduser().resolve().parent.parent
+
+
+def _resolve_missing_abstract(qt: dict[str, Any], detail: dict[str, Any], refresh) -> None:
+    pdf_file = str(detail.get("pdf_file") or "")
+    if pdf_file:
+        _open_path(qt, pdf_file)
+
+    dialog = qt["QDialog"]()
+    dialog.setWindowTitle("Resolve Missing Abstract")
+    dialog.resize(880, 620)
+    dialog.setStyleSheet(
+        "QDialog { background: #030504; } QLabel { color: #baffdc; } "
+        "QTextEdit { background: #f7f7f7; color: #111; }"
+    )
+    layout = qt["QVBoxLayout"](dialog)
+    title = qt["QLabel"](str(detail.get("title") or "Untitled paper"))
+    title.setWordWrap(True)
+    title.setFont(_summary_font(qt, 20, bold=True))
+    title.setStyleSheet("color: #f3fff7;")
+    layout.addWidget(title)
+
+    prompt = qt["QLabel"](
+        "Paste the abstract copied from the PDF. Line breaks and word hyphenation from PDF "
+        "copying will be cleaned before saving."
+    )
+    prompt.setWordWrap(True)
+    prompt.setFont(_summary_font(qt, 12))
+    layout.addWidget(prompt)
+
+    editor = qt["QTextEdit"]()
+    editor.setAcceptRichText(False)
+    editor.setFont(_summary_font(qt, 13))
+    layout.addWidget(editor, 1)
+
+    buttons = qt["QDialogButtonBox"](
+        qt["QDialogButtonBox"].StandardButton.Save
+        | qt["QDialogButtonBox"].StandardButton.Cancel
+    )
+    layout.addWidget(buttons)
+
+    def save() -> None:
+        try:
+            from .importer import set_manual_abstract
+
+            result = set_manual_abstract(
+                _vault_from_detail(detail),
+                str(detail.get("citekey")),
+                editor.toPlainText(),
+                source_url=str(detail.get("pdf") or detail.get("pdf_file") or ""),
+            )
+        except Exception as exc:  # pragma: no cover - defensive UI error handling
+            box = qt["QMessageBox"](dialog)
+            box.setWindowTitle("Abstract Not Saved")
+            box.setIcon(qt["QMessageBox"].Icon.Warning)
+            box.setText(str(exc))
+            box.exec()
+            return
+        detail["category"] = "resolved"
+        detail["status"] = "manual_lock"
+        detail["source"] = "manual"
+        detail["message"] = "manual abstract saved"
+        detail["paper_path"] = result.get("paper") or detail.get("paper_path")
+        refresh()
+        dialog.accept()
+
+    buttons.accepted.connect(save)
+    buttons.rejected.connect(dialog.reject)
+    dialog.exec()
 
 
 def _copy_detail(qt: dict[str, Any], detail: dict[str, Any] | None, key: str) -> None:

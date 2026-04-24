@@ -68,6 +68,7 @@ from .sources import (
     load_import_manifests,
     load_run_records,
     load_source_cards,
+    normalize_copied_abstract,
     normalize_doi,
     normalize_title,
     parse_people,
@@ -1860,7 +1861,7 @@ def set_manual_abstract(
     lock: bool = True,
 ) -> dict[str, str | bool]:
     paths = initialize_vault(vault)
-    cleaned = clean_markdown_text(abstract)
+    cleaned = clean_markdown_text(normalize_copied_abstract(abstract))
     if not cleaned:
         raise ValueError("Manual abstract text is empty.")
 

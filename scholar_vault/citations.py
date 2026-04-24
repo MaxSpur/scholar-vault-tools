@@ -210,13 +210,6 @@ def should_skip_abstract_card(card: SourceCard, options: EnrichmentOptions) -> s
         and not requested_refresh
     ):
         return "abstract fingerprint unchanged"
-    if (
-        card.abstract_status in {"ambiguous", "unresolved"}
-        and card.abstract_input_fingerprint == fingerprint
-        and not options.retry_failed
-        and not requested_refresh
-    ):
-        return "abstract previously failed"
     return None
 
 

@@ -663,6 +663,18 @@ def test_abstract_enrichment_second_run_skips_unchanged_resolved_card() -> None:
     )
 
 
+def test_abstract_enrichment_retries_previous_failure_by_default() -> None:
+    card = SourceCard(
+        slug="smith2024rag",
+        citekey="smith2024rag",
+        title="Evaluating Retrieval Augmented Generation Systems",
+        abstract_status="unresolved",
+    )
+    card.abstract_input_fingerprint = abstract_fingerprint(card)
+
+    assert should_skip_abstract_card(card, EnrichmentOptions(abstracts=True)) is None
+
+
 def test_abstract_dry_run_does_not_write_card(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     paths = initialize_vault(vault)

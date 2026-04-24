@@ -94,3 +94,17 @@ def test_import_summary_model_highlights_reused_manifest() -> None:
     assert model["flow"][2] == ("REUSED", 19, "#41e893")
     assert "No review prompts" in model["notice"]
     assert model["breakdown"][0][1] == 11
+
+
+def test_missing_abstract_issue_is_resolvable() -> None:
+    from scholar_vault.gui import _can_resolve_missing_abstract
+
+    assert _can_resolve_missing_abstract(
+        {
+            "kind": "abstract",
+            "category": "skipped",
+            "message": "abstract previously failed",
+            "paper_file": "/tmp/vault/papers/example.md",
+            "citekey": "example2024paper",
+        }
+    )

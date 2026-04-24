@@ -155,6 +155,31 @@ def clean_markdown_text(text: str | None) -> str:
     return normalized
 
 
+def normalize_copied_abstract(text: str | None) -> str:
+    if not text:
+        return ""
+    normalized = (
+        text.replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .replace("\u00a0", " ")
+        .replace("\u00ad", "")
+    )
+    normalized = re.split(r"(?im)^\s*keywords?\s*[:.]", normalized, maxsplit=1)[0]
+    normalized = re.sub(r"(?is)^\s*abstract\s*[\.:;—-]\s*", "", normalized.strip())
+    normalized = re.sub(r"([A-Za-z])[-‐‑‒–—]\s*\n\s*([A-Za-z])", r"\1\2", normalized)
+    paragraphs = re.split(r"\n\s*\n+", normalized)
+    cleaned: list[str] = []
+    for paragraph in paragraphs:
+        lines = [line.strip() for line in paragraph.splitlines() if line.strip()]
+        if not lines:
+            continue
+        joined = " ".join(lines)
+        joined = re.sub(r"\s+", " ", joined)
+        joined = re.sub(r"\s+([,.;:?!])", r"\1", joined)
+        cleaned.append(joined.strip())
+    return "\n\n".join(cleaned)
+
+
 def parse_people(text: str | None) -> list[str]:
     if not text:
         return []

@@ -11,7 +11,7 @@
 - `scholar_vault/render.py`: Jinja-backed Markdown rendering for cards, run pages, indexes, topics, and LLM summary files.
 - `scholar_vault/bibtex.py`: BibTeX parsing and export helpers.
 - `scholar_vault/citations.py`: DOI detection, provider response caching, citation and abstract enrichment, candidate scoring, abstract provenance, and BibTeX normalization.
-- `scholar_vault/gui.py`: PySide6/PyMuPDF desktop UI for configuration, Scholar Labs match decisions, import/enrichment progress, and enrichment result browsing. GUI imports stay isolated so non-UI commands do not initialize Qt.
+- `scholar_vault/gui.py`: PySide6/PyMuPDF desktop UI for configuration, Scholar Labs match decisions, import/enrichment progress, import summaries, issue-card follow-up browsing, and missing-abstract manual resolution. GUI imports stay isolated so non-UI commands do not initialize Qt.
 - `templates/`: Markdown body templates for the generated paper, run, and index documents.
 - `browser/`: browser-side exporter for visible Google Scholar Labs results.
 - `tests/`: regression coverage for naming, parsing, matching, rendering, and idempotence.
