@@ -671,8 +671,27 @@ def import_doi_command(
 @app.command("rebuild")
 def rebuild_command(vault: VaultArg = None) -> None:
     resolved_vault = _resolve_vault(vault)
-    rebuild_vault(resolved_vault)
+    summary = rebuild_vault(resolved_vault)
     console.print(f"Rebuilt derived files for {resolved_vault}")
+    console.print(
+        f"- Papers: {summary['papers']} total, "
+        f"{summary['paper_cards_written']} card files rewritten, "
+        f"{summary['cards_normalized']} normalized."
+    )
+    console.print(
+        f"- Runs: {summary['runs']} run notes refreshed; "
+        f"{summary['manifests']} import manifests read."
+    )
+    console.print(
+        f"- Derived outputs: {summary['index_files_written']} indexes, "
+        f"{summary['topic_pages_written']} topic pages, "
+        f"{summary['llm_files_written']} LLM files, "
+        f"{summary['export_files_written']} export files."
+    )
+    if summary["pdf_filenames_normalized"]:
+        console.print(
+            f"- Normalized {summary['pdf_filenames_normalized']} attached PDF filename(s)."
+        )
 
 
 @app.command("bibtex")

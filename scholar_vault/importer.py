@@ -584,25 +584,33 @@ def _normalize_attached_pdf_filename(paths: VaultPaths, card: SourceCard) -> boo
     return True
 
 
-def _rebuild_indexes(paths: VaultPaths) -> None:
+def _rebuild_indexes(paths: VaultPaths) -> dict[str, int]:
     runs = load_run_records(paths)
     run_refs = {run.slug: _run_ref(run) for run in runs}
     cards = load_source_cards(paths)
     cards_changed = False
+    cards_normalized = 0
+    pdf_filenames_normalized = 0
     for card in cards:
+        card_changed = False
         normalized_discovered_in = [
             _normalize_run_ref(item, run_refs) for item in card.discovered_in
         ]
         if normalized_discovered_in != card.discovered_in:
             card.discovered_in = normalized_discovered_in
-            cards_changed = True
+            card_changed = True
         backfilled_sources = _backfill_summary_source_from_card(card, run_refs=run_refs)
         normalized_sources = _merge_summary_sources(backfilled_sources, [], run_refs=run_refs)
         if normalized_sources != card.summary_sources:
             card.summary_sources = normalized_sources
-            cards_changed = True
+            card_changed = True
         if _normalize_attached_pdf_filename(paths, card):
+            card_changed = True
+            pdf_filenames_normalized += 1
+        if card_changed:
             cards_changed = True
+            cards_normalized += 1
+    paper_cards_written = 0
     for card in cards:
         rendered = render_paper_markdown(card)
         paper_path = paths.papers / f"{card.slug}.md"
@@ -613,6 +621,7 @@ def _rebuild_indexes(paths: VaultPaths) -> None:
         )
         if should_write:
             write_text(paper_path, rendered)
+            paper_cards_written += 1
 
     manifests = load_import_manifests(paths)
     topic_cards = group_cards_by_topic(cards)
@@ -633,6 +642,20 @@ def _rebuild_indexes(paths: VaultPaths) -> None:
         write_text(paths.topics / f"{topic_slug(topic)}.md", render_topic_page(topic, topic_list))
     for run in runs:
         _write_run(paths, run, cards)
+    return {
+        "papers": len(cards),
+        "runs": len(runs),
+        "manifests": len(manifests),
+        "topics": len(topic_cards),
+        "paper_cards_written": paper_cards_written,
+        "cards_normalized": cards_normalized,
+        "pdf_filenames_normalized": pdf_filenames_normalized,
+        "index_files_written": 6,
+        "llm_files_written": 2,
+        "export_files_written": 3,
+        "topic_pages_written": len(topic_cards),
+        "run_notes_written": len(runs),
+    }
 
 
 def _clear_directory(path: Path) -> int:
@@ -648,7 +671,7 @@ def _clear_directory(path: Path) -> int:
     return removed
 
 
-def initialize_vault(vault: Path | str) -> VaultPaths:
+def initialize_vault(vault: Path | str, *, rebuild: bool = True) -> VaultPaths:
     paths = VaultPaths.from_root(vault)
     paths.ensure()
     config_path = paths.vault / "config.yaml"
@@ -671,7 +694,8 @@ def initialize_vault(vault: Path | str) -> VaultPaths:
         write_text(paths.vault / "README.md", render_vault_readme())
     if not (paths.vault / "AGENTS.md").exists():
         write_text(paths.vault / "AGENTS.md", render_vault_agents())
-    _rebuild_indexes(paths)
+    if rebuild:
+        _rebuild_indexes(paths)
     return paths
 
 
@@ -1820,9 +1844,9 @@ def set_manual_abstract(
     }
 
 
-def rebuild_vault(vault: Path | str) -> None:
-    paths = initialize_vault(vault)
-    _rebuild_indexes(paths)
+def rebuild_vault(vault: Path | str) -> dict[str, int]:
+    paths = initialize_vault(vault, rebuild=False)
+    return _rebuild_indexes(paths)
 
 
 def export_bibtex(vault: Path | str) -> Path:

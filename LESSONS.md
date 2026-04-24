@@ -24,6 +24,7 @@
 - A GUI import should not go visually silent after matching. Keep post-match enrichment progress visible and finish with only actionable follow-up rows, not every successful or unchanged card.
 - Manual abstracts need a command path as well as an Obsidian editing path. Lock manual text by default so later provider refreshes do not erase curated abstracts.
 - Do not duplicate long prose in paper-card frontmatter and Markdown body. Keep abstract/summary text in readable sections, and keep YAML to compact metadata/provenance needed by tooling.
+- Maintenance commands should report what they touched. `rebuild` is safer to trust when it summarizes rewritten cards, normalized records, and regenerated derived outputs.
 - Obsidian Graph uses Markdown file basenames, so generated run notes should not be named `index.md`. Use meaningful run filenames and keep machine state in `index.yaml`.
 - Keep run IDs and Obsidian run-note titles separate. The run ID is for idempotence and manifests; the short title is for human navigation and Graph labels.
 - If a user renames a generated run note in Obsidian, preserve that filename through `note_file`; do not slugify it back into a machine-looking name during rebuild.

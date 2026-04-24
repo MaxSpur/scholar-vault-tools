@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from click.exceptions import Exit
+from typer.testing import CliRunner
 
-from scholar_vault.cli import _with_progress
+from scholar_vault.cli import _with_progress, app
+from scholar_vault.importer import initialize_vault
 from scholar_vault.models import MatchReviewAbort
 
 
@@ -57,3 +59,16 @@ def test_progress_reports_to_gui_progress() -> None:
 
     assert result == "done"
     assert calls == [("Enriching abstracts", 1, 3)]
+
+
+def test_rebuild_command_prints_summary(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    initialize_vault(vault)
+
+    result = CliRunner().invoke(app, ["rebuild", "--vault", str(vault)])
+
+    assert result.exit_code == 0
+    assert "Rebuilt derived files" in result.output
+    assert "- Papers: 0 total" in result.output
+    assert "- Runs: 0 run notes refreshed" in result.output
+    assert "- Derived outputs:" in result.output

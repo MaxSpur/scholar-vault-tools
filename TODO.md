@@ -25,5 +25,6 @@
 - [x] Keep GUI import workflows visible through post-match enrichment progress and show follow-up issues at the end.
 - [x] Add a `set-abstract` command for locked manual abstracts without hand-editing frontmatter.
 - [x] Deduplicate long abstract and Scholar Labs summary prose from paper-card frontmatter while preserving body sections and run-note provenance.
+- [x] Make `rebuild` print a compact summary of rewritten cards, normalized records, and regenerated derived outputs.
 - [ ] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

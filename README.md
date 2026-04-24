@@ -285,7 +285,7 @@ Rebuild derived indexes and exports from the canonical paper cards:
 scholar-vault rebuild --vault ~/Documents/Research/scholar-labs-vault
 ```
 
-`rebuild` also rerenders generated paper and run Markdown from the current templates, so existing paper cards get new generated sections such as `## Quick access`.
+`rebuild` also rerenders generated paper and run Markdown from the current templates, so existing paper cards get new generated sections such as `## Quick access`. At the end it prints a compact summary with paper-card rewrites, normalized records, refreshed run notes, and regenerated index/export files.
 
 Regenerate BibTeX only:
 

@@ -424,9 +424,13 @@ def test_rebuild_rerenders_existing_paper_cards_with_latest_template(tmp_path: P
     stale = render_without_quick_access(card)
     (paths.papers / "quick-access.md").write_text(stale, encoding="utf-8")
 
-    rebuild_vault(vault)
+    summary = rebuild_vault(vault)
 
     rendered = (paths.papers / "quick-access.md").read_text(encoding="utf-8")
+    assert summary["papers"] == 1
+    assert summary["paper_cards_written"] == 1
+    assert summary["index_files_written"] == 6
+    assert summary["export_files_written"] == 3
     assert "## Quick access" in rendered
     assert "[Open local PDF](../pdfs/quick-access.pdf)" in rendered
 
