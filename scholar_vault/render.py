@@ -166,8 +166,8 @@ def render_vault_agents() -> str:
         "- Keep raw inputs under `raw/` immutable where practical.\n"
         "- Update topic pages and indexes through `scholar-vault rebuild` after manual edits.\n"
         "- Preserve provenance in `discovered_in` and run pages instead of burying it in notes.\n"
-        "- Preserve run-specific Scholar Labs summaries in `summary_sources` on paper cards.\n"
-        "- Keep provider abstracts in `abstract` separate from Scholar Labs summaries.\n"
+        "- Preserve run-specific Scholar Labs summaries in run pages and generated views.\n"
+        "- Keep provider abstracts in `## Abstract` separate from Scholar Labs summaries.\n"
         "- Do not require Obsidian plugins, Zotero, or a database for normal operation.\n"
     )
 

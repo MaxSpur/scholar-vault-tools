@@ -12,7 +12,7 @@ import yaml
 from slugify import slugify
 from unidecode import unidecode
 
-from .models import ImportManifest, RationalePoint, RunRecord, SourceCard
+from .models import ImportManifest, RationalePoint, RunRecord, SourceCard, SummarySource
 
 STOPWORDS = {
     "a",
@@ -502,10 +502,85 @@ def load_source_card(path: Path) -> SourceCard:
     return card
 
 
+def _prefer_summary(text: str | None) -> bool:
+    cleaned = clean_markdown_text(text)
+    return bool(cleaned and cleaned != "No summary yet." and cleaned != "No summary provided.")
+
+
+def _summary_source_from_run_result(run: RunRecord, result: object) -> SummarySource | None:
+    summary = clean_markdown_text(getattr(result, "summary", None))
+    if not _prefer_summary(summary):
+        return None
+    return SummarySource(
+        run=run_note_path(run.slug, run.date, run.title, run.prompt, run.note_file),
+        prompt=run.prompt,
+        rank=getattr(result, "rank", None),
+        summary=summary,
+        rationale_points=list(getattr(result, "rationale_points", []) or []),
+    )
+
+
+def _merge_summary_sources(
+    existing: list[SummarySource],
+    incoming: list[SummarySource],
+) -> list[SummarySource]:
+    merged: list[SummarySource] = []
+    by_run: dict[str, int] = {}
+    seen_without_run: set[str] = set()
+    for source in [*existing, *incoming]:
+        source = source.model_copy(deep=True)
+        source.summary = clean_markdown_text(source.summary)
+        if not _prefer_summary(source.summary):
+            continue
+        if source.run:
+            if source.run in by_run:
+                merged[by_run[source.run]] = source
+            else:
+                by_run[source.run] = len(merged)
+                merged.append(source)
+            continue
+        key = normalize_title(source.summary)
+        if key not in seen_without_run:
+            seen_without_run.add(key)
+            merged.append(source)
+    return merged
+
+
+def _apply_run_summary_sources(paths: VaultPaths, cards: list[SourceCard]) -> None:
+    cards_by_slug = {card.slug: card for card in cards}
+    incoming_by_slug: dict[str, list[SummarySource]] = {card.slug: [] for card in cards}
+    for run in load_run_records(paths):
+        for result in run.results:
+            if not result.paper_card:
+                continue
+            card = cards_by_slug.get(Path(result.paper_card).stem)
+            if card is None:
+                continue
+            source = _summary_source_from_run_result(run, result)
+            if source is not None:
+                incoming_by_slug[card.slug].append(source)
+    for card in cards:
+        merged_sources = _merge_summary_sources(
+            card.summary_sources,
+            incoming_by_slug.get(card.slug, []),
+        )
+        if not merged_sources and _prefer_summary(card.summary):
+            merged_sources = [
+                SummarySource(
+                    run=run_ref,
+                    summary=card.summary,
+                    rationale_points=card.why_this_source_matters,
+                )
+                for run_ref in card.discovered_in
+            ]
+        card.summary_sources = merged_sources
+
+
 def load_source_cards(paths: VaultPaths) -> list[SourceCard]:
     cards: list[SourceCard] = []
     for path in sorted(paths.papers.glob("*.md")):
         cards.append(load_source_card(path))
+    _apply_run_summary_sources(paths, cards)
     return cards
 
 

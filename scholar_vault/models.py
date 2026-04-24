@@ -199,7 +199,6 @@ class SourceCard(BaseModel):
             "enrichment_status": self.enrichment_status,
             "enrichment_missing": self.enrichment_missing,
             "enrichment_refresh": self.enrichment_refresh,
-            "abstract": self.abstract,
             "abstract_status": self.abstract_status,
             "abstract_source": self.abstract_source,
             "abstract_source_url": self.abstract_source_url,
@@ -209,9 +208,6 @@ class SourceCard(BaseModel):
             "abstract_input_fingerprint": self.abstract_input_fingerprint,
             "abstract_lock": self.abstract_lock,
             "links": [link.model_dump(exclude_none=True) for link in self.links],
-            "summary_sources": [
-                source.model_dump(exclude_none=True) for source in self.summary_sources
-            ],
         }
 
 

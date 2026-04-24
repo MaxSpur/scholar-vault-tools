@@ -49,6 +49,9 @@ def test_render_paper_markdown_contains_required_sections() -> None:
     assert "## Scholar Labs summary" in rendered
     assert "### Run-specific Scholar Labs summaries" in rendered
     assert "Run-specific summary." in rendered
+    frontmatter = rendered.split("---", 2)[1]
+    assert "\nabstract:" not in frontmatter
+    assert "\nsummary_sources:" not in frontmatter
     assert "## Why this source matters" in rendered
     assert "[pdfs/smith2024rag.pdf](../pdfs/smith2024rag.pdf)" in rendered
     assert (

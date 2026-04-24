@@ -350,11 +350,11 @@ scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault -
 scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --dry-run --abstracts
 ```
 
-The abstract is not the Scholar Labs summary. Scholar Labs summaries explain why the source appeared in a prompt result; abstracts are provider or PDF metadata and are stored separately in `abstract` frontmatter and the `## Abstract` section of each paper card.
+The abstract is not the Scholar Labs summary. Scholar Labs summaries explain why the source appeared in a prompt result; abstracts are provider or PDF metadata and are stored in the `## Abstract` section of each paper card. Frontmatter keeps only abstract status, source, confidence, fingerprint, and lock metadata so agents do not read the same long abstract twice.
 
 Abstract provider order is local DOI detection, Crossref REST metadata, Europe PMC fallback, OpenAlex reconstructed abstracts, DataCite descriptions, then local PDF text extraction. Crossref abstracts may include JATS/XML markup, which the tool strips before writing the card. OpenAlex abstracts are reconstructed from `abstract_inverted_index`. The tool never uses LLM summarization or Scholar Labs summaries as abstracts.
 
-Abstract enrichment writes these fields: `abstract`, `abstract_status`, `abstract_source`, `abstract_source_url`, `abstract_confidence`, `abstract_last_checked`, `abstract_enriched_at`, `abstract_input_fingerprint`, and `abstract_lock`.
+Abstract enrichment writes the `## Abstract` section plus these frontmatter fields: `abstract_status`, `abstract_source`, `abstract_source_url`, `abstract_confidence`, `abstract_last_checked`, `abstract_enriched_at`, `abstract_input_fingerprint`, and `abstract_lock`.
 
 Interpretation:
 
@@ -457,7 +457,7 @@ scholar-vault reset --vault ~/Documents/Research/scholar-labs-vault --yes
 ## Generated Records
 
 - `papers/*.md`: canonical source cards for selected papers by default.
-- `papers/*.md` frontmatter field `summary_sources`: run-specific Scholar Labs summaries linked back to the run note that produced them.
+- `papers/*.md` body sections: human-readable abstract and primary Scholar Labs summary. Long prose is not duplicated in frontmatter.
 - `runs/<run_id>/<Short Title.md>`: Obsidian-friendly per-run provenance pages that keep all Scholar Labs candidate results.
 - `runs/*/index.yaml`: machine-readable run records used by `resume`, `rerun`, and rebuilds.
 - `runs/*/import-manifest.yaml`: transactional record of proposed matches, decisions, copied PDFs, and created cards.

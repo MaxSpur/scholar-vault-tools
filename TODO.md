@@ -24,5 +24,6 @@
 - [x] Add GUI match review for Scholar Labs imports with structured match payloads and terminal fallback.
 - [x] Keep GUI import workflows visible through post-match enrichment progress and show follow-up issues at the end.
 - [x] Add a `set-abstract` command for locked manual abstracts without hand-editing frontmatter.
+- [x] Deduplicate long abstract and Scholar Labs summary prose from paper-card frontmatter while preserving body sections and run-note provenance.
 - [ ] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.
