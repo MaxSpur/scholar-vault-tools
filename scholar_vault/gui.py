@@ -585,25 +585,89 @@ def make_progress_reporter(title: str):
     return _ProgressReporter(_load_qt_modules(require_fitz=False), title)
 
 
-def show_import_summary(lines: list[str], *, title: str = "Scholar Vault Import Summary") -> None:
+def show_import_summary(
+    summary: dict[str, Any],
+    lines: list[str],
+    *,
+    title: str = "Scholar Vault Import Summary",
+) -> None:
     qt = _load_qt_modules(require_fitz=False)
     app = _application(qt)
+    model = _import_summary_model(summary, lines)
     dialog = qt["QDialog"]()
     dialog.setWindowTitle(title)
-    dialog.resize(760, 360)
+    dialog.resize(1120, 700)
+    dialog.setStyleSheet(
+        """
+        QDialog { background: #030504; }
+        QLabel { color: #baffdc; }
+        QPushButton {
+            min-width: 92px;
+            min-height: 28px;
+            padding: 5px 16px;
+        }
+        """
+    )
 
-    layout = qt["QVBoxLayout"](dialog)
-    heading = qt["QLabel"]("Import Summary")
-    heading_font = qt["QFont"]()
-    heading_font.setPointSize(18)
-    heading_font.setBold(True)
-    heading.setFont(heading_font)
-    layout.addWidget(heading)
+    shell = qt["QHBoxLayout"](dialog)
+    shell.setContentsMargins(0, 0, 0, 0)
+    shell.setSpacing(0)
 
-    body = qt["QLabel"]("\n".join(lines))
-    body.setWordWrap(True)
-    body.setTextInteractionFlags(qt["Qt"].TextInteractionFlag.TextSelectableByMouse)
-    layout.addWidget(body, 1)
+    rail = qt["QFrame"]()
+    rail.setFixedWidth(18)
+    rail.setStyleSheet("background: #bd0027;")
+    shell.addWidget(rail)
+
+    layout = qt["QVBoxLayout"]()
+    layout.setContentsMargins(28, 24, 28, 20)
+    layout.setSpacing(18)
+    shell.addLayout(layout, 1)
+
+    header = qt["QHBoxLayout"]()
+    title_block = qt["QVBoxLayout"]()
+    kicker = qt["QLabel"]("SCHOLAR VAULT // IMPORT")
+    kicker.setFont(_summary_font(qt, 13, mono=True, bold=True))
+    kicker.setStyleSheet("color: #69ffad; letter-spacing: 0px;")
+    heading = qt["QLabel"]("RUN REPORT")
+    heading.setFont(_summary_font(qt, 34, bold=True))
+    heading.setStyleSheet("color: #f3fff7;")
+    run_label = qt["QLabel"](str(model["run"]))
+    run_label.setFont(_summary_font(qt, 12, mono=True))
+    run_label.setStyleSheet("color: #68c792;")
+    run_label.setWordWrap(True)
+    title_block.addWidget(kicker)
+    title_block.addWidget(heading)
+    title_block.addWidget(run_label)
+    header.addLayout(title_block, 1)
+    header.addWidget(_summary_status_panel(qt, model), 0)
+    layout.addLayout(header)
+
+    metrics = qt["QGridLayout"]()
+    metrics.setHorizontalSpacing(12)
+    metrics.setVerticalSpacing(12)
+    for index, metric in enumerate(model["metrics"]):
+        metrics.addWidget(
+            _summary_metric_card(qt, metric),
+            index // 3,
+            index % 3,
+        )
+    layout.addLayout(metrics)
+
+    middle = qt["QHBoxLayout"]()
+    middle.setSpacing(14)
+    middle.addWidget(_summary_flow_panel(qt, model), 2)
+    middle.addWidget(_summary_breakdown_panel(qt, model), 1)
+    layout.addLayout(middle, 1)
+
+    log = qt["QLabel"]("\n".join(model["lines"]))
+    log.setWordWrap(True)
+    log.setFont(_summary_font(qt, 11, mono=True))
+    log.setTextInteractionFlags(qt["Qt"].TextInteractionFlag.TextSelectableByMouse)
+    log.setStyleSheet(
+        "QLabel { color: #8ce7b8; background: #07100b; "
+        "border: 1px solid #26553b; padding: 10px; }"
+    )
+    layout.addWidget(log)
 
     buttons = qt["QDialogButtonBox"](qt["QDialogButtonBox"].StandardButton.Ok)
     buttons.accepted.connect(dialog.accept)
@@ -611,6 +675,248 @@ def show_import_summary(lines: list[str], *, title: str = "Scholar Vault Import 
     qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.accept)
     dialog.exec()
     app.processEvents()
+
+
+def _summary_font(qt: dict[str, Any], size: int, *, mono: bool = False, bold: bool = False):
+    font = qt["QFont"]("Menlo" if mono else "")
+    if mono:
+        font.setStyleHint(qt["QFont"].StyleHint.Monospace)
+    font.setPointSize(size)
+    font.setBold(bold)
+    return font
+
+
+def _summary_int(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _import_summary_model(summary: dict[str, Any], lines: list[str]) -> dict[str, Any]:
+    decisions = summary.get("decision_summary") or {}
+    citations = summary.get("citation_enrichment") or {}
+    abstracts = summary.get("abstract_enrichment") or {}
+    selected = _summary_int(summary.get("selected"))
+    unselected = _summary_int(summary.get("unselected_results"))
+    export_results = _summary_int(decisions.get("export_results")) or selected + unselected
+    review_prompts = _summary_int(decisions.get("review_prompts"))
+    review_rejected = _summary_int(decisions.get("review_rejected"))
+    reused = _summary_int(decisions.get("prior_selected_reused"))
+    linked = _summary_int(decisions.get("existing_cards_linked"))
+    new_matches = _summary_int(decisions.get("new_staged_pdf_matches"))
+    without_candidate = _summary_int(decisions.get("results_without_candidate"))
+    citation_changed = _summary_int(citations.get("changed"))
+    abstract_changed = _summary_int(abstracts.get("changed"))
+
+    if review_rejected or unselected:
+        status = "CHECK"
+        status_detail = f"{unselected} unselected"
+        status_color = "#ff3b4f"
+    elif new_matches:
+        status = "UPDATED"
+        status_detail = f"{new_matches} new PDFs"
+        status_color = "#38ff9b"
+    elif reused == selected and selected:
+        status = "REUSED"
+        status_detail = "manifest complete"
+        status_color = "#45ffb0"
+    else:
+        status = "COMPLETE"
+        status_detail = f"{selected} selected"
+        status_color = "#8bffd0"
+
+    return {
+        "run": summary.get("run") or "unknown run",
+        "status": status,
+        "status_detail": status_detail,
+        "status_color": status_color,
+        "notice": _summary_notice(selected, reused, linked, review_prompts),
+        "lines": lines,
+        "metrics": [
+            {
+                "label": "EXPORT",
+                "value": export_results,
+                "detail": "Scholar Labs results",
+                "color": "#8bffd0",
+            },
+            {
+                "label": "SELECTED",
+                "value": selected,
+                "detail": "paper cards active",
+                "color": "#45ffb0",
+            },
+            {
+                "label": "UNSELECTED",
+                "value": unselected,
+                "detail": "need no card yet",
+                "color": "#ff3b4f" if unselected else "#426b58",
+            },
+            {
+                "label": "REUSED",
+                "value": reused,
+                "detail": "from manifest",
+                "color": "#41e893",
+            },
+            {
+                "label": "NEW PDFS",
+                "value": new_matches,
+                "detail": "accepted now",
+                "color": "#f3fff7" if new_matches else "#426b58",
+            },
+            {
+                "label": "REVIEWS",
+                "value": review_prompts,
+                "detail": f"{review_rejected} rejected",
+                "color": "#ffb000" if review_prompts else "#426b58",
+            },
+        ],
+        "flow": [
+            ("EXPORT", export_results, "#8bffd0"),
+            ("SELECTED", selected, "#45ffb0"),
+            ("REUSED", reused, "#41e893"),
+            ("LINKED", linked, "#69ffad"),
+            ("NEW", new_matches, "#f3fff7"),
+            ("LEFT", unselected, "#ff3b4f" if unselected else "#426b58"),
+        ],
+        "breakdown": [
+            (
+                "No staged candidate",
+                without_candidate,
+                "#ff3b4f" if without_candidate else "#426b58",
+            ),
+            ("Rejected in review", review_rejected, "#ff3b4f" if review_rejected else "#426b58"),
+            ("Citations changed", citation_changed, "#45ffb0" if citation_changed else "#426b58"),
+            ("Abstracts changed", abstract_changed, "#45ffb0" if abstract_changed else "#426b58"),
+        ],
+    }
+
+
+def _summary_notice(selected: int, reused: int, linked: int, review_prompts: int) -> str:
+    if review_prompts == 0 and selected and reused == selected:
+        return "No review prompts: selected results were already recorded in this run."
+    if review_prompts == 0 and (reused or linked):
+        return "No review needed for reused manifest entries or attached vault PDFs."
+    if review_prompts:
+        return "Review prompts appeared only where a staged PDF needed a decision."
+    return "No selected results required match review."
+
+
+def _summary_panel(qt: dict[str, Any], border: str = "#2b6748") -> Any:
+    frame = qt["QFrame"]()
+    frame.setFrameShape(qt["QFrame"].Shape.StyledPanel)
+    frame.setStyleSheet(
+        f"QFrame {{ background: #07100b; border: 1px solid {border}; }}"
+    )
+    return frame
+
+
+def _summary_status_panel(qt: dict[str, Any], model: dict[str, Any]) -> Any:
+    panel = _summary_panel(qt, str(model["status_color"]))
+    panel.setFixedWidth(250)
+    layout = qt["QVBoxLayout"](panel)
+    layout.setContentsMargins(16, 14, 16, 14)
+    label = qt["QLabel"]("STATUS")
+    label.setFont(_summary_font(qt, 11, mono=True, bold=True))
+    label.setStyleSheet("color: #8ce7b8; border: none;")
+    value = qt["QLabel"](str(model["status"]))
+    value.setFont(_summary_font(qt, 30, mono=True, bold=True))
+    value.setStyleSheet(f"color: {model['status_color']}; border: none;")
+    detail = qt["QLabel"](str(model["status_detail"]))
+    detail.setFont(_summary_font(qt, 12, mono=True))
+    detail.setStyleSheet("color: #baffdc; border: none;")
+    layout.addWidget(label)
+    layout.addWidget(value)
+    layout.addWidget(detail)
+    return panel
+
+
+def _summary_metric_card(qt: dict[str, Any], metric: dict[str, Any]) -> Any:
+    panel = _summary_panel(qt, str(metric["color"]))
+    panel.setMinimumHeight(112)
+    layout = qt["QVBoxLayout"](panel)
+    layout.setContentsMargins(14, 12, 14, 12)
+    label = qt["QLabel"](str(metric["label"]))
+    label.setFont(_summary_font(qt, 11, mono=True, bold=True))
+    label.setStyleSheet("color: #8ce7b8; border: none;")
+    value = qt["QLabel"](str(metric["value"]))
+    value.setFont(_summary_font(qt, 34, mono=True, bold=True))
+    value.setStyleSheet(f"color: {metric['color']}; border: none;")
+    detail = qt["QLabel"](str(metric["detail"]))
+    detail.setFont(_summary_font(qt, 11, mono=True))
+    detail.setStyleSheet("color: #9bdcb9; border: none;")
+    layout.addWidget(label)
+    layout.addWidget(value)
+    layout.addWidget(detail)
+    return panel
+
+
+def _summary_flow_panel(qt: dict[str, Any], model: dict[str, Any]) -> Any:
+    panel = _summary_panel(qt)
+    layout = qt["QVBoxLayout"](panel)
+    layout.setContentsMargins(14, 12, 14, 12)
+    title = qt["QLabel"]("DECISION FLOW")
+    title.setFont(_summary_font(qt, 12, mono=True, bold=True))
+    title.setStyleSheet("color: #8ce7b8; border: none;")
+    layout.addWidget(title)
+    row = qt["QHBoxLayout"]()
+    row.setSpacing(7)
+    for index, (label, value, color) in enumerate(model["flow"]):
+        row.addWidget(_summary_flow_node(qt, label, value, color), 1)
+        if index < len(model["flow"]) - 1:
+            connector = qt["QLabel"](">")
+            connector.setFont(_summary_font(qt, 18, mono=True, bold=True))
+            connector.setStyleSheet("color: #bd0027; border: none;")
+            row.addWidget(connector, 0)
+    layout.addLayout(row)
+    notice = qt["QLabel"](str(model["notice"]))
+    notice.setWordWrap(True)
+    notice.setFont(_summary_font(qt, 12, mono=True))
+    notice.setStyleSheet("color: #f3fff7; border: none; padding-top: 8px;")
+    layout.addWidget(notice)
+    return panel
+
+
+def _summary_flow_node(qt: dict[str, Any], label: str, value: int, color: str) -> Any:
+    node = qt["QFrame"]()
+    node.setStyleSheet(f"QFrame {{ background: #020403; border: 1px solid {color}; }}")
+    layout = qt["QVBoxLayout"](node)
+    layout.setContentsMargins(8, 8, 8, 8)
+    value_label = qt["QLabel"](str(value))
+    value_label.setAlignment(qt["Qt"].AlignmentFlag.AlignCenter)
+    value_label.setFont(_summary_font(qt, 22, mono=True, bold=True))
+    value_label.setStyleSheet(f"color: {color}; border: none;")
+    name_label = qt["QLabel"](label)
+    name_label.setAlignment(qt["Qt"].AlignmentFlag.AlignCenter)
+    name_label.setFont(_summary_font(qt, 10, mono=True, bold=True))
+    name_label.setStyleSheet("color: #8ce7b8; border: none;")
+    layout.addWidget(value_label)
+    layout.addWidget(name_label)
+    return node
+
+
+def _summary_breakdown_panel(qt: dict[str, Any], model: dict[str, Any]) -> Any:
+    panel = _summary_panel(qt)
+    layout = qt["QVBoxLayout"](panel)
+    layout.setContentsMargins(14, 12, 14, 12)
+    title = qt["QLabel"]("SIGNALS")
+    title.setFont(_summary_font(qt, 12, mono=True, bold=True))
+    title.setStyleSheet("color: #8ce7b8; border: none;")
+    layout.addWidget(title)
+    for label, value, color in model["breakdown"]:
+        row = qt["QHBoxLayout"]()
+        name = qt["QLabel"](label)
+        name.setFont(_summary_font(qt, 11, mono=True))
+        name.setStyleSheet("color: #baffdc; border: none;")
+        count = qt["QLabel"](str(value))
+        count.setAlignment(qt["Qt"].AlignmentFlag.AlignRight)
+        count.setFont(_summary_font(qt, 16, mono=True, bold=True))
+        count.setStyleSheet(f"color: {color}; border: none;")
+        row.addWidget(name, 1)
+        row.addWidget(count, 0)
+        layout.addLayout(row)
+    layout.addStretch(1)
+    return panel
 
 
 def show_enrichment_results(

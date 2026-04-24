@@ -415,7 +415,7 @@ def _show_import_summary_ui(summary: dict[str, Any], *, ui: bool) -> None:
         console.print(f"Summary UI unavailable ({exc}).")
         return
     try:
-        show_import_summary(_import_summary_lines(summary))
+        show_import_summary(summary, _import_summary_lines(summary))
     except GuiUnavailable as exc:
         console.print(f"Summary UI unavailable ({exc}).")
 

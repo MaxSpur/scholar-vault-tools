@@ -64,3 +64,33 @@ def test_match_dialog_abort_result_raises() -> None:
         pass
     else:
         raise AssertionError("Abort dialog result should raise MatchReviewAbort.")
+
+
+def test_import_summary_model_highlights_reused_manifest() -> None:
+    from scholar_vault.gui import _import_summary_model
+
+    model = _import_summary_model(
+        {
+            "run": "2026-04-23_example",
+            "selected": 19,
+            "unselected_results": 11,
+            "decision_summary": {
+                "export_results": 30,
+                "prior_selected_reused": 19,
+                "existing_cards_linked": 0,
+                "new_staged_pdf_matches": 0,
+                "review_prompts": 0,
+                "review_rejected": 0,
+                "results_without_candidate": 11,
+            },
+            "citation_enrichment": {"changed": 1},
+            "abstract_enrichment": {"changed": 0},
+        },
+        ["Processed run 2026-04-23_example."],
+    )
+
+    assert model["status"] == "CHECK"
+    assert model["flow"][0] == ("EXPORT", 30, "#8bffd0")
+    assert model["flow"][2] == ("REUSED", 19, "#41e893")
+    assert "No review prompts" in model["notice"]
+    assert model["breakdown"][0][1] == 11
