@@ -166,6 +166,36 @@ def test_rejected_match_leaves_pdf_in_staging(tmp_path: Path) -> None:
     assert any(entry.get("decision") == "rejected" for entry in manifest["entries"])
 
 
+def test_reimport_reuses_prior_selected_matches_without_review(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_export(exports / "sample.json", 1)
+    _write_pdf_with_title(staging / "paper-1.pdf", "Result Paper 1")
+
+    first = import_scholar_labs_run(vault, export_path, staging, commit=True)
+
+    def fail_review(_request):
+        raise AssertionError("Previously selected matches should not be reviewed again.")
+
+    second = import_scholar_labs_run(
+        vault,
+        export_path,
+        staging,
+        confirm=lambda _prompt: True,
+        review_match=fail_review,
+    )
+
+    assert first["selected"] == 1
+    assert second["selected"] == 1
+    assert second["decision_summary"]["existing_run"] is True
+    assert second["decision_summary"]["prior_selected_reused"] == 1
+    assert second["decision_summary"]["new_staged_pdf_matches"] == 0
+    assert second["decision_summary"]["review_prompts"] == 0
+
+
 def test_structured_match_review_accepts_pdf(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     staging = tmp_path / "staging"

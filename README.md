@@ -195,6 +195,7 @@ Default Scholar Labs behavior is now selected-only:
 - `import-labs` copies accepted PDFs into `pdfs/`, verifies them, and then archives the matched originals out of staging into `raw/imported/`, leaving only unmatched PDFs in staging.
 - After committed matches, `import-labs`, `import`, `resume`, and `rerun` run citation and abstract enrichment for selected paper cards by default. Use `--no-enrich` when you want a faster import that skips provider lookups.
 - After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder without renaming it, for example `~/Downloads/scholar-labs-staging/used/example.json`. The run metadata is updated so `resume` and `rerun` still know where the export went.
+- The final import summary separates reused prior selections, existing vault-card links, newly accepted staged PDFs, review prompts, unresolved results, staged-file cleanup, and enrichment changes, so rerunning an old JSON should make clear why no match-review prompts appeared.
 - `import-run` is the lower-level transactional variant. It copies accepted PDFs into `pdfs/` but leaves staging untouched unless you later run `clean-staging`.
 - Most commands that accept `--vault`, and commands that accept `--staging`, can use configured defaults when those options are omitted.
 - Import and enrichment commands show terminal progress while scanning PDFs, matching results, querying metadata providers, and rebuilding derived files.

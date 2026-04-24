@@ -278,6 +278,7 @@ def test_import_labs_ui_existing_run_confirmation_uses_gui_callback(
     monkeypatch.setattr("scholar_vault.cli._confirm_callback", fake_confirm_callback)
     monkeypatch.setattr("scholar_vault.cli._match_reviewer", lambda _ui: lambda _request: False)
     monkeypatch.setattr("scholar_vault.cli._make_gui_progress", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("scholar_vault.cli._show_import_summary_ui", lambda *_args, **_kwargs: None)
 
     result = CliRunner().invoke(
         app,
@@ -320,6 +321,7 @@ def test_import_labs_existing_run_decline_exits_without_traceback(
     monkeypatch.setattr("scholar_vault.cli._confirm_callback", lambda _ui: lambda _prompt: False)
     monkeypatch.setattr("scholar_vault.cli._match_reviewer", lambda _ui: lambda _request: False)
     monkeypatch.setattr("scholar_vault.cli._make_gui_progress", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("scholar_vault.cli._show_import_summary_ui", lambda *_args, **_kwargs: None)
 
     result = CliRunner().invoke(
         app,

@@ -585,6 +585,34 @@ def make_progress_reporter(title: str):
     return _ProgressReporter(_load_qt_modules(require_fitz=False), title)
 
 
+def show_import_summary(lines: list[str], *, title: str = "Scholar Vault Import Summary") -> None:
+    qt = _load_qt_modules(require_fitz=False)
+    app = _application(qt)
+    dialog = qt["QDialog"]()
+    dialog.setWindowTitle(title)
+    dialog.resize(760, 360)
+
+    layout = qt["QVBoxLayout"](dialog)
+    heading = qt["QLabel"]("Import Summary")
+    heading_font = qt["QFont"]()
+    heading_font.setPointSize(18)
+    heading_font.setBold(True)
+    heading.setFont(heading_font)
+    layout.addWidget(heading)
+
+    body = qt["QLabel"]("\n".join(lines))
+    body.setWordWrap(True)
+    body.setTextInteractionFlags(qt["Qt"].TextInteractionFlag.TextSelectableByMouse)
+    layout.addWidget(body, 1)
+
+    buttons = qt["QDialogButtonBox"](qt["QDialogButtonBox"].StandardButton.Ok)
+    buttons.accepted.connect(dialog.accept)
+    layout.addWidget(buttons)
+    qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.accept)
+    dialog.exec()
+    app.processEvents()
+
+
 def show_enrichment_results(
     details: list[dict[str, Any]],
     *,

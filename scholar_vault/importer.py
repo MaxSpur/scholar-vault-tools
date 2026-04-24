@@ -957,13 +957,28 @@ def import_scholar_labs_run(
     log_entries: list[ImportLogEntry] = []
     archived_files: list[str] = []
     interactive = not dry_run and not commit
+    decision_summary: dict[str, int | bool] = {
+        "existing_run": bool(existing_run),
+        "export_results": len(export.results),
+        "staged_pdfs_scanned": len(staged_pdf_paths),
+        "prior_selected_reused": 0,
+        "existing_cards_linked": 0,
+        "new_staged_pdf_matches": 0,
+        "review_prompts": 0,
+        "review_accepted": 0,
+        "review_rejected": 0,
+        "commit_auto_accepted": 0,
+        "commit_proposals_skipped": 0,
+        "proposed_not_committed": 0,
+        "results_without_candidate": 0,
+    }
 
     sorted_results = sorted(export.results, key=lambda item: item.rank)
     total_results = len(sorted_results)
     for index, result in enumerate(sorted_results, start=1):
         if progress:
             progress(
-                f"Matching Scholar Labs result {result.rank}: {result.title}",
+                f"Checking Scholar Labs result {result.rank}: {result.title}",
                 index,
                 total_results,
             )
@@ -975,6 +990,7 @@ def import_scholar_labs_run(
             and prior_result.status == "selected"
             and _paper_card_exists(paths, prior_result.paper_card)
         ):
+            decision_summary["prior_selected_reused"] += 1
             run_results.append(prior_result)
             if prior_entry:
                 manifest_entries.append(prior_entry)
@@ -1022,16 +1038,21 @@ def import_scholar_labs_run(
             if dry_run:
                 run_status = "unmatched"
                 pdf_status = "unmatched"
+                decision_summary["proposed_not_committed"] += 1
             elif commit:
                 if proposal.decision == "auto":
                     decision = "accepted"
+                    decision_summary["commit_auto_accepted"] += 1
                 else:
                     run_status = "unmatched"
                     pdf_status = "unmatched"
+                    decision_summary["commit_proposals_skipped"] += 1
             elif interactive:
                 if review_match is not None:
+                    decision_summary["review_prompts"] += 1
                     accepted = review_match(_build_match_review_request(result, proposal))
                 elif confirm is not None:
+                    decision_summary["review_prompts"] += 1
                     accepted = confirm(
                         f"Accept match {Path(proposal.candidate.path).name} -> {result.title} "
                         f"(score={proposal.score})?"
@@ -1040,12 +1061,15 @@ def import_scholar_labs_run(
                     accepted = proposal.decision == "auto"
                 if accepted:
                     decision = "accepted"
+                    decision_summary["review_accepted"] += 1
                 else:
                     decision = "rejected"
                     run_status = "unmatched"
                     pdf_status = "unmatched"
+                    decision_summary["review_rejected"] += 1
 
         if decision == "accepted" and proposal is not None:
+            decision_summary["new_staged_pdf_matches"] += 1
             card, card_created, card_before = _prepare_card_for_result(
                 cards,
                 result,
@@ -1109,6 +1133,7 @@ def import_scholar_labs_run(
                 pdf_status = "attached"
                 note = "Linked existing paper card already in vault."
                 linked_existing_card = True
+                decision_summary["existing_cards_linked"] += 1
             if not linked_existing_card and existing_paper_card:
                 paper_card = existing_paper_card
             if not linked_existing_card and include_without_pdf and not dry_run:
@@ -1130,6 +1155,8 @@ def import_scholar_labs_run(
                     note = "Match proposed but not committed."
                 elif decision == "rejected":
                     note = "User rejected the proposed match."
+            if not linked_existing_card and proposal is None:
+                decision_summary["results_without_candidate"] += 1
 
         if prior_result and paper_card is None and prior_result.paper_card and existing_paper_card:
             paper_card = existing_paper_card
@@ -1270,6 +1297,11 @@ def import_scholar_labs_run(
             for card in selected_cards:
                 _save_card(paths, card)
 
+    citation_processed = len(enrichment_details)
+    abstract_processed = len(abstract_details)
+    citation_changed = sum(1 for row in enrichment_details if row.get("changed"))
+    abstract_changed = sum(1 for row in abstract_details if row.get("changed"))
+
     if log_entries:
         _write_log(paths, "import-labs" if archive_matched else "import-run", log_entries)
     if progress:
@@ -1292,8 +1324,20 @@ def import_scholar_labs_run(
         "matched": len([result for result in run_results if result.pdf_status == "attached"]),
         "unmatched": len(sorted(set(unmatched_files))),
         "archived": len(sorted(set(archived_files))),
+        "unselected_results": len(
+            [result for result in run_results if result.status != "selected"]
+        ),
+        "decision_summary": decision_summary,
         "export_archived": archived_export_path,
         "enriched": len([result for result in enrichment_results if result.changed]),
+        "citation_enrichment": {
+            "processed": citation_processed,
+            "changed": citation_changed,
+        },
+        "abstract_enrichment": {
+            "processed": abstract_processed,
+            "changed": abstract_changed,
+        },
         "enrichment_details": enrichment_details,
         "abstract_details": abstract_details,
         "run": run_slug,

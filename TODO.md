@@ -29,5 +29,6 @@
 - [x] Let `import-labs` use the staging folder for both Scholar Labs JSON exports and PDFs when no separate exports folder is configured.
 - [x] Route existing-run confirmations through the GUI in `import-labs --ui` so progress windows do not hide terminal prompts.
 - [x] Add a `configure --ui` folder-picker workflow and explicit `--folder-mode shared|separate` CLI configuration.
+- [x] Split import summaries into reused prior selections, existing vault-card links, newly accepted staged PDFs, review prompts, and unresolved results.
 - [ ] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

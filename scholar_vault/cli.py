@@ -406,6 +406,20 @@ def _make_gui_progress(enabled: bool, title: str):
         return None
 
 
+def _show_import_summary_ui(summary: dict[str, Any], *, ui: bool) -> None:
+    if not ui:
+        return
+    try:
+        from .gui import GuiUnavailable, show_import_summary
+    except Exception as exc:  # pragma: no cover - defensive optional import path
+        console.print(f"Summary UI unavailable ({exc}).")
+        return
+    try:
+        show_import_summary(_import_summary_lines(summary))
+    except GuiUnavailable as exc:
+        console.print(f"Summary UI unavailable ({exc}).")
+
+
 def _run_enrichment_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
     rows = []
     for key in ("enrichment_details", "abstract_details"):
@@ -519,16 +533,89 @@ def _resolve_latest_export(export: Path | None, *, fallback_dir: Path | None = N
 
 
 def _print_run_summary(summary: dict[str, Any]) -> None:
-    console.print(
-        f"Processed run {summary['run']} with {summary['papers']} paper cards, "
-        f"{summary['selected']} selected results, "
-        f"{summary['matched']} matched PDFs, {summary['unmatched']} unmatched PDFs, "
-        f"and {summary['archived']} matched staging PDFs archived."
-    )
+    for line in _import_summary_lines(summary):
+        console.print(line)
     if summary.get("export_archived"):
         console.print(f"Archived used export JSON to {summary['export_archived']}.")
-    if summary.get("enriched"):
-        console.print(f"Enrichment made {summary['enriched']} selected-paper metadata updates.")
+
+
+def _import_summary_lines(summary: dict[str, Any]) -> list[str]:
+    decisions = summary.get("decision_summary") or {}
+    citations = summary.get("citation_enrichment") or {}
+    abstracts = summary.get("abstract_enrichment") or {}
+    selected = int(summary.get("selected") or 0)
+    reused = int(decisions.get("prior_selected_reused") or 0)
+    linked = int(decisions.get("existing_cards_linked") or 0)
+    new_matches = int(decisions.get("new_staged_pdf_matches") or 0)
+    review_prompts = int(decisions.get("review_prompts") or 0)
+    review_accepted = int(decisions.get("review_accepted") or 0)
+    review_rejected = int(decisions.get("review_rejected") or 0)
+    unselected = int(summary.get("unselected_results") or 0)
+    export_results = int(decisions.get("export_results") or selected + unselected)
+    skipped_commit = int(decisions.get("commit_proposals_skipped") or 0)
+    not_committed = int(decisions.get("proposed_not_committed") or 0)
+    without_candidate = int(decisions.get("results_without_candidate") or 0)
+    lines = [
+        f"Processed run {summary['run']}.",
+        (
+            f"- Results: {export_results} in export; "
+            f"{selected} selected paper cards; {unselected} left unselected."
+        ),
+        (
+            "- Selection source: "
+            f"{reused} reused from previous run manifest, "
+            f"{linked} linked to existing vault cards, "
+            f"{new_matches} newly accepted staged PDFs."
+        ),
+        (
+            "- Match review: "
+            f"{review_prompts} prompts shown "
+            f"({review_accepted} accepted, {review_rejected} rejected)."
+        ),
+        (
+            "- Staging: "
+            f"{int(decisions.get('staged_pdfs_scanned') or 0)} PDFs scanned; "
+            f"{int(summary.get('unmatched') or 0)} unmatched PDFs remain; "
+            f"{int(summary.get('archived') or 0)} matched staging PDFs archived."
+        ),
+    ]
+    if unselected:
+        lines.append(
+            "- Unselected reasons: "
+            f"{without_candidate} had no staged PDF candidate above threshold, "
+            f"{review_rejected} rejected in review, "
+            f"{skipped_commit} skipped by --commit, "
+            f"{not_committed} not committed in dry-run."
+        )
+    citation_processed = int(citations.get("processed") or 0)
+    abstract_processed = int(abstracts.get("processed") or 0)
+    if citation_processed or abstract_processed:
+        lines.append(
+            "- Enrichment: "
+            f"{citation_processed} citation cards processed, "
+            f"{int(citations.get('changed') or 0)} changed; "
+            f"{abstract_processed} abstract cards processed, "
+            f"{int(abstracts.get('changed') or 0)} changed."
+        )
+    if review_prompts == 0 and selected:
+        if reused == selected:
+            lines.append(
+                "No match-review prompts appeared because every selected result was already "
+                "recorded in the existing run manifest."
+            )
+        elif reused or linked:
+            lines.append(
+                "Some results did not need review because they were already selected in this "
+                "run or already had attached PDFs in the vault."
+            )
+    if skipped_commit:
+        lines.append(
+            f"{skipped_commit} proposed matches were skipped because --commit only accepts "
+            "high-confidence auto matches."
+        )
+    if not_committed:
+        lines.append(f"{not_committed} proposed matches were not committed during dry-run.")
+    return lines
 
 
 def _with_progress(
@@ -693,6 +780,7 @@ def import_run_command(
     if progress_ui is not None:
         progress_ui.close()
     _print_run_summary(summary)
+    _show_import_summary_ui(summary, ui=ui)
     _show_import_enrichment_followup(summary, ui=ui)
 
 
@@ -738,6 +826,7 @@ def import_labs_command(
     if progress_ui is not None:
         progress_ui.close()
     _print_run_summary(summary)
+    _show_import_summary_ui(summary, ui=ui)
     _show_import_enrichment_followup(summary, ui=ui)
 
 
@@ -783,6 +872,7 @@ def import_alias_command(
     if progress_ui is not None:
         progress_ui.close()
     _print_run_summary(summary)
+    _show_import_summary_ui(summary, ui=ui)
     _show_import_enrichment_followup(summary, ui=ui)
 
 
@@ -940,6 +1030,7 @@ def resume_command(
     if progress_ui is not None:
         progress_ui.close()
     _print_run_summary(summary)
+    _show_import_summary_ui(summary, ui=ui)
     _show_import_enrichment_followup(summary, ui=ui)
 
 
@@ -975,6 +1066,7 @@ def rerun_command(
     if progress_ui is not None:
         progress_ui.close()
     _print_run_summary(summary)
+    _show_import_summary_ui(summary, ui=ui)
     _show_import_enrichment_followup(summary, ui=ui)
 
 
@@ -1010,6 +1102,7 @@ def re_run_command(
     if progress_ui is not None:
         progress_ui.close()
     _print_run_summary(summary)
+    _show_import_summary_ui(summary, ui=ui)
     _show_import_enrichment_followup(summary, ui=ui)
 
 

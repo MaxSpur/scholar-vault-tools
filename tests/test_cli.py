@@ -3,7 +3,7 @@ from __future__ import annotations
 from click.exceptions import Exit
 from typer.testing import CliRunner
 
-from scholar_vault.cli import _with_progress, app
+from scholar_vault.cli import _import_summary_lines, _with_progress, app
 from scholar_vault.importer import initialize_vault
 from scholar_vault.models import ImportCanceled, MatchReviewAbort
 
@@ -74,6 +74,37 @@ def test_import_canceled_exits_cleanly(capsys) -> None:
 
     captured = capsys.readouterr().out
     assert "Run example already exists. Import canceled." in captured
+
+
+def test_import_summary_explains_reused_prior_matches() -> None:
+    lines = _import_summary_lines(
+        {
+            "run": "2026-04-23_example",
+            "selected": 3,
+            "unselected_results": 2,
+            "unmatched": 4,
+            "archived": 0,
+            "decision_summary": {
+                "export_results": 5,
+                "staged_pdfs_scanned": 4,
+                "prior_selected_reused": 3,
+                "existing_cards_linked": 0,
+                "new_staged_pdf_matches": 0,
+                "review_prompts": 0,
+                "review_accepted": 0,
+                "review_rejected": 0,
+            },
+            "citation_enrichment": {"processed": 3, "changed": 0},
+            "abstract_enrichment": {"processed": 3, "changed": 0},
+        }
+    )
+
+    output = "\n".join(lines)
+
+    assert "3 reused from previous run manifest" in output
+    assert "0 newly accepted staged PDFs" in output
+    assert "No match-review prompts appeared" in output
+    assert "3 citation cards processed, 0 changed" in output
 
 
 def test_rebuild_command_prints_summary(tmp_path) -> None:
