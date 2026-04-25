@@ -58,6 +58,31 @@ def test_best_pdf_match_rejects_single_token_text_overlap_false_positive() -> No
     assert decision.score < 70
 
 
+def test_best_pdf_match_rejects_unconfirmed_partial_filename_match() -> None:
+    candidate = PdfCandidate(
+        path=(
+            "/tmp/3D bivariate visualizations in immersive virtual reality  IVR   "
+            "the impact of map literacy and visualization method on user performance.pdf"
+        ),
+        title=(
+            "3D bivariate visualizations in immersive virtual reality (IVR): "
+            "the impact of map literacy and visua"
+        ),
+        text_excerpt=(
+            "Cartography and Geographic Information Science\n"
+            "3D bivariate visualizations in immersive virtual\n"
+            "reality (IVR): the impact of map literacy and\n"
+            "visualization method on user performance\n"
+        ),
+    )
+
+    decision = best_pdf_match("Visualization in virtual reality: a systematic review", [candidate])
+
+    assert decision.decision == "skip"
+    assert decision.score < 70
+    assert decision.reason == "filename"
+
+
 def test_match_candidate_to_existing_card_by_title() -> None:
     candidate = PdfCandidate(
         path="/tmp/example.pdf",

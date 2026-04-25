@@ -11,6 +11,10 @@ from rapidfuzz import fuzz
 from .models import MatchDecision, PdfCandidate, SourceCard
 from .sources import DOI_RE, STOPWORDS, YEAR_RE, infer_year, normalize_doi, normalize_title
 
+REVIEW_MATCH_SCORE = 70
+STRONG_FILENAME_SCORE = 85
+UNCONFIRMED_FILENAME_CAP = REVIEW_MATCH_SCORE - 1
+
 
 def extract_pdf_text_excerpt(path: Path, *, max_pages: int = 3) -> str:
     try:
@@ -167,8 +171,10 @@ def _best_candidate_title_score(
 ) -> tuple[int, str]:
     best_score = 0
     best_reason = "title"
+    variant_scores: list[tuple[str, int]] = []
     for reason, variant in _candidate_title_variants(candidate):
         score = score_title_match(expected_title, variant)
+        variant_scores.append((reason, score))
         if score > best_score:
             best_score = score
             best_reason = reason
@@ -178,8 +184,27 @@ def _best_candidate_title_score(
     if compact_expected and compact_expected in compact_excerpt and best_score < 95:
         best_score = 95
         best_reason = "text"
+        variant_scores.append(("text", best_score))
+
+    if best_reason == "filename":
+        best_score = _cap_unconfirmed_filename_score(best_score, variant_scores)
 
     return best_score, best_reason
+
+
+def _cap_unconfirmed_filename_score(
+    filename_score: int,
+    variant_scores: list[tuple[str, int]],
+) -> int:
+    if filename_score >= STRONG_FILENAME_SCORE:
+        return filename_score
+    corroborating_score = max(
+        (score for reason, score in variant_scores if reason != "filename"),
+        default=0,
+    )
+    if corroborating_score >= REVIEW_MATCH_SCORE:
+        return filename_score
+    return min(filename_score, UNCONFIRMED_FILENAME_CAP)
 
 
 def decide_pdf_match(
@@ -197,7 +222,7 @@ def decide_pdf_match(
     score, reason = _best_candidate_title_score(expected_title, candidate)
     if score >= 90:
         return MatchDecision(candidate=candidate, score=score, decision="auto", reason=reason)
-    if score >= 70:
+    if score >= REVIEW_MATCH_SCORE:
         return MatchDecision(candidate=candidate, score=score, decision="review", reason=reason)
     return MatchDecision(candidate=candidate, score=score, decision="skip", reason=reason)
 
