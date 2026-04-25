@@ -159,6 +159,16 @@ def test_progress_parts_name_import_substages() -> None:
         1,
         3,
     )
+    unresolved_html = _progress_log_html(
+        "Enriching abstracts [checking]: example // Example Title // "
+        "state=unresolved; source=manual; pdf=no; locked",
+        1,
+        3,
+    )
+    assert "color:#ff3b4f; font-weight:800;\">=unresolved" in unresolved_html
+    assert "color:#8bffd0; font-weight:800;\">=manual" in unresolved_html
+    assert "color:#ff3b4f; font-weight:800;\">=no" in unresolved_html
+    assert "color:#8bffd0; font-weight:800;\">locked" in unresolved_html
 
 
 def test_match_confidence_detail_explains_score_source() -> None:

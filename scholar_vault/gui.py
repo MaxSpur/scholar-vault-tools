@@ -16,7 +16,7 @@ class GuiUnavailable(RuntimeError):
 
 def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
     try:
-        from PySide6.QtCore import Qt, QUrl
+        from PySide6.QtCore import Qt, QTimer, QUrl
         from PySide6.QtGui import QDesktopServices, QFont, QImage, QKeySequence, QPixmap, QShortcut
         from PySide6.QtWidgets import (
             QApplication,
@@ -66,6 +66,7 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
         "QScrollArea": QScrollArea,
         "QShortcut": QShortcut,
         "QTextEdit": QTextEdit,
+        "QTimer": QTimer,
         "QUrl": QUrl,
         "QVBoxLayout": QVBoxLayout,
         "QWidget": QWidget,
@@ -676,6 +677,13 @@ def _build_match_dialog(qt: dict[str, Any], request: MatchReviewRequest):
             if callable(refresh):
                 refresh(reset_scroll=False)
 
+        def showEvent(self, event):  # noqa: N802 - Qt override name
+            super().showEvent(event)
+            refresh = getattr(self, "_refresh_preview", None)
+            if callable(refresh):
+                qt["QTimer"].singleShot(0, lambda: refresh(reset_scroll=True))
+                qt["QTimer"].singleShot(80, lambda: refresh(reset_scroll=True))
+
         def closeEvent(self, event):  # noqa: N802 - Qt override name
             event.ignore()
             self.done(_ABORT_DIALOG_CODE)
@@ -727,7 +735,7 @@ def _build_match_dialog(qt: dict[str, Any], request: MatchReviewRequest):
     scroll.viewport().setStyleSheet("background: #ffffff;")
     scroll.setHorizontalScrollBarPolicy(qt["Qt"].ScrollBarPolicy.ScrollBarAlwaysOff)
     scroll.setVerticalScrollBarPolicy(qt["Qt"].ScrollBarPolicy.ScrollBarAlwaysOn)
-    document_layout.addWidget(scroll, 0, qt["Qt"].AlignmentFlag.AlignTop)
+    document_layout.addWidget(scroll)
     document_layout.addStretch(1)
     body.addWidget(document_column, 1, qt["Qt"].AlignmentFlag.AlignTop)
 
@@ -1119,19 +1127,52 @@ def _progress_context_html(context: str) -> str:
             continue
         if "=" in part:
             key, value = part.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            value_color = _progress_context_value_color(key, value)
             parts.append(
                 '<span style="color:#8ce7b8; font-weight:800;">'
-                f"{html.escape(key.strip())}"
+                f"{html.escape(key)}"
                 "</span>"
-                f'<span style="color:#f3fff7;">={html.escape(value.strip())}</span>'
+                f'<span style="color:{value_color}; font-weight:800;">'
+                f"={html.escape(value)}</span>"
             )
         else:
+            flag_color = _progress_context_value_color(part, "true")
             parts.append(
-                '<span style="color:#8ce7b8; font-weight:800;">'
+                f'<span style="color:{flag_color}; font-weight:800;">'
                 f"{html.escape(part)}"
                 "</span>"
             )
     return '<span style="color:#6f8f7d;">; </span>'.join(parts)
+
+
+def _progress_context_value_color(key: str, value: str) -> str:
+    normalized_key = key.strip().lower()
+    normalized_value = value.strip().lower()
+    if normalized_key == "state":
+        if normalized_value in {"verified", "resolved", "manual_lock"}:
+            return "#69ffad"
+        if normalized_value in {"missing", "unresolved", "failed"}:
+            return "#ff3b4f"
+        if normalized_value in {"preview", "incomplete", "ambiguous"}:
+            return "#ffb000"
+        return "#f3fff7"
+    if normalized_key == "source":
+        if normalized_value in {"manual", "pdf_extracted"}:
+            return "#8bffd0"
+        if normalized_value in {"crossref", "openalex", "openalex_reconstructed"}:
+            return "#69ffad"
+        return "#baffdc"
+    if normalized_key == "pdf":
+        return "#69ffad" if normalized_value in {"yes", "true", "attached"} else "#ff3b4f"
+    if normalized_key == "missing":
+        return "#ffb000"
+    if normalized_key in {"locked", "lock"} or normalized_value == "true":
+        return "#8bffd0"
+    if normalized_value in {"no", "false", "none"}:
+        return "#ff3b4f"
+    return "#f3fff7"
 
 
 def _short_identifier(text: str, *, limit: int = 42) -> str:
