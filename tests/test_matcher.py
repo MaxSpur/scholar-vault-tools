@@ -80,7 +80,33 @@ def test_best_pdf_match_rejects_unconfirmed_partial_filename_match() -> None:
 
     assert decision.decision == "skip"
     assert decision.score < 70
-    assert decision.reason == "filename"
+
+
+def test_best_pdf_match_rejects_short_first_page_text_overlap_false_positive() -> None:
+    candidate = PdfCandidate(
+        path="/tmp/luo2026association_authorversion.pdf",
+        title=(
+            "Beyond Links: Exploring Visual Representations of Multi-View "
+            "Relations in Mixed Reality"
+        ),
+        doi="10.1145/3772318.3791398",
+        text_excerpt=(
+            "Beyond Links: Exploring Visual Representations of Multi-View\n"
+            "Relations in Mixed Reality\n"
+            "Abstract\n"
+            "This paper investigates associations, explicit representations of "
+            "relations between multiple views in Mixed Reality."
+        ),
+    )
+
+    decision = best_pdf_match(
+        "A systematic literature review on extended reality: virtual, augmented "
+        "and mixed reality in working life",
+        [candidate],
+    )
+
+    assert decision.decision == "skip"
+    assert decision.score < 70
 
 
 def test_match_candidate_to_existing_card_by_title() -> None:

@@ -14,6 +14,8 @@ from .sources import DOI_RE, STOPWORDS, YEAR_RE, infer_year, normalize_doi, norm
 REVIEW_MATCH_SCORE = 70
 STRONG_FILENAME_SCORE = 85
 UNCONFIRMED_FILENAME_CAP = REVIEW_MATCH_SCORE - 1
+MIN_SMALLER_TOKEN_OVERLAP = 0.55
+MIN_LARGER_TOKEN_OVERLAP = 0.35
 
 
 def extract_pdf_text_excerpt(path: Path, *, max_pages: int = 3) -> str:
@@ -130,7 +132,12 @@ def _has_substantial_overlap(normalized_left: str, normalized_right: str) -> boo
         return False
     overlap = left_tokens & right_tokens
     smaller_count = min(len(left_tokens), len(right_tokens))
-    return len(overlap) >= 2 and len(overlap) / smaller_count >= 0.55
+    larger_count = max(len(left_tokens), len(right_tokens))
+    return (
+        len(overlap) >= 2
+        and len(overlap) / smaller_count >= MIN_SMALLER_TOKEN_OVERLAP
+        and len(overlap) / larger_count >= MIN_LARGER_TOKEN_OVERLAP
+    )
 
 
 def _has_substantial_containment(normalized_left: str, normalized_right: str) -> bool:

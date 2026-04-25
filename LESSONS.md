@@ -13,6 +13,7 @@
 - Represent shared Scholar Labs downloads by omitting the `exports` config key. That keeps CLI, GUI, and import fallback behavior on one data model instead of adding a second mode flag to persisted config.
 - PDF title metadata and first extracted text lines are often journal headers, especially for IEEE papers. Match against filename and compact no-space title text as fallbacks before declaring a staged PDF unmatched.
 - Moderate filename-only matches are risky when extracted title/text does not corroborate them. Keep exact or strong filename evidence useful, but cap unconfirmed partial filename scores below the review threshold.
+- Short first-page title fragments can produce inflated fuzzy scores when they share generic domain terms with a longer Scholar title. Partial/token-set scoring should require coverage of a meaningful fraction of the longer title, not only the shorter fragment.
 - For "last run" behavior, use manifest `created_at` rather than run page mtimes. Rebuilds can rewrite run pages and make filesystem mtimes misleading.
 - Citation enrichment needs explicit state. Fingerprints, retry counts, `metadata_lock`, and raw provider caches prevent repeatedly hitting APIs or overwriting curated metadata by accident.
 - DOI enrichment should promote canonical provider metadata back onto paper cards when the match is strong. Otherwise DOI discovery succeeds but Scholar preview fields like `IEEE Transactions on …, 2024` remain in the canonical record.
