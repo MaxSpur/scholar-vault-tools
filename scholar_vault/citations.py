@@ -24,6 +24,7 @@ from .sources import (
     DOI_RE,
     VaultPaths,
     first_author_surname,
+    normalize_copied_abstract,
     normalize_doi,
     normalize_title,
     parse_people,
@@ -288,9 +289,9 @@ def extract_pdf_abstract(text: str | None) -> str:
     if not text:
         return ""
     normalized = text.replace("\r\n", "\n")
-    match = re.search(r"(?im)^\s*(abstract|summary)\s*[:—-]?\s*$", normalized)
+    match = re.search(r"(?im)^\s*(abstract|summary)\s*[\.:;—-]?\s*$", normalized)
     if not match:
-        match = re.search(r"(?im)\babstract\s*[:—-]\s+", normalized)
+        match = re.search(r"(?im)\babstract\s*[\.:;—-]\s+", normalized)
     if not match:
         return ""
 
@@ -298,11 +299,12 @@ def extract_pdf_abstract(text: str | None) -> str:
     remaining = normalized[start:]
     stop = re.search(
         r"(?im)^\s*(keywords?|index terms|introduction|1\.?\s+introduction|i\.?\s+introduction|"
+        r"(?:\d+|[ivx]+)\s*\n\s*introduction|"
         r"\d+\s+[A-Z][A-Za-z ]{2,}|references)\b",
         remaining,
     )
     excerpt = remaining[: stop.start()] if stop else remaining
-    cleaned = clean_provider_abstract(excerpt)
+    cleaned = normalize_copied_abstract(excerpt)
     if len(cleaned.split()) < 20:
         return ""
     return cleaned

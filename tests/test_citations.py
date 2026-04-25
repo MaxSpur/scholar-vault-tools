@@ -72,6 +72,35 @@ This should not be included.
     assert "Introduction" not in extracted
 
 
+def test_pdf_abstract_extraction_accepts_springer_run_in_heading() -> None:
+    text = """
+Are We There Yet? Unravelling Usability Challenges
+
+Abstract. In the ever-evolving discipline of high-dimensional scientific
+data, collaborative immersive analytics (CIA) offers a promising fron-
+tier for domain experts in complex data visualization and interpretation.
+This research presents a comprehensive framework for conducting us-
+ability studies on an extended reality interface for collaborative analysis.
+
+Keywords: Immersive Analytics
+
+1
+
+Introduction
+This should not be included.
+"""
+
+    extracted = extract_pdf_abstract(text)
+
+    assert extracted.startswith(
+        "In the ever-evolving discipline of high-dimensional scientific data"
+    )
+    assert "frontier" in extracted
+    assert "usability studies" in extracted
+    assert "Keywords" not in extracted
+    assert "Introduction" not in extracted
+
+
 def test_crossref_abstract_parsing_cleans_jats_markup() -> None:
     raw = "<jats:p>This &amp; that <jats:italic>matters</jats:italic>.</jats:p>"
 
