@@ -64,8 +64,8 @@ def card_to_bibtex(card: SourceCard) -> str | None:
         fields.append(("abstract", card.abstract))
     if card.pdf:
         fields.append(("file", card.pdf))
-    if card.topics:
-        fields.append(("keywords", ", ".join(card.topics)))
+    if card.keywords:
+        fields.append(("keywords", ", ".join(card.keywords)))
     notes: list[str] = []
     if card.summary and card.summary != "No summary yet.":
         notes.append(f"Summary: {card.summary}")

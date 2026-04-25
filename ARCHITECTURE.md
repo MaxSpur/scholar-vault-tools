@@ -40,9 +40,10 @@
 
 - Match existing cards by DOI first, then Scholar CID, citekey, and exact normalized title.
 - Keep the original `source_kind` on an existing card so enrichment imports do not erase provenance.
-- Prefer existing citekeys, primary summaries, notes, and discovered runs. Fill missing metadata from new imports.
+- Prefer existing citekeys, primary summaries, notes, discovered runs, and paper keywords. Fill missing metadata from new imports.
 - Preserve every Scholar Labs run-specific summary in run records and run notes, and hydrate `summary_sources` in memory from those records so repeated appearances of the same paper do not overwrite earlier summaries.
 - Store recovered abstracts separately from Scholar Labs summaries. Abstract enrichment writes the prose to `## Abstract` and keeps only `abstract_*` status/provenance fields in frontmatter, without modifying Scholar Labs summary/rationale provenance.
+- Store paper-provided `keywords` separately from prompt-derived `topics`. Keywords come from BibTeX/provider metadata or local PDF keyword blocks and export as BibTeX/CSL keywords.
 
 ## Rebuild Strategy
 

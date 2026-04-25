@@ -16,6 +16,7 @@ from scholar_vault.citations import (
     enrich_card,
     extract_doi_from_text,
     extract_pdf_abstract,
+    extract_pdf_keywords,
     normalize_bibtex_for_card,
     openalex_abstract_candidates,
     reconstruct_openalex_abstract,
@@ -51,6 +52,32 @@ def test_detect_local_doi_from_pdf_text(tmp_path: Path, monkeypatch) -> None:
     assert doi == "10.1145/3440207"
     assert source == "pdf_text"
     assert confidence == 0.95
+
+
+def test_enrich_card_extracts_pdf_keywords(tmp_path: Path, monkeypatch) -> None:
+    paths = VaultPaths.from_root(tmp_path / "vault")
+    paths.ensure()
+    pdf = paths.pdfs / "source.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+    card = SourceCard(slug="source", title="Source", pdf="pdfs/source.pdf")
+    monkeypatch.setattr("scholar_vault.citations.read_pdf_metadata", lambda _path: {})
+    monkeypatch.setattr(
+        "scholar_vault.citations.extract_pdf_text_excerpt",
+        lambda _path: (
+            "Keywords: Immersive Analytics · Collaboration · Usability Study\n"
+            "1\n\nIntroduction"
+        ),
+    )
+
+    enrich_card(
+        paths,
+        card,
+        EnrichmentOptions(),
+        fetch_json=lambda _url, _cache, _refresh: None,
+        fetch_text=lambda _url, _cache, _refresh, _headers: None,
+    )
+
+    assert card.keywords == ["Immersive Analytics", "Collaboration", "Usability Study"]
 
 
 def test_pdf_abstract_extraction_ignores_later_sections() -> None:
@@ -99,6 +126,27 @@ This should not be included.
     assert "usability studies" in extracted
     assert "Keywords" not in extracted
     assert "Introduction" not in extracted
+
+
+def test_pdf_keyword_extraction_accepts_springer_keywords() -> None:
+    text = """
+Abstract. A useful abstract appears here with enough words to pass extraction.
+
+Keywords: Immersive Analytics · Collaboration · Usability Study · Sci-
+entific Data Visualization
+
+1
+
+Introduction
+This should not be included.
+"""
+
+    assert extract_pdf_keywords(text) == [
+        "Immersive Analytics",
+        "Collaboration",
+        "Usability Study",
+        "Scientific Data Visualization",
+    ]
 
 
 def test_crossref_abstract_parsing_cleans_jats_markup() -> None:
@@ -205,6 +253,7 @@ def test_crossref_candidate_scoring_prefers_title_author_year_match() -> None:
                     "author": [{"given": "Jane", "family": "Smith"}],
                     "published-print": {"date-parts": [[2024]]},
                     "container-title": ["Test Venue"],
+                    "subject": ["Retrieval", "Evaluation"],
                 },
                 {
                     "DOI": "10.1145/other",
@@ -219,6 +268,7 @@ def test_crossref_candidate_scoring_prefers_title_author_year_match() -> None:
     candidates = crossref_candidates(payload, card)
 
     assert candidates[0].doi == "10.1145/example"
+    assert candidates[0].keywords == ("Retrieval", "Evaluation")
     assert candidates[0].score >= 90
     assert candidates[0].score > candidates[1].score
 
@@ -241,6 +291,23 @@ def test_bibtex_generation_normalizes_key_and_includes_pdf_note_topics() -> None
     rendered = normalize_bibtex_for_card(card, raw)
 
     assert "@article{smith2024rag," in rendered
+
+
+def test_library_bib_uses_paper_keywords_not_navigation_topics(tmp_path: Path) -> None:
+    card = SourceCard(
+        slug="smith2024rag",
+        citekey="smith2024rag",
+        title="Evaluating Retrieval Augmented Generation Systems",
+        topics=["Evaluation Topic"],
+        keywords=["Retrieval", "Benchmarking"],
+        citation_status="generated",
+    )
+
+    output = write_library_bib([card], tmp_path / "library.bib")
+    rendered = output.read_text(encoding="utf-8")
+
+    assert "keywords = {Retrieval, Benchmarking}" in rendered
+    assert "Evaluation Topic" not in rendered
 
 
 def test_doi_csl_promotes_canonical_venue_and_metadata(tmp_path: Path) -> None:

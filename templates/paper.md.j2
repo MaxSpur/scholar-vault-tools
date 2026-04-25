@@ -16,6 +16,13 @@
 - Metadata: `{{ card.enrichment_status }}`{% if card.enrichment_missing %} (missing {{ card.enrichment_missing | join(", ") }}){% endif %}
 {% endif %}
 
+{% if card.keywords %}
+## Keywords
+{% for keyword in card.keywords -%}
+- {{ keyword }}
+{% endfor %}
+
+{% endif %}
 ## Abstract
 {{ card.abstract if card.abstract else "No abstract yet." }}
 

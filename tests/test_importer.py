@@ -9,6 +9,7 @@ from pypdf import PdfWriter
 from scholar_vault.citations import EnrichmentResult
 from scholar_vault.importer import (
     cleanup_run_selected_only,
+    import_bibtex,
     import_pdf_dropins,
     import_scholar_labs_run,
     initialize_vault,
@@ -958,6 +959,29 @@ def test_import_pdf_creates_stub_card_and_copies_pdf(tmp_path: Path) -> None:
     assert cards[0].pdf_status == "attached"
     assert cards[0].pdf is not None
     assert (vault / cards[0].pdf).exists()
+
+
+def test_import_bibtex_stores_paper_keywords_separately_from_topics(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    bib = tmp_path / "paper.bib"
+    initialize_vault(vault)
+    bib.write_text(
+        """
+@inproceedings{smith2024rag,
+  title = {Evaluating Retrieval Augmented Generation Systems},
+  author = {Jane Smith},
+  year = {2024},
+  keywords = {Retrieval, Benchmarking; Evaluation}
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    import_bibtex(vault, bib)
+    cards = load_source_cards(initialize_vault(vault))
+
+    assert cards[0].keywords == ["Retrieval", "Benchmarking", "Evaluation"]
+    assert cards[0].topics == []
 
 
 def test_invalid_empty_export_does_not_create_run_or_papers(tmp_path: Path) -> None:

@@ -194,6 +194,7 @@ Default Scholar Labs behavior is now selected-only:
 - Candidate results stay on the run page unless you explicitly opt in with `--include-without-pdf`.
 - `import-labs` copies accepted PDFs into `pdfs/`, verifies them, and then archives the matched originals out of staging into `raw/imported/`, leaving only unmatched PDFs in staging.
 - After committed matches, `import-labs`, `import`, `resume`, and `rerun` run citation and abstract enrichment for selected paper cards by default. Use `--no-enrich` when you want a faster import that skips provider lookups.
+- Paper-provided keywords from BibTeX, provider metadata, and local PDF text are stored separately from prompt-derived `topics`.
 - After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder without renaming it, for example `~/Downloads/scholar-labs-staging/used/example.json`. The run metadata is updated so `resume` and `rerun` still know where the export went.
 - The final import summary separates reused prior selections, existing vault-card links, newly accepted staged PDFs, review prompts, unresolved results, staged-file cleanup, and enrichment changes, so rerunning an old JSON should make clear why no match-review prompts appeared.
 - `import-run` is the lower-level transactional variant. It copies accepted PDFs into `pdfs/` but leaves staging untouched unless you later run `clean-staging`.
@@ -376,6 +377,7 @@ The abstract is not the Scholar Labs summary. Scholar Labs summaries explain why
 Abstract provider order is local DOI detection, Crossref REST metadata, Europe PMC fallback, OpenAlex reconstructed abstracts, DataCite descriptions, then local PDF text extraction. Crossref abstracts may include JATS/XML markup, which the tool strips before writing the card. OpenAlex abstracts are reconstructed from `abstract_inverted_index`. The tool never uses LLM summarization or Scholar Labs summaries as abstracts.
 
 Abstract enrichment writes the `## Abstract` section plus these frontmatter fields: `abstract_status`, `abstract_source`, `abstract_source_url`, `abstract_confidence`, `abstract_last_checked`, `abstract_enriched_at`, `abstract_input_fingerprint`, and `abstract_lock`.
+Paper keywords are written to `keywords` frontmatter and the `## Keywords` section when available.
 
 Interpretation:
 
@@ -488,7 +490,7 @@ scholar-vault reset --vault ~/Documents/Research/scholar-labs-vault --yes
 ## Generated Records
 
 - `papers/*.md`: canonical source cards for selected papers by default.
-- `papers/*.md` body sections: human-readable abstract and primary Scholar Labs summary. Long prose is not duplicated in frontmatter.
+- `papers/*.md` body sections: human-readable keywords, abstract, and primary Scholar Labs summary. Long prose is not duplicated in frontmatter.
 - `runs/<run_id>/<Short Title.md>`: Obsidian-friendly per-run provenance pages that keep all Scholar Labs candidate results.
 - `runs/*/index.yaml`: machine-readable run records used by `resume`, `rerun`, and rebuilds.
 - `runs/*/import-manifest.yaml`: transactional record of proposed matches, decisions, copied PDFs, and created cards.

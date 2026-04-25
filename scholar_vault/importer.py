@@ -17,6 +17,7 @@ from .citations import (
     EnrichmentResult,
     abstract_fingerprint,
     enrich_cards,
+    extract_pdf_keywords,
 )
 from .matcher import (
     best_pdf_match,
@@ -70,6 +71,7 @@ from .sources import (
     load_source_cards,
     normalize_copied_abstract,
     normalize_doi,
+    normalize_keywords,
     normalize_title,
     parse_people,
     read_frontmatter_markdown,
@@ -382,6 +384,7 @@ def _merge_cards(existing: SourceCard, incoming: SourceCard) -> SourceCard:
     existing.scholar_cid = existing.scholar_cid or incoming.scholar_cid
     existing.discovered_in = _merge_unique(existing.discovered_in, incoming.discovered_in)
     existing.topics = _merge_unique(existing.topics, incoming.topics)
+    existing.keywords = _merge_unique(existing.keywords, incoming.keywords)
     existing.links = _merge_links(existing.links, incoming.links)
     if not _prefer_existing(existing.summary) and incoming.summary:
         existing.summary = incoming.summary
@@ -562,7 +565,7 @@ def _cards_to_csl_json(cards: list[SourceCard]) -> list[dict]:
                 "DOI": card.doi,
                 "URL": card.url,
                 "abstract": card.abstract,
-                "keyword": ", ".join(card.topics) if card.topics else None,
+                "keyword": ", ".join(card.keywords) if card.keywords else None,
                 "note": note,
             }
         )
@@ -1264,6 +1267,10 @@ def import_scholar_labs_run(
             card.pdf = destination_path
             card.pdf_status = "attached"
             card.status = "active"
+            card.keywords = _merge_unique(
+                card.keywords,
+                extract_pdf_keywords(proposal.candidate.text_excerpt),
+            )
             if card.citation_status == "preview":
                 card.citation_status = "missing"
             source_pdf = Path(proposal.candidate.path)
@@ -1854,6 +1861,7 @@ def import_pdf_dropins(
                 authors=authors,
                 year=candidate.year,
                 doi=normalize_doi(candidate.doi),
+                keywords=extract_pdf_keywords(candidate.text_excerpt),
                 source_kind="pdf_drop",
                 status="active",
                 pdf_status="missing",
@@ -1874,6 +1882,7 @@ def import_pdf_dropins(
             card.year = candidate.year
         if not card.title and candidate.title:
             card.title = candidate.title
+        card.keywords = _merge_unique(card.keywords, extract_pdf_keywords(candidate.text_excerpt))
         if not card.pdf:
             card.pdf, _, _ = _copy_pdf_to_vault(
                 paths,
@@ -1933,9 +1942,7 @@ def import_bibtex(vault: Path | str, bib_path: Path | str) -> dict[str, int]:
             doi=normalize_doi(entry.get("doi")),
             url=entry.get("url"),
             source_kind="bibtex_import",
-            topics=[
-                token.strip() for token in (entry.get("keywords") or "").split(",") if token.strip()
-            ],
+            keywords=normalize_keywords(entry.get("keywords")),
             doi_status="detected" if normalize_doi(entry.get("doi")) else "missing",
             doi_source="bibtex" if normalize_doi(entry.get("doi")) else None,
             doi_confidence=0.9 if normalize_doi(entry.get("doi")) else None,

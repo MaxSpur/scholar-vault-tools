@@ -22,6 +22,7 @@ def test_render_paper_markdown_contains_required_sections() -> None:
         pdf="pdfs/smith2024rag.pdf",
         source_kind="scholar_labs",
         discovered_in=["runs/2026-04-22_rag/2026-04-22_rag.md"],
+        keywords=["Retrieval", "Benchmarking"],
         summary="Short summary.",
         summary_sources=[
             SummarySource(
@@ -47,6 +48,7 @@ def test_render_paper_markdown_contains_required_sections() -> None:
     assert "Metadata: `incomplete` (missing venue)" in rendered
     assert "[10.1145/example](https://doi.org/10.1145/example)" in rendered
     assert "## Scholar Labs summary" in rendered
+    assert "## Keywords\n- Retrieval\n- Benchmarking" in rendered
     assert "### Run-specific Scholar Labs summaries" in rendered
     assert "Run-specific summary." in rendered
     frontmatter = rendered.split("---", 2)[1]

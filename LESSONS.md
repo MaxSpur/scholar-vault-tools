@@ -19,6 +19,7 @@
 - DOI records can point to preprints rather than final publications. If a preprint DOI lacks a real venue, search for a strong published-version DOI before accepting incomplete venue metadata as final.
 - Keep abstracts separate from Scholar Labs summaries. Abstract enrichment needs its own source, confidence, lock, and fingerprint fields so provider text does not overwrite the reason a source was added.
 - PDF abstract headings are often run-in labels such as `Abstract.` rather than standalone `Abstract` headings. Recognize those forms and normalize PDF line wrapping/hyphenation before accepting local abstract fallback text.
+- Keep paper-provided keywords separate from project `topics`. Topics are prompt/rationale navigation labels, while keywords should come from BibTeX, provider metadata, or PDF keyword blocks and should be the source for BibTeX/CSL keyword exports.
 - Long-running metadata provider lookups need visible CLI progress. A command that appears idle during enrichment is hard to trust even when it is working correctly.
 - Do not run blocking terminal prompts under Rich live progress. Interactive imports should use plain progress lines so `[y/N]` prompts and GUI handoffs are visible.
 - Keep desktop UI initialization isolated. Non-UI commands should not initialize Qt, and `--ui` should fall back cleanly if the desktop stack is unavailable in the current environment.

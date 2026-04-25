@@ -180,6 +180,42 @@ def normalize_copied_abstract(text: str | None) -> str:
     return "\n\n".join(cleaned)
 
 
+def normalize_keywords(values: Iterable[str] | str | None) -> list[str]:
+    if not values:
+        return []
+    raw_values = [values] if isinstance(values, str) else list(values)
+    normalized_values: list[str] = []
+    seen: set[str] = set()
+    for raw_value in raw_values:
+        if raw_value is None:
+            continue
+        value = str(raw_value)
+        value = (
+            value.replace("\r\n", "\n")
+            .replace("\r", "\n")
+            .replace("\u00a0", " ")
+            .replace("\u00ad", "")
+        )
+        value = re.sub(r"([A-Za-z])[-‐‑‒–—]\s*\n\s*([A-Za-z])", r"\1\2", value)
+        value = re.sub(r"(?im)^\s*(keywords?|index terms)\s*[\.:;—-]\s*", "", value)
+        for token in re.split(r"\s*(?:[,;]|[·•])\s*", value):
+            cleaned = re.sub(r"\s+", " ", token).strip(" \t\n\r.:;,-")
+            if not cleaned:
+                continue
+            key = normalize_title(cleaned)
+            if (
+                not key
+                or key in {"keyword", "keywords", "index terms"}
+                or len(cleaned) > 100
+                or len(cleaned.split()) > 10
+                or key in seen
+            ):
+                continue
+            seen.add(key)
+            normalized_values.append(cleaned)
+    return normalized_values
+
+
 def parse_people(text: str | None) -> list[str]:
     if not text:
         return []
@@ -507,6 +543,13 @@ def load_source_card(path: Path) -> SourceCard:
     abstract_section = sections.get("Abstract", "").strip()
     if abstract_section and abstract_section != "No abstract yet.":
         frontmatter["abstract"] = abstract_section
+    keywords_section = sections.get("Keywords", "").strip()
+    if keywords_section and not frontmatter.get("keywords"):
+        frontmatter["keywords"] = normalize_keywords(
+            line.removeprefix("- ").strip()
+            for line in keywords_section.splitlines()
+            if line.strip() and line.strip() != "No keywords captured yet."
+        )
     summary_section = (
         sections.get("Scholar Labs summary", "")
         or sections.get("Scholar Labs Summary", "")

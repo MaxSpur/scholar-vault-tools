@@ -9,7 +9,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +26,7 @@ from .sources import (
     first_author_surname,
     normalize_copied_abstract,
     normalize_doi,
+    normalize_keywords,
     normalize_title,
     parse_people,
     write_text,
@@ -69,6 +70,7 @@ class CitationCandidate:
     year: int | None = None
     venue: str | None = None
     url: str | None = None
+    keywords: tuple[str, ...] = ()
     source: str = ""
     raw: dict[str, Any] | None = None
     score: int = 0
@@ -310,6 +312,65 @@ def extract_pdf_abstract(text: str | None) -> str:
     return cleaned
 
 
+def extract_pdf_keywords(text: str | None) -> list[str]:
+    if not text:
+        return []
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    match = re.search(
+        r"(?im)^\s*(keywords?|index terms)\s*[\.:;—-]\s*(.*)$",
+        normalized,
+    )
+    if not match:
+        return []
+    remaining = normalized[match.start(2) :]
+    stop = re.search(
+        r"(?im)^\s*(abstract|summary|introduction|1\.?\s+introduction|"
+        r"i\.?\s+introduction|(?:\d+|[ivx]+)\s*\n\s*introduction|"
+        r"\d+\s+[A-Z][A-Za-z ]{2,}|references)\b",
+        remaining,
+    )
+    excerpt = remaining[: stop.start()] if stop else remaining
+    if "\n\n" in excerpt:
+        excerpt = re.split(r"\n\s*\n", excerpt, maxsplit=1)[0]
+    return normalize_keywords(excerpt)
+
+
+def merge_keywords(existing: Iterable[str], incoming: Iterable[str]) -> list[str]:
+    return normalize_keywords([*existing, *incoming])
+
+
+def _candidate_keywords(*values: object) -> tuple[str, ...]:
+    flattened: list[str] = []
+    for value in values:
+        if not value:
+            continue
+        if isinstance(value, dict):
+            value = value.get("keyword") or value.get("subject") or value.get("display_name")
+        if isinstance(value, (list, tuple, set)):
+            for item in value:
+                if isinstance(item, dict):
+                    keyword = item.get("keyword") or item.get("subject")
+                    keyword = keyword or item.get("display_name") or ""
+                    flattened.append(str(keyword))
+                else:
+                    flattened.append(str(item))
+            continue
+        flattened.append(str(value))
+    return tuple(normalize_keywords(flattened))
+
+
+def _bibtex_keywords(raw_bibtex: str | None) -> list[str]:
+    if not raw_bibtex:
+        return []
+    match = re.search(
+        r"(?ims)\bkeywords?\s*=\s*[{\"](.+?)[}\"]\s*,?\s*(?:\n\w+\s*=|\n})",
+        raw_bibtex,
+    )
+    if not match:
+        match = re.search(r"(?ims)\bkeywords?\s*=\s*[{\"](.+?)[}\"]", raw_bibtex)
+    return normalize_keywords(match.group(1)) if match else []
+
+
 def _abstract_rank(source: str | None) -> int:
     return ABSTRACT_SOURCE_RANK.get((source or "").casefold(), 0)
 
@@ -418,6 +479,7 @@ def crossref_candidates(payload: dict[str, Any], card: SourceCard) -> list[Citat
             year=year,
             venue=(item.get("container-title") or [None])[0],
             url=item.get("URL"),
+            keywords=_candidate_keywords(item.get("subject")),
             source="crossref",
             raw=item,
         )
@@ -448,6 +510,7 @@ def openalex_candidates(payload: dict[str, Any], card: SourceCard) -> list[Citat
             year=item.get("publication_year"),
             venue=source.get("display_name"),
             url=primary_location.get("landing_page_url") or item.get("id"),
+            keywords=_candidate_keywords(item.get("keywords")),
             source="openalex",
             raw=item,
         )
@@ -478,6 +541,7 @@ def datacite_candidate(payload: dict[str, Any], card: SourceCard) -> CitationCan
         year=_safe_int(attributes.get("publicationYear")),
         venue=attributes.get("publisher"),
         url=attributes.get("url"),
+        keywords=_candidate_keywords(attributes.get("subjects")),
         source="datacite",
         raw=data,
     )
@@ -499,6 +563,7 @@ def europepmc_candidates(payload: dict[str, Any], card: SourceCard) -> list[Cita
             url=item.get("fullTextUrlList", {}).get("fullTextUrl", [{}])[0].get("url")
             if item.get("fullTextUrlList")
             else None,
+            keywords=_candidate_keywords((item.get("keywordList") or {}).get("keyword")),
             source="europepmc",
             raw=item,
         )
@@ -536,6 +601,7 @@ def _crossref_item_candidate(item: dict[str, Any], card: SourceCard) -> Citation
         year=year,
         venue=(item.get("container-title") or [None])[0],
         url=item.get("URL"),
+        keywords=_candidate_keywords(item.get("subject")),
         source="crossref",
         raw=item,
     )
@@ -622,6 +688,7 @@ def openalex_abstract_candidates(
             year=item.get("publication_year"),
             venue=source.get("display_name"),
             url=primary_location.get("landing_page_url") or item.get("id"),
+            keywords=_candidate_keywords(item.get("keywords")),
             source="openalex",
             raw=item,
         )
@@ -866,7 +933,27 @@ def _promote_metadata_from_candidate(card: SourceCard, candidate: CitationCandid
             card.url = candidate.url
             changed = True
 
+    if candidate.keywords:
+        merged_keywords = merge_keywords(card.keywords, candidate.keywords)
+        if merged_keywords != card.keywords:
+            card.keywords = merged_keywords
+            changed = True
+
     return changed
+
+
+def _promote_keywords_from_pdf(paths: VaultPaths, card: SourceCard) -> bool:
+    pdf_path = _card_pdf_path(paths, card)
+    if not pdf_path:
+        return False
+    keywords = extract_pdf_keywords(extract_pdf_text_excerpt(pdf_path))
+    if not keywords:
+        return False
+    merged_keywords = merge_keywords(card.keywords, keywords)
+    if merged_keywords == card.keywords:
+        return False
+    card.keywords = merged_keywords
+    return True
 
 
 def _finalize_citation_success(
@@ -1006,6 +1093,7 @@ def enrich_abstract_card(
     )
     work_dir = metadata_dir(paths, card)
     work_dir.mkdir(parents=True, exist_ok=True)
+    keyword_changed = _promote_keywords_from_pdf(paths, card)
 
     doi, doi_source, doi_confidence = detect_local_doi(paths, card)
     if doi:
@@ -1092,7 +1180,7 @@ def enrich_abstract_card(
         ):
             card.abstract_last_checked = checked_at
             card.abstract_input_fingerprint = abstract_fingerprint(card)
-            changed = card.enrichment_refresh
+            changed = card.enrichment_refresh or keyword_changed
             card.enrichment_refresh = False
             return EnrichmentResult(
                 card.citekey or card.slug,
@@ -1148,6 +1236,7 @@ def enrich_card(
     checked_at = now_iso()
     work_dir = metadata_dir(paths, card)
     work_dir.mkdir(parents=True, exist_ok=True)
+    _promote_keywords_from_pdf(paths, card)
 
     doi, doi_source, doi_confidence = detect_local_doi(paths, card)
     if doi and not card.doi:
@@ -1219,6 +1308,8 @@ def enrich_card(
             cache_refresh,
             {"Accept": "application/x-bibtex"},
         )
+        if raw_bibtex:
+            card.keywords = merge_keywords(card.keywords, _bibtex_keywords(raw_bibtex))
         csl_json = fetch_text(
             f"https://doi.org/{urllib.parse.quote(card.doi)}",
             work_dir / "citation.csl.json",
@@ -1257,6 +1348,8 @@ def enrich_card(
                         True,
                         {"Accept": "application/x-bibtex"},
                     )
+                    if raw_bibtex:
+                        card.keywords = merge_keywords(card.keywords, _bibtex_keywords(raw_bibtex))
                     refreshed_csl_json = fetch_text(
                         f"https://doi.org/{urllib.parse.quote(card.doi)}",
                         work_dir / "citation.csl.json",
@@ -1356,6 +1449,7 @@ def _csl_candidate(payload: dict[str, Any], card: SourceCard) -> CitationCandida
         year=year,
         venue=payload.get("container-title"),
         url=payload.get("URL"),
+        keywords=_candidate_keywords(payload.get("keyword")),
         source="doi-csl",
         raw=payload,
     )

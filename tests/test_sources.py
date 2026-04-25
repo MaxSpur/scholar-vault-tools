@@ -1,9 +1,12 @@
+from pathlib import Path
+
 from scholar_vault.sources import (
     build_citekey,
     build_pdf_filename,
     infer_run_title,
     load_source_card,
     normalize_copied_abstract,
+    normalize_keywords,
     parse_people,
     slugify_text,
 )
@@ -45,6 +48,40 @@ Keywords: Immersive Analytics · Collaboration"""
         "domain experts in complex data visualization and interpretation. This "
         "research presents a comprehensive framework for conducting usability studies."
     )
+
+
+def test_normalize_keywords_splits_and_repairs_pdf_keyword_text() -> None:
+    raw = "Keywords: Immersive Analytics · Collaboration; Sci-\nentific Data Visualization"
+
+    assert normalize_keywords(raw) == [
+        "Immersive Analytics",
+        "Collaboration",
+        "Scientific Data Visualization",
+    ]
+
+
+def test_load_source_card_reads_keywords_section(tmp_path: Path) -> None:
+    card_path = tmp_path / "example.md"
+    card_path.write_text(
+        """---
+title: Example Paper
+---
+
+# Example Paper
+
+## Keywords
+- Immersive Analytics
+- Collaboration
+
+## Abstract
+No abstract yet.
+""",
+        encoding="utf-8",
+    )
+
+    card = load_source_card(card_path)
+
+    assert card.keywords == ["Immersive Analytics", "Collaboration"]
 
 
 def test_infer_run_title_uses_prompt_topic_phrase() -> None:
