@@ -448,15 +448,10 @@ def _build_confirmation_dialog(qt: dict[str, Any], title: str, prompt: str) -> A
     return dialog
 
 
-def _run_picker_counts(run: Any) -> tuple[int, int, int]:
+def _run_picker_counts(run: Any) -> tuple[int, int]:
     selected = sum(1 for result in run.results if result.status == "selected")
     total = run.result_count or len(run.results)
-    attached = sum(
-        1
-        for result in run.results
-        if result.status == "selected" and result.pdf_status == "attached"
-    )
-    return total, selected, attached
+    return total, selected
 
 
 def _run_picker_title(run: Any) -> str:
@@ -471,21 +466,48 @@ def _run_picker_date(run: Any) -> str:
     return value[:16].replace("T", " ") if "T" in value else value
 
 
+def _run_picker_issue_text(summary: dict[str, Any] | int | None) -> tuple[int, str]:
+    if isinstance(summary, int):
+        if summary <= 0:
+            return 0, "NO FOLLOW-UP"
+        label = "FOLLOW-UP" if summary == 1 else "FOLLOW-UPS"
+        return summary, f"{summary} {label}"
+    if not summary:
+        return 0, "NO FOLLOW-UP"
+    count = int(summary.get("count") or 0)
+    if count <= 0:
+        return 0, "NO FOLLOW-UP"
+    kind_counts = summary.get("kinds", {})
+    if not isinstance(kind_counts, dict) or not kind_counts:
+        label = "FOLLOW-UP" if count == 1 else "FOLLOW-UPS"
+        return count, f"{count} {label}"
+    order = ["abstract", "citation", "metadata", "doi", "refresh"]
+    parts = []
+    for kind in order:
+        kind_count = int(kind_counts.get(kind, 0))
+        if not kind_count:
+            continue
+        parts.append(f"{kind_count} {kind.upper()}" if kind_count > 1 else kind.upper())
+    label = "FOLLOW-UP" if count == 1 else "FOLLOW-UPS"
+    return count, f"{count} {label}: {', '.join(parts)}"
+
+
 def _run_picker_model(
     runs: list[Any],
     vault: str,
     *,
-    issue_counts: dict[str, int] | None = None,
+    issue_summaries: dict[str, dict[str, Any] | int] | None = None,
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
-    issue_counts = issue_counts or {}
+    issue_summaries = issue_summaries or {}
     sorted_runs = sorted(
         runs,
         key=lambda run: (run.exported_at or run.date, run.slug),
         reverse=True,
     )
     for index, run in enumerate(sorted_runs):
-        total, selected, attached = _run_picker_counts(run)
+        total, selected = _run_picker_counts(run)
+        issues, issue_text = _run_picker_issue_text(issue_summaries.get(run.slug))
         prompt = " ".join((run.prompt or "").split())
         rows.append(
             {
@@ -494,8 +516,8 @@ def _run_picker_model(
                 "exported": _run_picker_date(run),
                 "total": total,
                 "selected": selected,
-                "attached": attached,
-                "issues": issue_counts.get(run.slug, 0),
+                "issues": issues,
+                "issue_text": issue_text,
                 "accepted_now": len(run.matched_files),
                 "unmatched_files": len(run.unmatched_files),
                 "export_file": Path(run.export_file).name,
@@ -527,6 +549,15 @@ def _run_picker_metric(
     return box
 
 
+def _run_picker_detail_line(qt: dict[str, Any], label: str, value: object) -> Any:
+    detail = qt["QLabel"](f"{label}: {value}")
+    detail.setFont(_summary_font(qt, 9, mono=True))
+    detail.setStyleSheet("color: #8ce7b8; border: none;")
+    detail.setWordWrap(True)
+    detail.setTextInteractionFlags(qt["Qt"].TextInteractionFlag.TextSelectableByMouse)
+    return detail
+
+
 def _build_run_picker_row(
     qt: dict[str, Any],
     row: dict[str, Any],
@@ -549,6 +580,14 @@ def _build_run_picker_row(
     title.setStyleSheet("color: #f3fff7; border: none;")
     title.setWordWrap(True)
     title_row.addWidget(title, 1)
+    issue = qt["QLabel"](row["issue_text"])
+    issue.setFont(_summary_font(qt, 9, mono=True, bold=True))
+    issue.setStyleSheet(
+        "color: #030504; "
+        f"background: {'#ff3b4f' if row['issues'] else '#45ffb0'}; "
+        "border: none; padding: 3px 7px;"
+    )
+    title_row.addWidget(issue, 0)
     if row["is_latest"]:
         latest = qt["QLabel"]("LATEST")
         latest.setFont(_summary_font(qt, 9, mono=True, bold=True))
@@ -577,31 +616,27 @@ def _build_run_picker_row(
     prompt.setTextInteractionFlags(qt["Qt"].TextInteractionFlag.TextSelectableByMouse)
     layout.addWidget(prompt)
 
-    details = qt["QLabel"](
-        f"export: {row['export_file'] or '-'}"
-        + (f"  // note: {row['note_file']}" if row["note_file"] else "")
-        + f"  // accepted as new PDFs in that import: {row['accepted_now']}"
-        + f"  // unmatched staged files recorded: {row['unmatched_files']}"
+    detail_lines = qt["QVBoxLayout"]()
+    detail_lines.setSpacing(2)
+    detail_lines.addWidget(_run_picker_detail_line(qt, "export", row["export_file"] or "-"))
+    detail_lines.addWidget(_run_picker_detail_line(qt, "run note", row["note_file"] or "-"))
+    detail_lines.addWidget(
+        _run_picker_detail_line(qt, "new PDFs accepted in this import", row["accepted_now"])
     )
-    details.setFont(_summary_font(qt, 9, mono=True))
-    details.setStyleSheet("color: #8ce7b8; border: none;")
-    details.setWordWrap(True)
-    layout.addWidget(details)
+    detail_lines.addWidget(
+        _run_picker_detail_line(
+            qt,
+            "unmatched staged files recorded",
+            row["unmatched_files"],
+        )
+    )
+    layout.addLayout(detail_lines)
 
     metrics = qt["QHBoxLayout"]()
     metrics.setSpacing(18)
     metrics.addLayout(_run_picker_metric(qt, "EXPORTED", row["exported"]))
     metrics.addLayout(_run_picker_metric(qt, "RESULTS", row["total"]))
-    metrics.addLayout(_run_picker_metric(qt, "PAPER CARDS", row["selected"]))
-    metrics.addLayout(_run_picker_metric(qt, "ATTACHED PDFS", row["attached"]))
-    metrics.addLayout(
-        _run_picker_metric(
-            qt,
-            "FOLLOW-UP",
-            row["issues"],
-            color="#ff3b4f" if row["issues"] else "#45ffb0",
-        )
-    )
+    metrics.addLayout(_run_picker_metric(qt, "SELECTED", row["selected"]))
     metrics.addStretch(1)
     layout.addLayout(metrics)
     return panel
@@ -611,11 +646,11 @@ def choose_rerun(
     runs: list[Any],
     vault: str,
     *,
-    issue_counts: dict[str, int] | None = None,
+    issue_summaries: dict[str, dict[str, Any] | int] | None = None,
 ) -> str | None:
     qt = _load_qt_modules(require_fitz=False)
     app = _application(qt)
-    model = _run_picker_model(runs, vault, issue_counts=issue_counts)
+    model = _run_picker_model(runs, vault, issue_summaries=issue_summaries)
     selected: dict[str, str | None] = {"run_id": None}
 
     dialog = qt["QDialog"]()

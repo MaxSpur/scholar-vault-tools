@@ -437,8 +437,7 @@ recorded run IDs.
 
 For the desktop workflow, omit `--run` and pass `--ui` to choose from a run
 browser with run IDs, titles, full prompts, exported dates, result counts,
-paper-card counts, attached-PDF counts, follow-up issue counts, and staged-PDF
-history:
+selected-paper counts, follow-up issue summaries, and staged-PDF history:
 
 ```fish
 scholar-vault rerun --ui

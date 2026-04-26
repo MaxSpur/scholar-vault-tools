@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -313,22 +314,48 @@ def _confirm_callback(ui: bool):
         return _confirm
 
 
-def _card_needs_followup(card: SourceCard) -> bool:
+def _card_followup_kinds(card: SourceCard) -> list[str]:
     issue_states = {"incomplete", "ambiguous", "unresolved"}
-    return (
-        card.enrichment_status in issue_states
-        or card.citation_status in issue_states
-        or card.abstract_status in issue_states
-        or card.doi_status in {"ambiguous", "unresolved"}
-        or bool(card.enrichment_refresh)
-    )
+    kinds: list[str] = []
+    if card.enrichment_refresh:
+        kinds.append("refresh")
+    if card.enrichment_status in issue_states or card.enrichment_missing:
+        kinds.append("metadata")
+    if card.citation_status in issue_states:
+        kinds.append("citation")
+    if card.abstract_status in issue_states:
+        kinds.append("abstract")
+    if card.doi_status in {"ambiguous", "unresolved"}:
+        kinds.append("doi")
+    return kinds
 
 
-def _run_followup_issue_counts(paths, runs) -> dict[str, int]:
+def _followup_issue_label(summary: dict[str, Any] | None) -> str:
+    if not summary or not summary.get("count"):
+        return "none"
+    count = int(summary["count"])
+    kind_counts = summary.get("kinds", {})
+    if not isinstance(kind_counts, dict) or not kind_counts:
+        return f"{count} follow-up"
+    order = ["abstract", "citation", "metadata", "doi", "refresh"]
+    parts = []
+    for kind in order:
+        kind_count = int(kind_counts.get(kind, 0))
+        if not kind_count:
+            continue
+        parts.append(f"{kind_count} {kind}" if kind_count > 1 else kind)
+    suffix = ", ".join(parts)
+    label = "follow-up" if count == 1 else "follow-ups"
+    return f"{count} {label}: {suffix}"
+
+
+def _run_followup_issue_summaries(paths, runs) -> dict[str, dict[str, Any]]:
     cards = {f"papers/{card.slug}.md": card for card in load_source_cards(paths)}
-    counts: dict[str, int] = {}
+    summaries: dict[str, dict[str, Any]] = {}
     for run in runs:
         seen: set[str] = set()
+        issue_count = 0
+        kind_counts: Counter[str] = Counter()
         for result in run.results:
             if result.status != "selected" or not result.paper_card:
                 continue
@@ -336,9 +363,19 @@ def _run_followup_issue_counts(paths, runs) -> dict[str, int]:
                 continue
             seen.add(result.paper_card)
             card = cards.get(result.paper_card)
-            if card is not None and _card_needs_followup(card):
-                counts[run.slug] = counts.get(run.slug, 0) + 1
-    return counts
+            if card is None:
+                continue
+            kinds = _card_followup_kinds(card)
+            if not kinds:
+                continue
+            issue_count += 1
+            kind_counts.update(set(kinds))
+        if issue_count:
+            summaries[run.slug] = {
+                "count": issue_count,
+                "kinds": dict(kind_counts),
+            }
+    return summaries
 
 
 def _select_rerun_run_id(vault: Path, run: str | None, *, ui: bool) -> str:
@@ -360,7 +397,7 @@ def _select_rerun_run_id(vault: Path, run: str | None, *, ui: bool) -> str:
         selected = choose_rerun(
             runs,
             str(paths.vault),
-            issue_counts=_run_followup_issue_counts(paths, runs),
+            issue_summaries=_run_followup_issue_summaries(paths, runs),
         )
     except GuiUnavailable as exc:
         console.print(f"Rerun UI unavailable ({exc}). Falling back to latest run.")
@@ -461,15 +498,10 @@ def _short_run_timestamp(run) -> str:
     return value
 
 
-def _run_table_counts(run) -> tuple[int, int, int]:
+def _run_table_counts(run) -> tuple[int, int]:
     total = run.result_count or len(run.results)
     selected = sum(1 for result in run.results if result.status == "selected")
-    attached = sum(
-        1
-        for result in run.results
-        if result.status == "selected" and result.pdf_status == "attached"
-    )
-    return total, selected, attached
+    return total, selected
 
 
 def _print_runs_table(vault: Path, *, limit: int | None = None) -> None:
@@ -485,21 +517,16 @@ def _print_runs_table(vault: Path, *, limit: int | None = None) -> None:
         console.print(f"No runs found in {paths.vault}.")
         return
 
-    issue_counts = _run_followup_issue_counts(paths, runs)
+    issue_summaries = _run_followup_issue_summaries(paths, runs)
     console.print("Scholar Vault Runs")
     console.print(f"Vault: {paths.vault}")
     for run in runs:
-        total, selected, attached = _run_table_counts(run)
+        total, selected = _run_table_counts(run)
         console.print(f"\n[cyan]{run.slug}[/cyan]")
         console.print(f"  title: {_short_run_title(run)}")
-        console.print(
-            "  "
-            f"exported: {_short_run_timestamp(run)}  "
-            f"results: {total}  "
-            f"paper_cards: {selected}  "
-            f"attached_pdfs: {attached}  "
-            f"follow_up: {issue_counts.get(run.slug, 0)}"
-        )
+        console.print(f"  exported: {_short_run_timestamp(run)}")
+        console.print(f"  results: {total}  selected: {selected}")
+        console.print(f"  follow_up: {_followup_issue_label(issue_summaries.get(run.slug))}")
 
 
 def _detail_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:

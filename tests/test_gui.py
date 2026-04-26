@@ -289,15 +289,20 @@ def test_run_picker_model_sorts_and_counts_runs() -> None:
     model = _run_picker_model(
         [older, newer],
         "/tmp/vault",
-        issue_counts={"2026-04-22_new-run": 2},
+        issue_summaries={
+            "2026-04-22_new-run": {
+                "count": 2,
+                "kinds": {"abstract": 1, "metadata": 1},
+            }
+        },
     )
 
     assert model["rows"][0]["run_id"] == "2026-04-22_new-run"
     assert model["rows"][0]["is_latest"] is True
     assert model["rows"][0]["selected"] == 1
     assert model["rows"][0]["total"] == 3
-    assert model["rows"][0]["attached"] == 1
     assert model["rows"][0]["issues"] == 2
+    assert model["rows"][0]["issue_text"] == "2 FOLLOW-UPS: ABSTRACT, METADATA"
     assert "abbreviated" in model["rows"][0]["prompt"]
     assert model["rows"][0]["title"] == "2026-04-22_new-run"
     assert model["rows"][1]["run_id"] == "2026-04-21_old-run"
