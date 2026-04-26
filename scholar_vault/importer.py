@@ -857,6 +857,40 @@ def _card_has_valid_pdf(paths: VaultPaths, card: SourceCard) -> bool:
     return pdf_path.exists()
 
 
+def _card_pdf_sha256(paths: VaultPaths, card: SourceCard) -> str | None:
+    if not _card_has_valid_pdf(paths, card):
+        return None
+    pdf_path = Path(card.pdf or "")
+    if not pdf_path.is_absolute():
+        pdf_path = paths.vault / pdf_path
+    return _file_sha256(pdf_path)
+
+
+def _candidate_replaces_card_pdf(
+    paths: VaultPaths,
+    card: SourceCard,
+    candidate_sha256: str | None,
+) -> bool:
+    current_sha256 = _card_pdf_sha256(paths, card)
+    return bool(candidate_sha256 and current_sha256 and candidate_sha256 != current_sha256)
+
+
+def _record_pdf_metadata_from_candidate(card: SourceCard, candidate) -> None:
+    doi = normalize_doi(candidate.doi)
+    if doi and not normalize_doi(card.doi):
+        card.doi = doi
+        card.doi_status = "detected"
+        card.doi_source = "pdf"
+        card.doi_confidence = 0.95
+    if card.citation_status not in {"manual_lock", "verified"}:
+        card.citation_status = "missing"
+        card.citation_source = None
+        card.citation_skip_reason = None
+        card.enrichment_status = "missing"
+        card.enrichment_missing = []
+        card.enrichment_refresh = True
+
+
 def _build_match_review_request(
     result: ScholarLabsResult,
     proposal: MatchDecision,
@@ -943,6 +977,7 @@ def import_scholar_labs_run(
     archive_matched: bool = False,
     archive_export: bool = False,
     auto_enrich: bool = False,
+    upgrade_pdfs: bool = False,
     title: str | None = None,
     confirm: ConfirmCallback | None = None,
     review_match: MatchReviewCallback | None = None,
@@ -1022,6 +1057,9 @@ def import_scholar_labs_run(
         "commit_proposals_skipped": 0,
         "proposed_not_committed": 0,
         "results_without_candidate": 0,
+        "pdf_upgrade_candidates": 0,
+        "pdf_upgrades": 0,
+        "pdf_upgrade_skipped": 0,
     }
 
     sorted_results = sorted(export.results, key=lambda item: item.rank)
@@ -1043,6 +1081,192 @@ def import_scholar_labs_run(
             and prior_result.status == "selected"
             and _paper_card_exists(paths, prior_result.paper_card)
         ):
+            prior_card = _find_card_for_run_result(paths, cards, prior_result, run_ref)
+            upgrade_proposal = None
+            if upgrade_pdfs and prior_card and _card_has_valid_pdf(paths, prior_card):
+                upgrade_candidates = [
+                    candidate
+                    for candidate in remaining
+                    if _candidate_replaces_card_pdf(paths, prior_card, candidate.sha256)
+                ]
+                if upgrade_candidates:
+                    _report_match_progress(
+                        progress,
+                        result,
+                        "upgrade",
+                        f"scoring {len(upgrade_candidates)} staged replacement candidates",
+                        index,
+                        total_results,
+                    )
+                    match = best_pdf_match(
+                        result.title,
+                        upgrade_candidates,
+                        expected_doi=prior_card.doi,
+                    )
+                    upgrade_proposal = (
+                        match if match.candidate and match.score >= 70 else None
+                    )
+                    if upgrade_proposal and upgrade_proposal.candidate:
+                        decision_summary["pdf_upgrade_candidates"] += 1
+                        _report_match_progress(
+                            progress,
+                            result,
+                            "upgrade-proposed",
+                            f"{Path(upgrade_proposal.candidate.path).name}; "
+                            f"score={upgrade_proposal.score}; "
+                            f"reason={upgrade_proposal.reason}; "
+                            f"decision={upgrade_proposal.decision}",
+                            index,
+                            total_results,
+                        )
+            upgrade_decision = "unresolved"
+            if upgrade_proposal is not None and upgrade_proposal.candidate:
+                if dry_run:
+                    decision_summary["proposed_not_committed"] += 1
+                    decision_summary["pdf_upgrade_skipped"] += 1
+                    _report_match_progress(
+                        progress,
+                        result,
+                        "dry-run",
+                        "PDF upgrade proposal recorded but not committed",
+                        index,
+                        total_results,
+                    )
+                elif commit:
+                    if upgrade_proposal.decision == "auto":
+                        upgrade_decision = "accepted"
+                        decision_summary["commit_auto_accepted"] += 1
+                    else:
+                        decision_summary["commit_proposals_skipped"] += 1
+                        decision_summary["pdf_upgrade_skipped"] += 1
+                        _report_match_progress(
+                            progress,
+                            result,
+                            "skipped",
+                            "PDF upgrade review proposal skipped by --commit",
+                            index,
+                            total_results,
+                        )
+                elif interactive:
+                    decision_summary["review_prompts"] += 1
+                    _report_match_progress(
+                        progress,
+                        result,
+                        "review",
+                        "waiting for PDF upgrade decision",
+                        index,
+                        total_results,
+                    )
+                    if review_match is not None:
+                        accepted = review_match(
+                            _build_match_review_request(result, upgrade_proposal)
+                        )
+                    elif confirm is not None:
+                        accepted = confirm(
+                            f"Replace attached PDF for {result.title} with "
+                            f"{Path(upgrade_proposal.candidate.path).name} "
+                            f"(score={upgrade_proposal.score})?"
+                        )
+                    else:
+                        accepted = upgrade_proposal.decision == "auto"
+                    if accepted:
+                        upgrade_decision = "accepted"
+                        decision_summary["review_accepted"] += 1
+                    else:
+                        upgrade_decision = "rejected"
+                        decision_summary["review_rejected"] += 1
+                        decision_summary["pdf_upgrade_skipped"] += 1
+                elif upgrade_proposal.decision == "auto":
+                    upgrade_decision = "accepted"
+
+            if (
+                upgrade_decision == "accepted"
+                and upgrade_proposal is not None
+                and upgrade_proposal.candidate
+                and prior_card
+            ):
+                card_before = prior_card.model_dump(mode="python")
+                candidate_path = Path(upgrade_proposal.candidate.path)
+                destination_path, copied, verified = _copy_pdf_to_vault(
+                    paths,
+                    candidate_path,
+                    prior_card,
+                    original_sha256=upgrade_proposal.candidate.sha256
+                    or _file_sha256(candidate_path),
+                )
+                prior_card.pdf = destination_path
+                prior_card.pdf_status = "attached"
+                prior_card.status = "active"
+                prior_card.keywords = _merge_unique(
+                    prior_card.keywords,
+                    extract_pdf_keywords(upgrade_proposal.candidate.text_excerpt),
+                )
+                _record_pdf_metadata_from_candidate(prior_card, upgrade_proposal.candidate)
+                archived_original_path = None
+                moved = False
+                note = "Replaced existing vault PDF with a staged upgrade."
+                if archive_matched and candidate_path.exists():
+                    archived_original_path = _archive_matched_pdf(paths, run_slug, candidate_path)
+                    moved = True
+                    archived_files.append(Path(archived_original_path).name)
+                    note = f"Archived upgraded staging PDF to {archived_original_path}."
+                _save_card(paths, prior_card)
+                paper_card = f"papers/{prior_card.slug}.md"
+                decision_summary["pdf_upgrades"] += 1
+                matched_files.append(Path(upgrade_proposal.candidate.path).name)
+                remaining = _consume_candidate(
+                    remaining,
+                    original_path=upgrade_proposal.candidate.path,
+                    original_sha256=upgrade_proposal.candidate.sha256,
+                )
+                run_results.append(
+                    RunResultRecord(
+                        **result.model_dump(),
+                        status="selected",
+                        pdf_status="attached",
+                        paper_card=paper_card,
+                        proposed_pdf=upgrade_proposal.candidate.path,
+                        proposed_sha256=upgrade_proposal.candidate.sha256,
+                        score=upgrade_proposal.score,
+                        decision="accepted",
+                    )
+                )
+                manifest_entries.append(
+                    _build_manifest_entry(
+                        result,
+                        upgrade_proposal,
+                        decision="accepted",
+                        paper_card=paper_card,
+                        card_created=False,
+                        card_preexisting=True,
+                        card_before=card_before,
+                        destination_path=destination_path,
+                        copied=copied,
+                        moved=moved,
+                        archived_original_path=archived_original_path,
+                        verified=verified,
+                        note=note,
+                    )
+                )
+                log_entries.append(
+                    ImportLogEntry(
+                        source_path=upgrade_proposal.candidate.path,
+                        destination_path=destination_path,
+                        status="upgraded",
+                        score=upgrade_proposal.score,
+                        note=note,
+                    )
+                )
+                _report_match_progress(
+                    progress,
+                    result,
+                    "upgraded",
+                    f"replaced attached PDF for {prior_card.citekey or prior_card.slug}",
+                    index,
+                    total_results,
+                )
+                continue
+
             decision_summary["prior_selected_reused"] += 1
             _report_match_progress(
                 progress,
@@ -1551,6 +1775,7 @@ def resume_run(
     dry_run: bool = False,
     commit: bool = False,
     auto_enrich: bool = False,
+    upgrade_pdfs: bool = False,
     confirm: ConfirmCallback | None = None,
     review_match: MatchReviewCallback | None = None,
     progress: ProgressCallback | None = None,
@@ -1571,6 +1796,7 @@ def resume_run(
         archive_matched=run.archive_matched_from_staging,
         archive_export=run.archive_matched_from_staging,
         auto_enrich=auto_enrich,
+        upgrade_pdfs=upgrade_pdfs,
         title=run.title,
         confirm=confirm,
         review_match=review_match,

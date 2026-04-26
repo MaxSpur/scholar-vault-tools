@@ -234,6 +234,58 @@ def test_confirmation_model_makes_existing_run_prompt_readable() -> None:
     assert model["reject"] == "Cancel"
 
 
+def test_run_picker_model_sorts_and_counts_runs() -> None:
+    from scholar_vault.gui import _run_picker_model
+    from scholar_vault.models import RunRecord
+
+    older = RunRecord.model_validate(
+        {
+            "slug": "2026-04-21_old-run",
+            "date": "2026-04-21",
+            "prompt": "older prompt",
+            "title": "Older Run",
+            "exported_at": "2026-04-21T09:00:00+02:00",
+            "export_file": "/tmp/old.json",
+            "raw_export_file": "raw/scholar-labs/old.json",
+            "result_count": 2,
+            "results": [
+                {"rank": 1, "title": "Selected", "status": "selected"},
+                {"rank": 2, "title": "Missing", "status": "unmatched"},
+            ],
+            "matched_files": ["a.pdf"],
+            "unmatched_files": ["b.pdf"],
+        }
+    )
+    newer = RunRecord.model_validate(
+        {
+            "slug": "2026-04-22_new-run",
+            "date": "2026-04-22",
+            "prompt": "newer prompt",
+            "exported_at": "2026-04-22T10:30:00+02:00",
+            "export_file": "/tmp/new.json",
+            "raw_export_file": "raw/scholar-labs/new.json",
+            "result_count": 3,
+            "results": [
+                {"rank": 1, "title": "Selected", "status": "selected"},
+                {"rank": 2, "title": "Candidate", "status": "candidate"},
+                {"rank": 3, "title": "Missing", "status": "unmatched"},
+            ],
+        }
+    )
+
+    model = _run_picker_model([older, newer], "/tmp/vault")
+
+    assert model["rows"][0]["run_id"] == "2026-04-22_new-run"
+    assert model["rows"][0]["is_latest"] is True
+    assert model["rows"][0]["selected"] == 1
+    assert model["rows"][0]["total"] == 3
+    assert model["rows"][0]["left"] == 2
+    assert model["rows"][0]["title"] == "newer prompt"
+    assert model["rows"][1]["run_id"] == "2026-04-21_old-run"
+    assert model["rows"][1]["matched_files"] == 1
+    assert model["rows"][1]["unmatched_files"] == 1
+
+
 def test_missing_abstract_issue_is_resolvable() -> None:
     from scholar_vault.gui import _can_resolve_missing_abstract
 

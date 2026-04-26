@@ -197,6 +197,53 @@ def test_reimport_reuses_prior_selected_matches_without_review(tmp_path: Path) -
     assert second["decision_summary"]["review_prompts"] == 0
 
 
+def test_reimport_can_upgrade_prior_selected_pdf(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_export(exports / "sample.json", 1)
+    old_pdf = staging / "paper-1-preprint.pdf"
+    _write_pdf_with_title(old_pdf, "Result Paper 1")
+
+    first = import_scholar_labs_run(vault, export_path, staging, commit=True)
+    card = load_source_cards(initialize_vault(vault))[0]
+    first_pdf = card.pdf
+
+    better_pdf = staging / "paper-1-published.pdf"
+    _write_pdf_with_title(better_pdf, "Result Paper 1 Published Version")
+    requests = []
+
+    def review_match(request):
+        requests.append(request)
+        return True
+
+    second = import_scholar_labs_run(
+        vault,
+        export_path,
+        staging,
+        upgrade_pdfs=True,
+        review_match=review_match,
+    )
+    upgraded = load_source_cards(initialize_vault(vault))[0]
+    run_id = str(second["run"])
+    run_yaml = _run_yaml(vault, run_id)
+    manifest = _manifest_yaml(vault, run_id)
+
+    assert first["selected"] == 1
+    assert requests
+    assert requests[0].pdf_filename == "paper-1-published.pdf"
+    assert upgraded.pdf != first_pdf
+    assert upgraded.pdf_status == "attached"
+    assert upgraded.enrichment_refresh is True
+    assert second["decision_summary"]["pdf_upgrades"] == 1
+    assert second["decision_summary"]["prior_selected_reused"] == 0
+    assert run_yaml["results"][0]["proposed_pdf"] == str(better_pdf)
+    assert manifest["entries"][0]["card_preexisting"] is True
+    assert manifest["entries"][0]["card_before"]["pdf"] == first_pdf
+
+
 def test_structured_match_review_accepts_pdf(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     staging = tmp_path / "staging"

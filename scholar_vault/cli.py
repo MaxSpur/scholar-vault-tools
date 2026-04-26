@@ -30,9 +30,55 @@ from .importer import (
     undo_run,
 )
 from .models import ImportCanceled, MatchReviewAbort, MatchReviewRequest, SourceCard
+from .sources import load_run_records, load_source_cards
 
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
 console = Console()
+
+
+def _completion_vault_path(ctx) -> Path | None:
+    value = None
+    if ctx is not None:
+        value = ctx.params.get("vault")
+    return value or configured_path("vault")
+
+
+def _complete_run_ids(ctx, args: list[str], incomplete: str) -> list[str]:
+    _ = args
+    vault = _completion_vault_path(ctx)
+    if vault is None:
+        return []
+    try:
+        paths = initialize_vault(Path(vault).expanduser().resolve())
+        run_ids = [run.slug for run in load_run_records(paths)]
+    except Exception:
+        return []
+    needle = incomplete.casefold()
+    return [run_id for run_id in run_ids if run_id.casefold().startswith(needle)]
+
+
+def _complete_citekeys(ctx, args: list[str], incomplete: str) -> list[str]:
+    _ = args
+    vault = _completion_vault_path(ctx)
+    if vault is None:
+        return []
+    try:
+        paths = initialize_vault(Path(vault).expanduser().resolve())
+        citekeys = [card.citekey for card in load_source_cards(paths) if card.citekey]
+    except Exception:
+        return []
+    needle = incomplete.casefold()
+    return [citekey for citekey in citekeys if citekey and citekey.casefold().startswith(needle)]
+
+
+def _complete_only_modes(incomplete: str) -> list[str]:
+    values = ["all", "missing-doi", "missing-bibtex", "missing-abstract"]
+    return [value for value in values if value.startswith(incomplete)]
+
+
+def _complete_folder_modes(incomplete: str) -> list[str]:
+    values = ["shared", "separate"]
+    return [value for value in values if value.startswith(incomplete)]
 
 VaultArg = Annotated[
     Path | None,
@@ -66,17 +112,26 @@ FolderModeArg = Annotated[
     str | None,
     typer.Option(
         "--folder-mode",
+        autocompletion=_complete_folder_modes,
         help=(
             "Scholar Labs download layout: 'shared' uses the staging folder for PDFs and "
             "JSON exports; 'separate' uses --exports."
         ),
     ),
 ]
-RunIdArg = Annotated[str, typer.Option(..., help="Run id, for example 2026-04-22_example-prompt.")]
+RunIdArg = Annotated[
+    str,
+    typer.Option(
+        ...,
+        autocompletion=_complete_run_ids,
+        help="Run id, for example 2026-04-22_example-prompt.",
+    ),
+]
 OptionalRunIdArg = Annotated[
     str | None,
     typer.Option(
         "--run",
+        autocompletion=_complete_run_ids,
         help="Run id. If omitted for rerun, the most recent run is used.",
     ),
 ]
@@ -113,6 +168,16 @@ AutoEnrichArg = Annotated[
         help="Run citation and abstract enrichment after accepted Scholar Labs matches.",
     ),
 ]
+UpgradePdfsArg = Annotated[
+    bool,
+    typer.Option(
+        "--upgrade-pdfs/--keep-existing-pdfs",
+        help=(
+            "Review staged PDFs as possible replacements for already attached PDFs "
+            "when rerunning or re-importing a Scholar Labs export."
+        ),
+    ),
+]
 ArchiveExportArg = Annotated[
     bool,
     typer.Option(
@@ -124,8 +189,11 @@ SelectedOnlyArg = Annotated[
     bool,
     typer.Option("--selected-only", help="Keep only paper cards that have attached PDFs."),
 ]
-CitekeyArg = Annotated[str, typer.Option(...)]
-OptionalCitekeyArg = Annotated[str | None, typer.Option("--citekey")]
+CitekeyArg = Annotated[str, typer.Option(..., autocompletion=_complete_citekeys)]
+OptionalCitekeyArg = Annotated[
+    str | None,
+    typer.Option("--citekey", autocompletion=_complete_citekeys),
+]
 AbstractTextArg = Annotated[
     str | None,
     typer.Option("--text", help="Manual abstract text. Use --file for longer abstracts."),
@@ -149,6 +217,7 @@ OnlyArg = Annotated[
     str,
     typer.Option(
         "--only",
+        autocompletion=_complete_only_modes,
         help="Limit enrichment: all, missing-doi, missing-bibtex, or missing-abstract.",
     ),
 ]
@@ -244,6 +313,32 @@ def _confirm_callback(ui: bool):
         return _confirm
 
 
+def _select_rerun_run_id(vault: Path, run: str | None, *, ui: bool) -> str:
+    if run:
+        return run
+    if not ui:
+        return latest_run_id(vault)
+
+    paths = initialize_vault(vault)
+    runs = load_run_records(paths)
+    if not runs:
+        raise typer.BadParameter(f"No runs found in vault: {paths.vault}")
+    try:
+        from .gui import GuiUnavailable, choose_rerun
+    except Exception as exc:  # pragma: no cover - defensive optional import path
+        console.print(f"Rerun UI unavailable ({exc}). Falling back to latest run.")
+        return latest_run_id(vault)
+    try:
+        selected = choose_rerun(runs, str(paths.vault))
+    except GuiUnavailable as exc:
+        console.print(f"Rerun UI unavailable ({exc}). Falling back to latest run.")
+        return latest_run_id(vault)
+    if selected is None:
+        console.print("Rerun canceled.")
+        raise typer.Exit(code=0)
+    return selected
+
+
 def _configure_ui(config: dict[str, Any]) -> dict[str, Any] | None:
     try:
         from .gui import GuiUnavailable, edit_configuration
@@ -317,6 +412,54 @@ def _shorten(value: object, limit: int = 76) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 1].rstrip() + "…"
+
+
+def _short_run_title(run) -> str:
+    title = (run.title or "").strip()
+    if title:
+        return title
+    prompt = " ".join((run.prompt or "").split())
+    return _shorten(prompt, 80)
+
+
+def _short_run_timestamp(run) -> str:
+    value = run.exported_at or run.date
+    if "T" in value:
+        return value[:16].replace("T", " ")
+    return value
+
+
+def _print_runs_table(vault: Path, *, limit: int | None = None) -> None:
+    paths = initialize_vault(vault)
+    runs = sorted(
+        load_run_records(paths),
+        key=lambda run: (run.exported_at or run.date, run.slug),
+        reverse=True,
+    )
+    if limit is not None and limit > 0:
+        runs = runs[:limit]
+    if not runs:
+        console.print(f"No runs found in {paths.vault}.")
+        return
+
+    console.print(f"Vault: {paths.vault}")
+    table = Table(title="Scholar Vault Runs")
+    table.add_column("Run ID", style="cyan", no_wrap=True)
+    table.add_column("Exported", no_wrap=True)
+    table.add_column("Sel/All", justify="right", no_wrap=True)
+    table.add_column("Left", justify="right", no_wrap=True)
+    table.add_column("Title")
+    for run in runs:
+        selected = sum(1 for result in run.results if result.status == "selected")
+        unmatched = sum(1 for result in run.results if result.status != "selected")
+        table.add_row(
+            run.slug,
+            _short_run_timestamp(run),
+            f"{selected}/{run.result_count or len(run.results)}",
+            str(unmatched),
+            _short_run_title(run),
+        )
+    console.print(table)
 
 
 def _detail_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
@@ -598,6 +741,7 @@ def _import_summary_lines(summary: dict[str, Any]) -> list[str]:
     skipped_commit = int(decisions.get("commit_proposals_skipped") or 0)
     not_committed = int(decisions.get("proposed_not_committed") or 0)
     without_candidate = int(decisions.get("results_without_candidate") or 0)
+    pdf_upgrades = int(decisions.get("pdf_upgrades") or 0)
     lines = [
         f"Processed run {summary['run']}.",
         (
@@ -643,6 +787,10 @@ def _import_summary_lines(summary: dict[str, Any]) -> list[str]:
             f"({citation_changed} updated, {citation_unchanged} unchanged); "
             f"abstracts checked {abstract_processed} cards "
             f"({abstract_changed} updated, {abstract_unchanged} unchanged)."
+        )
+    if pdf_upgrades:
+        lines.append(
+            f"- PDF upgrades: {pdf_upgrades} existing attachment(s) replaced from staging."
         )
     if review_prompts == 0 and selected:
         if reused == selected:
@@ -818,6 +966,15 @@ def init_command(vault: NewVaultArg) -> None:
     console.print(f"Initialized vault at {paths.vault}")
 
 
+@app.command("runs")
+@app.command("list-runs")
+def list_runs_command(
+    vault: VaultArg = None,
+    limit: int = typer.Option(30, "--limit", "-n", help="Maximum runs to show; 0 shows all."),
+) -> None:
+    _print_runs_table(_resolve_vault(vault), limit=None if limit == 0 else limit)
+
+
 @app.command("import-run")
 def import_run_command(
     export: ExportArg,
@@ -827,6 +984,7 @@ def import_run_command(
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
     archive_export: ArchiveExportArg = False,
+    upgrade_pdfs: UpgradePdfsArg = False,
     title: TitleArg = None,
     ui: UiArg = False,
 ) -> None:
@@ -844,6 +1002,7 @@ def import_run_command(
             include_without_pdf=include_without_pdf,
             archive_matched=False,
             archive_export=archive_export,
+            upgrade_pdfs=upgrade_pdfs,
             title=title,
             confirm=confirm,
             review_match=review_match,
@@ -864,6 +1023,7 @@ def import_labs_command(
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
     auto_enrich: AutoEnrichArg = True,
+    upgrade_pdfs: UpgradePdfsArg = False,
     archive_export: ArchiveExportArg = True,
     title: TitleArg = None,
     ui: UiArg = False,
@@ -886,6 +1046,7 @@ def import_labs_command(
             archive_matched=True,
             archive_export=archive_export,
             auto_enrich=auto_enrich,
+            upgrade_pdfs=upgrade_pdfs,
             title=title,
             confirm=confirm,
             review_match=review_match,
@@ -906,6 +1067,7 @@ def import_alias_command(
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
     auto_enrich: AutoEnrichArg = True,
+    upgrade_pdfs: UpgradePdfsArg = False,
     archive_export: ArchiveExportArg = True,
     title: TitleArg = None,
     ui: UiArg = False,
@@ -928,6 +1090,7 @@ def import_alias_command(
             archive_matched=True,
             archive_export=archive_export,
             auto_enrich=auto_enrich,
+            upgrade_pdfs=upgrade_pdfs,
             title=title,
             confirm=confirm,
             review_match=review_match,
@@ -1073,6 +1236,7 @@ def resume_command(
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     auto_enrich: AutoEnrichArg = True,
+    upgrade_pdfs: UpgradePdfsArg = False,
     ui: UiArg = False,
 ) -> None:
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
@@ -1086,6 +1250,7 @@ def resume_command(
             dry_run=dry_run,
             commit=commit,
             auto_enrich=auto_enrich,
+            upgrade_pdfs=upgrade_pdfs,
             confirm=confirm,
             review_match=review_match,
             progress=report,
@@ -1103,10 +1268,11 @@ def rerun_command(
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     auto_enrich: AutoEnrichArg = True,
+    upgrade_pdfs: UpgradePdfsArg = False,
     ui: UiArg = False,
 ) -> None:
     resolved_vault = _resolve_vault(vault)
-    run_id = run or latest_run_id(resolved_vault)
+    run_id = _select_rerun_run_id(resolved_vault, run, ui=ui)
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
     confirm = _confirm_callback(ui)
     progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
@@ -1118,6 +1284,7 @@ def rerun_command(
             dry_run=dry_run,
             commit=commit,
             auto_enrich=auto_enrich,
+            upgrade_pdfs=upgrade_pdfs,
             confirm=confirm,
             review_match=review_match,
             progress=report,
@@ -1135,10 +1302,11 @@ def re_run_command(
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     auto_enrich: AutoEnrichArg = True,
+    upgrade_pdfs: UpgradePdfsArg = False,
     ui: UiArg = False,
 ) -> None:
     resolved_vault = _resolve_vault(vault)
-    run_id = run or latest_run_id(resolved_vault)
+    run_id = _select_rerun_run_id(resolved_vault, run, ui=ui)
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
     confirm = _confirm_callback(ui)
     progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
@@ -1150,6 +1318,7 @@ def re_run_command(
             dry_run=dry_run,
             commit=commit,
             auto_enrich=auto_enrich,
+            upgrade_pdfs=upgrade_pdfs,
             confirm=confirm,
             review_match=review_match,
             progress=report,

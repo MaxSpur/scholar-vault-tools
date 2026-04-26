@@ -63,6 +63,17 @@ Verify that the command is on your `PATH`:
 scholar-vault --help
 ```
 
+From Fish, install tab completion for command names, options, and vault-backed
+values such as run IDs:
+
+```fish
+scholar-vault --install-completion
+exec fish
+```
+
+Use `scholar-vault --show-completion` from Fish if you want to inspect the
+generated completion script instead of installing it.
+
 Run the test suite if you are developing the tool:
 
 ```fish
@@ -412,6 +423,26 @@ directly: the tool opens the PDF, shows a paste field for text copied from
 Preview or another PDF reader, repairs common PDF line breaks and hyphenated
 line wraps, then saves the result through the same locked manual-abstract path.
 
+List previous Scholar Labs runs when you need to find a run ID for `resume`,
+`rerun`, `rename-run`, or `undo`:
+
+```fish
+scholar-vault runs
+scholar-vault runs --limit 10
+```
+
+`list-runs` is an alias. Once shell completion is installed, `--run` values are
+completed from the configured vault, so `scholar-vault rerun --run <tab>` shows
+recorded run IDs.
+
+For the desktop workflow, omit `--run` and pass `--ui` to choose from a run
+browser with run IDs, titles, exported dates, selected/result counts, unresolved
+counts, and staged-PDF history:
+
+```fish
+scholar-vault rerun --ui
+```
+
 Resume a previous run using the export and staging folder already recorded in `runs/<run_id>/index.yaml`:
 
 ```fish
@@ -428,6 +459,15 @@ Rerun a specific run if needed:
 
 ```fish
 scholar-vault rerun --vault ~/Documents/Research/scholar-labs-vault --run 2026-04-22_example-prompt --commit
+```
+
+If a selected paper already has a PDF but you later download a better
+publisher/full-text version into staging, rerun with PDF upgrades enabled. This
+keeps normal reruns idempotent, but scores staged PDFs against already attached
+cards and opens the match-review UI before replacing a canonical attachment:
+
+```fish
+scholar-vault rerun --vault ~/Documents/Research/scholar-labs-vault --run 2026-04-22_example-prompt --ui --upgrade-pdfs
 ```
 
 Rename an existing run note for Obsidian Graph:

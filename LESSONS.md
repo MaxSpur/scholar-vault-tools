@@ -7,6 +7,9 @@
 - The Scholar Labs browser exporter is DOM-specific. Treat `prompt == "Google Scholar"` or `results == []` as a broken export, not as an empty but valid import.
 - For Scholar Labs, the run is the place to keep all candidate results. `papers/` should default to selected/attached sources only, otherwise Obsidian and LLM navigation get noisy fast.
 - If a workflow is meant to empty matched PDFs out of staging, make that explicit in the command name. The lower-level importer should stay safe by default, and the user-facing Labs convenience command can opt into verified copy-then-archive behavior.
+- Re-running a Scholar Labs JSON should stay idempotent by default, but better replacement PDFs need an explicit upgrade mode that reviews staged candidates even when a prior manifest already selected the paper.
+- Rerun workflows need discoverability as much as idempotence. Keep previous run IDs listable from the CLI and shell-completable from the configured vault so users do not have to inspect `runs/*/index.yaml` manually.
+- Preserve script defaults but make GUI defaults explicit. A terminal `rerun` can reuse the latest run, while `rerun --ui` should show a chooser before starting work.
 - When moving user-facing input files for workflow hygiene, update all provenance paths that future commands use. Archiving a used JSON export is only useful if `resume` still points at the moved file.
 - Prefer moving used exports into a folder over renaming them. Scholar Labs prompt-derived JSON names can already be long enough to approach filesystem limits.
 - When defaulting to the "latest" browser export, only consider top-level `.json` files in the configured exports folder or staging fallback. Ignore `used/` so reruns do not accidentally re-ingest archived exports.

@@ -4,6 +4,8 @@ from click.exceptions import Exit
 from typer.testing import CliRunner
 
 from scholar_vault.cli import (
+    _complete_only_modes,
+    _complete_run_ids,
     _enrichment_progress_reporter,
     _import_summary_lines,
     _with_progress,
@@ -11,6 +13,7 @@ from scholar_vault.cli import (
 )
 from scholar_vault.importer import initialize_vault
 from scholar_vault.models import ImportCanceled, MatchReviewAbort
+from scholar_vault.sources import write_yaml
 
 
 def test_interactive_progress_uses_plain_lines(capsys) -> None:
@@ -172,6 +175,68 @@ def test_import_finish_keeps_progress_until_followup(monkeypatch) -> None:
     cli._finish_import_workflow(summary, ui=True, progress_ui=Progress())
 
     assert events == ["summary", "report:True:True", "followup:True", "close-progress"]
+
+
+def test_runs_command_lists_previous_runs(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    run_id = "2026-04-22_example-run"
+    write_yaml(
+        paths.runs / run_id / "index.yaml",
+        {
+            "slug": run_id,
+            "date": "2026-04-22",
+            "prompt": "find useful papers",
+            "title": "Papers",
+            "exported_at": "2026-04-22T10:00:00+02:00",
+            "export_file": "/tmp/export.json",
+            "raw_export_file": "raw/scholar-labs/export.json",
+            "staging_folder": "/tmp/staging",
+            "result_count": 2,
+            "results": [
+                {"rank": 1, "title": "Selected", "status": "selected"},
+                {"rank": 2, "title": "Missing", "status": "unmatched"},
+            ],
+        },
+    )
+
+    result = CliRunner().invoke(app, ["runs", "--vault", str(vault)])
+
+    assert result.exit_code == 0
+    assert run_id in result.output
+    assert "Papers" in result.output
+    assert "1" in result.output
+    assert "2" in result.output
+
+
+def test_run_completion_uses_vault_runs(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    run_id = "2026-04-22_example-run"
+    write_yaml(
+        paths.runs / run_id / "index.yaml",
+        {
+            "slug": run_id,
+            "date": "2026-04-22",
+            "prompt": "find useful papers",
+            "exported_at": "2026-04-22T10:00:00+02:00",
+            "export_file": "/tmp/export.json",
+            "raw_export_file": "raw/scholar-labs/export.json",
+            "staging_folder": "/tmp/staging",
+            "result_count": 0,
+            "results": [],
+        },
+    )
+
+    class Ctx:
+        params = {"vault": vault}
+
+    assert _complete_run_ids(Ctx(), [], "2026-04") == [run_id]
+    assert _complete_only_modes("missing-") == [
+        "missing-doi",
+        "missing-bibtex",
+        "missing-abstract",
+    ]
 
 
 def test_rebuild_command_prints_summary(tmp_path) -> None:
