@@ -9,7 +9,11 @@ from typer.testing import CliRunner
 
 from scholar_vault.cli import app
 from scholar_vault.config import latest_export_json
-from scholar_vault.importer import import_scholar_labs_run, initialize_vault
+from scholar_vault.importer import (
+    PDF_SCAN_CACHE_FILENAME,
+    import_scholar_labs_run,
+    initialize_vault,
+)
 
 
 def _write_export(path: Path, *, prompt: str, exported_at: str) -> Path:
@@ -56,9 +60,12 @@ def test_latest_export_json_ignores_used_subfolder(tmp_path: Path) -> None:
         prompt="used prompt that should be ignored",
         exported_at="2026-04-24T10:00:00+02:00",
     )
+    cache = exports / PDF_SCAN_CACHE_FILENAME
+    cache.write_text("{}", encoding="utf-8")
     os.utime(old, (1, 1))
     os.utime(new, (2, 2))
     os.utime(used_newer, (3, 3))
+    os.utime(cache, (4, 4))
 
     assert latest_export_json(exports) == new.resolve()
 

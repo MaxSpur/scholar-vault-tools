@@ -55,5 +55,6 @@
 - Keep run IDs and Obsidian run-note titles separate. The run ID is for idempotence and manifests; the short title is for human navigation and Graph labels.
 - When asking for a run title, show the full Scholar Labs prompt from the JSON. The title decision depends on the prompt context, so truncated prompt text is not enough.
 - If a user renames a generated run note in Obsidian, preserve that filename through `note_file`; do not slugify it back into a machine-looking name during rebuild.
+- Staging-side caches should not use a `.json` suffix. `import-labs` discovers the newest top-level JSON export, so cache files need a hidden non-JSON name.
 - Rebuild must rerender generated paper Markdown when templates change. Metadata-only rebuilds leave old body layout problems such as missing Quick access sections in existing cards.
 - PyYAML parses unquoted timestamp scalars into `datetime`/`date` objects. Normalize frontmatter-loaded date values back to ISO strings before Pydantic model validation.

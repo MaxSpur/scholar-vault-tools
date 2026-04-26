@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import shutil
 from collections.abc import Callable
@@ -33,6 +34,7 @@ from .models import (
     Link,
     MatchDecision,
     MatchReviewRequest,
+    PdfCandidate,
     RationalePoint,
     RunRecord,
     RunResultRecord,
@@ -88,6 +90,9 @@ from .sources import (
 ConfirmCallback = Callable[[str], bool]
 MatchReviewCallback = Callable[[MatchReviewRequest], bool]
 ProgressCallback = Callable[[str, int | None, int | None], None]
+
+PDF_SCAN_CACHE_FILENAME = ".scholar-vault-pdf-scan-cache"
+PDF_SCAN_CACHE_SCHEMA_VERSION = 1
 
 
 def _now_iso() -> str:
@@ -966,6 +971,119 @@ def _report_match_progress(
         )
 
 
+def _pdf_scan_cache_path(staging_dir: Path) -> Path:
+    return staging_dir / PDF_SCAN_CACHE_FILENAME
+
+
+def _load_pdf_scan_cache(staging_dir: Path) -> dict[str, Any]:
+    cache_path = _pdf_scan_cache_path(staging_dir)
+    if not cache_path.exists():
+        return {"schema_version": PDF_SCAN_CACHE_SCHEMA_VERSION, "entries": {}}
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"schema_version": PDF_SCAN_CACHE_SCHEMA_VERSION, "entries": {}}
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != PDF_SCAN_CACHE_SCHEMA_VERSION
+    ):
+        return {"schema_version": PDF_SCAN_CACHE_SCHEMA_VERSION, "entries": {}}
+    entries = payload.get("entries")
+    if not isinstance(entries, dict):
+        payload["entries"] = {}
+    return payload
+
+
+def _pdf_cache_entry_key(path: Path) -> str:
+    return path.name
+
+
+def _pdf_cache_stat(path: Path) -> dict[str, int]:
+    stat = path.stat()
+    return {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+
+
+def _cached_pdf_candidate(
+    cache: dict[str, Any],
+    path: Path,
+) -> PdfCandidate | None:
+    entries = cache.get("entries")
+    if not isinstance(entries, dict):
+        return None
+    entry = entries.get(_pdf_cache_entry_key(path))
+    if not isinstance(entry, dict):
+        return None
+    try:
+        current = _pdf_cache_stat(path)
+    except OSError:
+        return None
+    if entry.get("size") != current["size"] or entry.get("mtime_ns") != current["mtime_ns"]:
+        return None
+    candidate_data = entry.get("candidate")
+    if not isinstance(candidate_data, dict):
+        return None
+    candidate_data = dict(candidate_data)
+    candidate_data["path"] = str(path)
+    try:
+        return PdfCandidate.model_validate(candidate_data)
+    except ValidationError:
+        return None
+
+
+def _write_pdf_scan_cache(
+    staging_dir: Path,
+    candidates: list[PdfCandidate],
+) -> None:
+    entries: dict[str, Any] = {}
+    for candidate in candidates:
+        path = Path(candidate.path)
+        try:
+            stat = _pdf_cache_stat(path)
+        except OSError:
+            continue
+        entries[_pdf_cache_entry_key(path)] = {
+            **stat,
+            "candidate": candidate.model_dump(mode="json"),
+        }
+    try:
+        write_json(
+            _pdf_scan_cache_path(staging_dir),
+            {
+                "schema_version": PDF_SCAN_CACHE_SCHEMA_VERSION,
+                "entries": entries,
+            },
+        )
+    except OSError:
+        pass
+
+
+def _build_staged_pdf_candidates(
+    staging_dir: Path,
+    staged_pdf_paths: list[Path],
+    *,
+    dry_run: bool,
+    progress: ProgressCallback | None,
+) -> tuple[list[PdfCandidate], int]:
+    cache = _load_pdf_scan_cache(staging_dir)
+    candidates: list[PdfCandidate] = []
+    cache_hits = 0
+    total = len(staged_pdf_paths)
+    for index, path in enumerate(staged_pdf_paths, start=1):
+        cached = _cached_pdf_candidate(cache, path)
+        if cached is not None:
+            cache_hits += 1
+            if progress:
+                progress(f"Using cached staged PDF scan {path.name}", index, total)
+            candidates.append(cached)
+            continue
+        if progress:
+            progress(f"Scanning staged PDF {path.name}", index, total)
+        candidates.append(build_pdf_candidate(path))
+    if not dry_run:
+        _write_pdf_scan_cache(staging_dir, candidates)
+    return candidates, cache_hits
+
+
 def _run_title_from_inputs(
     export: ScholarLabsExport,
     existing_run: RunRecord | None,
@@ -1052,11 +1170,12 @@ def import_scholar_labs_run(
     staged_pdf_paths = sorted(staging_dir.glob("*.pdf"))
     if progress:
         progress(f"Scanning {len(staged_pdf_paths)} staged PDFs", 0, len(staged_pdf_paths))
-    candidates = []
-    for index, path in enumerate(staged_pdf_paths, start=1):
-        if progress:
-            progress(f"Scanning staged PDF {path.name}", index, len(staged_pdf_paths))
-        candidates.append(build_pdf_candidate(path))
+    candidates, pdf_scan_cache_hits = _build_staged_pdf_candidates(
+        staging_dir,
+        staged_pdf_paths,
+        dry_run=dry_run,
+        progress=progress,
+    )
     remaining = list(candidates)
     run_results: list[RunResultRecord] = []
     manifest_entries: list[ImportManifestEntry] = []
@@ -1069,6 +1188,7 @@ def import_scholar_labs_run(
         "existing_run": bool(existing_run),
         "export_results": len(export.results),
         "staged_pdfs_scanned": len(staged_pdf_paths),
+        "staged_pdf_cache_hits": pdf_scan_cache_hits,
         "prior_selected_reused": 0,
         "existing_cards_linked": 0,
         "new_staged_pdf_matches": 0,

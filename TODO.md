@@ -47,5 +47,6 @@
 - [x] Make Scholar Labs imports/resumes check staged PDFs as replacement candidates by default, with `--keep-existing-pdfs` as the opt-out.
 - [x] Add `runs` / `list-runs` discovery plus shell completion for run IDs, citekeys, and constrained CLI option values.
 - [x] Add a `rerun --ui` run picker for choosing previous Scholar Labs runs with counts and provenance details.
+- [x] Cache staged PDF scan metadata in the staging folder so mixed-run staging folders do not repeat expensive PDF text extraction on every import.
 - [ ] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

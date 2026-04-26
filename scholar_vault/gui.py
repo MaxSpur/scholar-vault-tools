@@ -1342,6 +1342,12 @@ def _progress_parts(message: str) -> tuple[str, str, str]:
             "Extracting PDF title, DOI, year, and first-page text",
             text.removeprefix("Scanning staged PDF "),
         )
+    if text.startswith("Using cached staged PDF scan "):
+        return (
+            "PDF SCAN",
+            "Using cached PDF title, DOI, year, and first-page text",
+            text.removeprefix("Using cached staged PDF scan "),
+        )
     match = re.fullmatch(r"Matching Scholar Labs result (\d+) \[([^\]]+)\]: (.+)", text)
     if match:
         rank, status, rest = match.groups()
@@ -2079,6 +2085,7 @@ def _import_summary_model(summary: dict[str, Any], lines: list[str]) -> dict[str
     linked = _summary_int(decisions.get("existing_cards_linked"))
     new_matches = _summary_int(decisions.get("new_staged_pdf_matches"))
     without_candidate = _summary_int(decisions.get("results_without_candidate"))
+    scan_cache_hits = _summary_int(decisions.get("staged_pdf_cache_hits"))
     citation_changed = _summary_int(citations.get("changed"))
     abstract_changed = _summary_int(abstracts.get("changed"))
     pdf_upgrades = _summary_int(decisions.get("pdf_upgrades"))
@@ -2161,6 +2168,7 @@ def _import_summary_model(summary: dict[str, Any], lines: list[str]) -> dict[str
                 without_candidate,
                 "#ff3b4f" if without_candidate else "#426b58",
             ),
+            ("PDF scan cache", scan_cache_hits, "#45ffb0" if scan_cache_hits else "#426b58"),
             ("Rejected in review", review_rejected, "#ff3b4f" if review_rejected else "#426b58"),
             ("PDF upgrades", pdf_upgrades, "#45ffb0" if pdf_upgrades else "#426b58"),
             ("Citation updates", citation_changed, "#45ffb0" if citation_changed else "#426b58"),

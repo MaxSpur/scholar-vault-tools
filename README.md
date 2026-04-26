@@ -211,6 +211,7 @@ Default Scholar Labs behavior is now selected-only:
 - `import-run` is the lower-level transactional variant. It copies accepted PDFs into `pdfs/` but leaves staging untouched unless you later run `clean-staging`.
 - Most commands that accept `--vault`, and commands that accept `--staging`, can use configured defaults when those options are omitted.
 - Import and enrichment commands show terminal progress while scanning PDFs, matching results, querying metadata providers, and rebuilding derived files.
+- Staged PDF scan results are cached in `.scholar-vault-pdf-scan-cache` inside the staging folder. Repeated imports reuse cached title, DOI, year, text, and hash data when a PDF's size and modification time are unchanged.
 
 Run notes are written as `runs/<run_id>/<Short Title.md>` instead of
 `index.md`. This gives Obsidian Graph and the file sidebar meaningful run/prompt

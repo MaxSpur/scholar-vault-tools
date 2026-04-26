@@ -858,6 +858,11 @@ def _import_summary_lines(summary: dict[str, Any]) -> list[str]:
     not_committed = int(decisions.get("proposed_not_committed") or 0)
     without_candidate = int(decisions.get("results_without_candidate") or 0)
     pdf_upgrades = int(decisions.get("pdf_upgrades") or 0)
+    scanned_pdfs = int(decisions.get("staged_pdfs_scanned") or 0)
+    scan_cache_hits = int(decisions.get("staged_pdf_cache_hits") or 0)
+    scan_cache_part = (
+        f"{scan_cache_hits} reused from scan cache; " if scan_cache_hits else ""
+    )
     lines = [
         f"Processed run {summary['run']}.",
         (
@@ -877,7 +882,8 @@ def _import_summary_lines(summary: dict[str, Any]) -> list[str]:
         ),
         (
             "- Staging: "
-            f"{int(decisions.get('staged_pdfs_scanned') or 0)} PDFs scanned; "
+            f"{scanned_pdfs} PDFs found; "
+            f"{scan_cache_part}"
             f"{int(summary.get('unmatched') or 0)} unmatched PDFs remain; "
             f"{int(summary.get('archived') or 0)} matched staging PDFs archived."
         ),

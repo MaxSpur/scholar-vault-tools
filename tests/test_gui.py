@@ -140,6 +140,11 @@ def test_progress_parts_name_import_substages() -> None:
         "Extracting PDF title, DOI, year, and first-page text",
         "example.pdf",
     )
+    assert _progress_parts("Using cached staged PDF scan example.pdf") == (
+        "PDF SCAN",
+        "Using cached PDF title, DOI, year, and first-page text",
+        "example.pdf",
+    )
     assert _progress_parts("Enriching abstracts [skipped]: nafis2024paper") == (
         "ABSTRACT ENRICHMENT",
         "SKIPPED // no change; existing state, lock, cache, or retry rule",

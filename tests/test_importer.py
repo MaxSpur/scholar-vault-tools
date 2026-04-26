@@ -8,6 +8,7 @@ from pypdf import PdfWriter
 
 from scholar_vault.citations import EnrichmentResult
 from scholar_vault.importer import (
+    PDF_SCAN_CACHE_FILENAME,
     cleanup_run_selected_only,
     import_bibtex,
     import_pdf_dropins,
@@ -23,6 +24,7 @@ from scholar_vault.importer import (
 )
 from scholar_vault.models import (
     MatchReviewAbort,
+    PdfCandidate,
     RunRecord,
     RunResultRecord,
     ScholarLabsResult,
@@ -161,6 +163,65 @@ def test_import_run_uses_export_title_for_run_note(tmp_path: Path) -> None:
 
     assert run_yaml["title"] == "Curated Mobility Sources"
     assert (vault / "runs" / run_id / "Curated Mobility Sources.md").exists()
+
+
+def test_import_run_reuses_staged_pdf_scan_cache(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_export(exports / "sample.json", 1)
+    _write_pdf_with_title(staging / "paper-1.pdf", "Result Paper 1")
+
+    import_scholar_labs_run(vault, export_path, staging, commit=True)
+    cache_path = staging / PDF_SCAN_CACHE_FILENAME
+
+    assert cache_path.exists()
+
+    def fail_build(_path: Path) -> PdfCandidate:
+        raise AssertionError("cached PDF scan should be reused")
+
+    monkeypatch.setattr("scholar_vault.importer.build_pdf_candidate", fail_build)
+
+    summary = import_scholar_labs_run(vault, export_path, staging, commit=True)
+
+    assert summary["decision_summary"]["staged_pdf_cache_hits"] == 1
+
+
+def test_import_run_refreshes_stale_pdf_scan_cache(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_export(exports / "sample.json", 1)
+    pdf_path = staging / "paper-1.pdf"
+    _write_pdf_with_title(pdf_path, "Result Paper 1")
+
+    import_scholar_labs_run(vault, export_path, staging, commit=True)
+    pdf_path.write_bytes(pdf_path.read_bytes() + b"\n% changed")
+    calls = []
+
+    def fake_build(path: Path) -> PdfCandidate:
+        calls.append(path)
+        return PdfCandidate(
+            path=str(path),
+            title="Result Paper 1",
+            doi=None,
+            year=2024,
+            text_excerpt="",
+            metadata={},
+            sha256="changed",
+            size=path.stat().st_size,
+        )
+
+    monkeypatch.setattr("scholar_vault.importer.build_pdf_candidate", fake_build)
+
+    summary = import_scholar_labs_run(vault, export_path, staging, commit=True)
+
+    assert calls == [pdf_path]
+    assert summary["decision_summary"]["staged_pdf_cache_hits"] == 0
 
 
 def test_resume_promotes_export_title_when_existing_title_was_inferred(tmp_path: Path) -> None:
