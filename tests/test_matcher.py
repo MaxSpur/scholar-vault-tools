@@ -109,6 +109,48 @@ def test_best_pdf_match_rejects_short_first_page_text_overlap_false_positive() -
     assert decision.score < 70
 
 
+def test_best_pdf_match_rejects_short_subset_text_line_false_positive() -> None:
+    candidate = PdfCandidate(
+        path="/tmp/ZhouZhangYe24.pdf",
+        title=(
+            "A multi-hierarchical method to extract spatial network structures "
+            "from large-scale origin-destinatio"
+        ),
+        doi="10.1080/13658816.2023.2301305",
+        year=2024,
+        text_excerpt=(
+            "International Journal of Geographical Information Science\n"
+            "A multi-hierarchical method to extract spatial\n"
+            "network structures from large-scale origin-\n"
+            "destination flow data\n"
+        ),
+    )
+
+    decision = best_pdf_match(
+        "Origin-destination flow data smoothing and mapping",
+        [candidate],
+    )
+
+    assert score_title_match(
+        "Origin-destination flow data smoothing and mapping",
+        "destination flow data",
+    ) < 70
+    assert decision.decision == "skip"
+    assert decision.score < 70
+
+
+def test_best_pdf_match_allows_bibliographic_suffix_noise() -> None:
+    candidate = PdfCandidate(
+        path="/tmp/paper-1-published.pdf",
+        title="Result Paper 1 Published Version",
+    )
+
+    decision = best_pdf_match("Result Paper 1", [candidate])
+
+    assert decision.decision == "auto"
+    assert decision.score == 100
+
+
 def test_match_candidate_to_existing_card_by_title() -> None:
     candidate = PdfCandidate(
         path="/tmp/example.pdf",

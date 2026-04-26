@@ -16,6 +16,18 @@ STRONG_FILENAME_SCORE = 85
 UNCONFIRMED_FILENAME_CAP = REVIEW_MATCH_SCORE - 1
 MIN_SMALLER_TOKEN_OVERLAP = 0.55
 MIN_LARGER_TOKEN_OVERLAP = 0.35
+MATCH_BOILERPLATE_TOKENS = {
+    "accepted",
+    "article",
+    "author",
+    "copy",
+    "final",
+    "manuscript",
+    "preprint",
+    "proof",
+    "published",
+    "version",
+}
 
 
 def extract_pdf_text_excerpt(path: Path, *, max_pages: int = 3) -> str:
@@ -108,11 +120,13 @@ def score_title_match(left: str | None, right: str | None) -> int:
         normalized_left,
         normalized_right,
     ):
+        cap = _partial_title_score_cap(normalized_left, normalized_right)
         scores.extend(
-            [
+            min(score, cap)
+            for score in (
                 fuzz.token_set_ratio(normalized_left, normalized_right),
                 fuzz.partial_ratio(normalized_left, normalized_right),
-            ]
+            )
         )
     return int(round(max(scores)))
 
@@ -121,7 +135,7 @@ def _title_tokens(normalized_text: str) -> set[str]:
     return {
         token
         for token in re.findall(r"[a-z0-9]+", normalized_text)
-        if token not in STOPWORDS and len(token) >= 3
+        if token not in STOPWORDS and token not in MATCH_BOILERPLATE_TOKENS and len(token) >= 3
     }
 
 
@@ -138,6 +152,21 @@ def _has_substantial_overlap(normalized_left: str, normalized_right: str) -> boo
         and len(overlap) / smaller_count >= MIN_SMALLER_TOKEN_OVERLAP
         and len(overlap) / larger_count >= MIN_LARGER_TOKEN_OVERLAP
     )
+
+
+def _partial_title_score_cap(normalized_left: str, normalized_right: str) -> int:
+    left_tokens = _title_tokens(normalized_left)
+    right_tokens = _title_tokens(normalized_right)
+    if not left_tokens or not right_tokens:
+        return 100
+    overlap = left_tokens & right_tokens
+    larger_count = max(len(left_tokens), len(right_tokens))
+    larger_coverage = len(overlap) / larger_count
+    if larger_coverage < 0.7:
+        return int(round(larger_coverage * 100))
+    if larger_coverage < 0.85:
+        return 89
+    return 100
 
 
 def _has_substantial_containment(normalized_left: str, normalized_right: str) -> bool:
