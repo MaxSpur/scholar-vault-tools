@@ -1370,17 +1370,19 @@ def _progress_parts(message: str) -> tuple[str, str, str]:
     match = re.fullmatch(r"Enriching citations \[([^\]]+)\]: (.+)", text)
     if match:
         status = match.group(1)
+        label, detail = _enrichment_status_parts(status, abstracts=False)
         return (
             "CITATION ENRICHMENT",
-            f"{status.upper()} // {_enrichment_status_detail(status, abstracts=False)}",
+            f"{label} // {detail}",
             match.group(2),
         )
     match = re.fullmatch(r"Enriching abstracts \[([^\]]+)\]: (.+)", text)
     if match:
         status = match.group(1)
+        label, detail = _enrichment_status_parts(status, abstracts=True)
         return (
             "ABSTRACT ENRICHMENT",
-            f"{status.upper()} // {_enrichment_status_detail(status, abstracts=True)}",
+            f"{label} // {detail}",
             match.group(2),
         )
     match = re.fullmatch(r"([^:]+): ([A-Za-z_-]+)", text)
@@ -1393,6 +1395,18 @@ def _progress_parts(message: str) -> tuple[str, str, str]:
     if text == "Rebuilding indexes and exports":
         return "REBUILD", "Regenerating paper cards, indexes, and export files", ""
     return "PROCESSING", "Running current workflow step", text
+
+
+def _enrichment_status_parts(status: str, *, abstracts: bool) -> tuple[str, str]:
+    for prefix, label in (
+        ("attempt:", "ATTEMPT"),
+        ("result:", "RESULT"),
+        ("skip-pass:", "SKIP"),
+    ):
+        if status.startswith(prefix):
+            detail = status.removeprefix(prefix).strip()
+            return label, detail or "provider pass"
+    return status.upper(), _enrichment_status_detail(status, abstracts=abstracts)
 
 
 def _enrichment_status_detail(status: str, *, abstracts: bool) -> str:
@@ -1440,10 +1454,13 @@ def _progress_log_color(message: str) -> str:
         or "[reused]" in lowered
     ):
         return "#69ffad"
+    if "[result:" in lowered:
+        return "#8ce7b8"
     if "[generated]" in lowered or "[manual_lock]" in lowered:
         return "#8bffd0"
     if (
         "[checking]" in lowered
+        or "[attempt:" in lowered
         or "[prior]" in lowered
         or "[card]" in lowered
         or "[pdf]" in lowered
@@ -1454,6 +1471,7 @@ def _progress_log_color(message: str) -> str:
         return "#ffb000"
     if (
         "[skipped]" in lowered
+        or "[skip-pass:" in lowered
         or "[card-none]" in lowered
         or "[below-threshold]" in lowered
         or "[pdf-none]" in lowered

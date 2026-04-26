@@ -42,6 +42,7 @@
 - Follow-up UI rows should foreground the issue message and route directly to a resolution action. Missing abstracts need PDF opening, paste cleanup, and manual-lock saving in one path.
 - Progress windows should not show raw status strings as the main label. Parse workflow messages into stage, substage, current item, and a short recent-step log so the user can tell what phase is active.
 - For long enrichment runs, append progress events to a scrolling log instead of replacing a single line. Color status lines so skipped, unresolved, verified, and completed work are easy to scan.
+- Enrichment progress should log the provider pass structure, not only card start/end states. Emit attempt/result/skip events around local DOI/PDF scans, Crossref, OpenAlex, Europe PMC, DataCite, DOI content negotiation, and final writes.
 - Split progress history from current item identity without creating competing side-by-side logs. Keep one main output stream, and use a compact top-right identifier stream for citekeys, ranks, or shortened filenames only.
 - Matching progress should report the actual decision checkpoints, not one repeated "matching" line. Show prior-manifest, vault-card, staged-PDF score, review, and final decision as separate color-coded events.
 - Match-review UI should use a paper-like white background because the primary task is visual comparison with a PDF preview. Keep title, PDF preview, confidence source, and accept/reject controls dominant.

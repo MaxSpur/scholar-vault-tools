@@ -36,6 +36,7 @@ OnlyMode = Literal["all", "missing-doi", "missing-bibtex", "missing-abstract"]
 FetchJson = Callable[[str, Path, bool], dict[str, Any] | list[Any] | None]
 FetchText = Callable[[str, Path, bool, dict[str, str]], str | None]
 EnrichmentProgress = Callable[[SourceCard, int, int, str], None]
+EnrichmentDetailProgress = Callable[[str], None]
 
 GENERATED_CITATION_STATUSES = {"generated", "verified"}
 FAILED_CITATION_STATUSES = {"ambiguous", "unresolved"}
@@ -1052,6 +1053,94 @@ def _http_text(url: str, cache_path: Path, refresh: bool, headers: dict[str, str
     return None
 
 
+def _safe_progress_status(value: str) -> str:
+    return value.replace("[", "(").replace("]", ")")
+
+
+def _emit_detail(progress: EnrichmentDetailProgress | None, status: str) -> None:
+    if progress:
+        progress(_safe_progress_status(status))
+
+
+def _cache_progress_label(cache_path: Path, refresh: bool) -> str:
+    if cache_path.exists() and not refresh:
+        return "cache hit"
+    if refresh and cache_path.exists():
+        return "cache refresh"
+    return "network request"
+
+
+def _attempt_detail(
+    progress: EnrichmentDetailProgress | None,
+    label: str,
+    *,
+    cache_path: Path | None = None,
+    refresh: bool = False,
+) -> None:
+    cache_part = f" ({_cache_progress_label(cache_path, refresh)})" if cache_path else ""
+    _emit_detail(progress, f"attempt:{label}{cache_part}")
+
+
+def _result_detail(
+    progress: EnrichmentDetailProgress | None,
+    label: str,
+    detail: str,
+) -> None:
+    _emit_detail(progress, f"result:{label} -> {detail}")
+
+
+def _skip_pass_detail(
+    progress: EnrichmentDetailProgress | None,
+    label: str,
+    reason: str,
+) -> None:
+    _emit_detail(progress, f"skip-pass:{label}; {reason}")
+
+
+def _count_phrase(count: int, singular: str, plural: str | None = None) -> str:
+    word = singular if count == 1 else plural or f"{singular}s"
+    return f"{count} {word}"
+
+
+def _metadata_candidates_summary(candidates: list[CitationCandidate]) -> str:
+    if not candidates:
+        return "0 metadata candidates"
+    best = max(candidates, key=lambda candidate: candidate.score)
+    parts = [
+        _count_phrase(len(candidates), "metadata candidate"),
+        f"best={best.source or 'unknown'}",
+        f"score={best.score}",
+    ]
+    if best.doi:
+        parts.append(f"doi={best.doi}")
+    return "; ".join(parts)
+
+
+def _abstract_candidates_summary(candidates: list[AbstractCandidate]) -> str:
+    if not candidates:
+        return "0 abstract candidates"
+    best = max(candidates, key=lambda candidate: candidate.confidence)
+    parts = [
+        _count_phrase(len(candidates), "abstract candidate"),
+        f"best={best.source or 'unknown'}",
+        f"confidence={best.confidence:.2f}",
+    ]
+    if best.metadata and best.metadata.score:
+        parts.append(f"metadata_score={best.metadata.score}")
+    return "; ".join(parts)
+
+
+def _local_scan_summary(
+    *,
+    doi: str | None,
+    doi_source: str | None,
+    keyword_changed: bool,
+) -> str:
+    doi_part = f"doi={doi} ({doi_source or 'unknown'})" if doi else "doi=none"
+    keyword_part = "keywords=updated" if keyword_changed else "keywords=unchanged"
+    return f"{doi_part}; {keyword_part}"
+
+
 def _record_detected_doi(card: SourceCard, doi: str, source: str | None, confidence: float) -> None:
     if not card.doi:
         card.doi = doi
@@ -1121,6 +1210,7 @@ def enrich_abstract_card(
     options: EnrichmentOptions,
     *,
     fetch_json: FetchJson = _http_json,
+    progress_detail: EnrichmentDetailProgress | None = None,
 ) -> EnrichmentResult:
     skip_reason = should_skip_abstract_card(card, options)
     if skip_reason:
@@ -1135,59 +1225,170 @@ def enrich_abstract_card(
     )
     work_dir = metadata_dir(paths, card)
     work_dir.mkdir(parents=True, exist_ok=True)
+    _attempt_detail(progress_detail, "local PDF and DOI scan")
     keyword_changed = _promote_keywords_from_pdf(paths, card)
 
     doi, doi_source, doi_confidence = detect_local_doi(paths, card)
     if doi:
         _record_detected_doi(card, doi, doi_source, doi_confidence)
+    _result_detail(
+        progress_detail,
+        "local PDF and DOI scan",
+        _local_scan_summary(doi=doi, doi_source=doi_source, keyword_changed=keyword_changed),
+    )
 
     candidates: list[AbstractCandidate] = []
     if card.doi:
+        cache_path = work_dir / "crossref.json"
+        _attempt_detail(
+            progress_detail,
+            "crossref DOI abstract lookup",
+            cache_path=cache_path,
+            refresh=cache_refresh,
+        )
         crossref_payload = fetch_json(
             _crossref_work_url(card.doi),
-            work_dir / "crossref.json",
+            cache_path,
             cache_refresh,
         )
+        provider_candidates: list[AbstractCandidate] = []
         if isinstance(crossref_payload, dict):
-            candidates.extend(crossref_abstract_candidates(crossref_payload, card))
+            provider_candidates = crossref_abstract_candidates(crossref_payload, card)
+            candidates.extend(provider_candidates)
+        _result_detail(
+            progress_detail,
+            "crossref DOI abstract lookup",
+            _abstract_candidates_summary(provider_candidates)
+            if isinstance(crossref_payload, dict)
+            else "no JSON response",
+        )
     else:
+        cache_path = work_dir / "crossref.json"
+        _attempt_detail(
+            progress_detail,
+            "crossref title abstract search",
+            cache_path=cache_path,
+            refresh=cache_refresh,
+        )
         crossref_payload = fetch_json(
             _crossref_url(card),
-            work_dir / "crossref.json",
+            cache_path,
             cache_refresh,
         )
+        provider_candidates = []
         if isinstance(crossref_payload, dict):
-            candidates.extend(crossref_abstract_candidates(crossref_payload, card))
+            provider_candidates = crossref_abstract_candidates(crossref_payload, card)
+            candidates.extend(provider_candidates)
+        _result_detail(
+            progress_detail,
+            "crossref title abstract search",
+            _abstract_candidates_summary(provider_candidates)
+            if isinstance(crossref_payload, dict)
+            else "no JSON response",
+        )
 
     # OpenAlex is useful corroboration for DOI records and fallback when Crossref lacks an abstract.
     if card.doi or not candidates:
+        cache_path = work_dir / "openalex.json"
+        _attempt_detail(
+            progress_detail,
+            "openalex abstract lookup",
+            cache_path=cache_path,
+            refresh=cache_refresh,
+        )
         openalex_payload = fetch_json(
             _openalex_abstract_url(card),
-            work_dir / "openalex.json",
+            cache_path,
             cache_refresh,
         )
+        provider_candidates = []
         if isinstance(openalex_payload, dict):
-            candidates.extend(openalex_abstract_candidates(openalex_payload, card))
+            provider_candidates = openalex_abstract_candidates(openalex_payload, card)
+            candidates.extend(provider_candidates)
+        _result_detail(
+            progress_detail,
+            "openalex abstract lookup",
+            _abstract_candidates_summary(provider_candidates)
+            if isinstance(openalex_payload, dict)
+            else "no JSON response",
+        )
+    else:
+        _skip_pass_detail(
+            progress_detail,
+            "openalex abstract lookup",
+            "crossref already returned abstract candidates and no DOI is available",
+        )
 
     if not candidates:
+        cache_path = work_dir / "europepmc.json"
+        _attempt_detail(
+            progress_detail,
+            "europepmc abstract lookup",
+            cache_path=cache_path,
+            refresh=cache_refresh,
+        )
         europepmc_payload = fetch_json(
             _europepmc_abstract_url(card),
-            work_dir / "europepmc.json",
+            cache_path,
             cache_refresh,
         )
+        provider_candidates = []
         if isinstance(europepmc_payload, dict):
-            candidates.extend(europepmc_abstract_candidates(europepmc_payload, card))
+            provider_candidates = europepmc_abstract_candidates(europepmc_payload, card)
+            candidates.extend(provider_candidates)
+        _result_detail(
+            progress_detail,
+            "europepmc abstract lookup",
+            _abstract_candidates_summary(provider_candidates)
+            if isinstance(europepmc_payload, dict)
+            else "no JSON response",
+        )
+    else:
+        _skip_pass_detail(
+            progress_detail,
+            "europepmc abstract lookup",
+            "provider candidates already available",
+        )
 
     if card.doi and not candidates:
+        cache_path = work_dir / "datacite.json"
+        _attempt_detail(
+            progress_detail,
+            "datacite abstract lookup",
+            cache_path=cache_path,
+            refresh=cache_refresh,
+        )
         datacite_payload = fetch_json(
             f"https://api.datacite.org/dois/{urllib.parse.quote(card.doi)}",
-            work_dir / "datacite.json",
+            cache_path,
             cache_refresh,
         )
+        provider_candidates = []
         if isinstance(datacite_payload, dict):
-            candidates.extend(datacite_abstract_candidates(datacite_payload, card))
+            provider_candidates = datacite_abstract_candidates(datacite_payload, card)
+            candidates.extend(provider_candidates)
+        _result_detail(
+            progress_detail,
+            "datacite abstract lookup",
+            _abstract_candidates_summary(provider_candidates)
+            if isinstance(datacite_payload, dict)
+            else "no JSON response",
+        )
+    elif card.doi:
+        _skip_pass_detail(
+            progress_detail,
+            "datacite abstract lookup",
+            "provider candidates already available",
+        )
+    else:
+        _skip_pass_detail(
+            progress_detail,
+            "datacite abstract lookup",
+            "no DOI available",
+        )
 
     if not candidates:
+        _attempt_detail(progress_detail, "PDF abstract fallback")
         pdf_path = _card_pdf_path(paths, card)
         if pdf_path:
             pdf_abstract = extract_pdf_abstract(extract_pdf_text_excerpt(pdf_path))
@@ -1200,9 +1401,33 @@ def enrich_abstract_card(
                         confidence=0.6,
                     )
                 )
+                _result_detail(
+                    progress_detail,
+                    "PDF abstract fallback",
+                    "1 abstract candidate",
+                )
+            else:
+                _result_detail(
+                    progress_detail,
+                    "PDF abstract fallback",
+                    "no acceptable abstract extracted",
+                )
+        else:
+            _result_detail(progress_detail, "PDF abstract fallback", "no attached PDF")
+    else:
+        _skip_pass_detail(
+            progress_detail,
+            "PDF abstract fallback",
+            "provider candidates already available",
+        )
 
     best, ambiguous = _best_abstract_candidate(card, candidates)
     if ambiguous and best:
+        _result_detail(
+            progress_detail,
+            "abstract selection",
+            f"ambiguous; best={best.source}; confidence={best.confidence:.2f}",
+        )
         card.abstract_status = "ambiguous"
         card.abstract_last_checked = checked_at
         card.abstract_input_fingerprint = abstract_fingerprint(card)
@@ -1215,11 +1440,21 @@ def enrich_abstract_card(
         )
 
     if best:
+        _result_detail(
+            progress_detail,
+            "abstract selection",
+            f"selected {best.source}; confidence={best.confidence:.2f}",
+        )
         if _existing_abstract_blocks_candidate(
             card,
             best,
             refresh=requested_refresh,
         ):
+            _result_detail(
+                progress_detail,
+                "abstract write",
+                "existing abstract kept because provenance is equal or stronger",
+            )
             card.abstract_last_checked = checked_at
             card.abstract_input_fingerprint = abstract_fingerprint(card)
             changed = card.enrichment_refresh or keyword_changed
@@ -1232,6 +1467,11 @@ def enrich_abstract_card(
                 skipped=True,
             )
         _accept_abstract_candidate(card, best, checked_at=checked_at)
+        _result_detail(
+            progress_detail,
+            "abstract write",
+            f"{card.abstract_status} from {best.source}",
+        )
         card.enrichment_refresh = False
         return EnrichmentResult(
             card.citekey or card.slug,
@@ -1240,6 +1480,7 @@ def enrich_abstract_card(
             changed=True,
         )
 
+    _result_detail(progress_detail, "abstract selection", "no acceptable abstract candidate")
     card.abstract_status = "unresolved"
     card.abstract_last_checked = checked_at
     card.abstract_input_fingerprint = abstract_fingerprint(card)
@@ -1259,9 +1500,16 @@ def enrich_card(
     *,
     fetch_json: FetchJson = _http_json,
     fetch_text: FetchText = _http_text,
+    progress_detail: EnrichmentDetailProgress | None = None,
 ) -> EnrichmentResult:
     if options.abstracts:
-        return enrich_abstract_card(paths, card, options, fetch_json=fetch_json)
+        return enrich_abstract_card(
+            paths,
+            card,
+            options,
+            fetch_json=fetch_json,
+            progress_detail=progress_detail,
+        )
 
     skip_reason = should_skip_card(card, options)
     if skip_reason:
@@ -1278,7 +1526,8 @@ def enrich_card(
     checked_at = now_iso()
     work_dir = metadata_dir(paths, card)
     work_dir.mkdir(parents=True, exist_ok=True)
-    _promote_keywords_from_pdf(paths, card)
+    _attempt_detail(progress_detail, "local PDF and DOI scan")
+    keyword_changed = _promote_keywords_from_pdf(paths, card)
 
     doi, doi_source, doi_confidence = detect_local_doi(paths, card)
     if doi and not card.doi:
@@ -1290,37 +1539,104 @@ def enrich_card(
         card.doi_status = "detected"
         card.doi_source = doi_source
         card.doi_confidence = doi_confidence
+    _result_detail(
+        progress_detail,
+        "local PDF and DOI scan",
+        _local_scan_summary(doi=doi, doi_source=doi_source, keyword_changed=keyword_changed),
+    )
 
     candidates: list[CitationCandidate] = []
     if not card.doi:
+        cache_path = work_dir / "crossref.json"
+        _attempt_detail(
+            progress_detail,
+            "crossref metadata search",
+            cache_path=cache_path,
+            refresh=cache_refresh,
+        )
         crossref_payload = fetch_json(
             _crossref_url(card),
-            work_dir / "crossref.json",
+            cache_path,
             cache_refresh,
         )
+        provider_candidates: list[CitationCandidate] = []
         if isinstance(crossref_payload, dict):
-            candidates.extend(crossref_candidates(crossref_payload, card))
+            provider_candidates = crossref_candidates(crossref_payload, card)
+            candidates.extend(provider_candidates)
+        _result_detail(
+            progress_detail,
+            "crossref metadata search",
+            _metadata_candidates_summary(provider_candidates)
+            if isinstance(crossref_payload, dict)
+            else "no JSON response",
+        )
 
+        cache_path = work_dir / "openalex.json"
+        _attempt_detail(
+            progress_detail,
+            "openalex metadata search",
+            cache_path=cache_path,
+            refresh=cache_refresh,
+        )
         openalex_payload = fetch_json(
             _openalex_url(card),
-            work_dir / "openalex.json",
+            cache_path,
             cache_refresh,
         )
+        provider_candidates = []
         if isinstance(openalex_payload, dict):
-            candidates.extend(openalex_candidates(openalex_payload, card))
+            provider_candidates = openalex_candidates(openalex_payload, card)
+            candidates.extend(provider_candidates)
+        _result_detail(
+            progress_detail,
+            "openalex metadata search",
+            _metadata_candidates_summary(provider_candidates)
+            if isinstance(openalex_payload, dict)
+            else "no JSON response",
+        )
 
         if not candidates or max(candidate.score for candidate in candidates) < 70:
+            cache_path = work_dir / "europepmc.json"
+            _attempt_detail(
+                progress_detail,
+                "europepmc metadata search",
+                cache_path=cache_path,
+                refresh=cache_refresh,
+            )
             europepmc_payload = fetch_json(
                 _europepmc_url(card),
-                work_dir / "europepmc.json",
+                cache_path,
                 cache_refresh,
             )
+            provider_candidates = []
             if isinstance(europepmc_payload, dict):
-                candidates.extend(europepmc_candidates(europepmc_payload, card))
+                provider_candidates = europepmc_candidates(europepmc_payload, card)
+                candidates.extend(provider_candidates)
+            _result_detail(
+                progress_detail,
+                "europepmc metadata search",
+                _metadata_candidates_summary(provider_candidates)
+                if isinstance(europepmc_payload, dict)
+                else "no JSON response",
+            )
+        else:
+            _skip_pass_detail(
+                progress_detail,
+                "europepmc metadata search",
+                "crossref/openalex candidate score is already above fallback threshold",
+            )
 
         best, ambiguous = select_candidate(
             sorted(candidates, key=lambda item: item.score, reverse=True)
         )
+        if best:
+            _result_detail(
+                progress_detail,
+                "metadata selection",
+                f"best={best.source}; score={best.score}; ambiguous={'yes' if ambiguous else 'no'}",
+            )
+        else:
+            _result_detail(progress_detail, "metadata selection", "no metadata candidates")
         if best and best.doi and not ambiguous:
             card.doi = best.doi
             card.doi_status = "resolved"
@@ -1344,20 +1660,45 @@ def enrich_card(
             )
 
     if card.doi:
+        cache_path = work_dir / "citation.bib"
+        _attempt_detail(
+            progress_detail,
+            "DOI BibTeX fetch",
+            cache_path=cache_path,
+            refresh=cache_refresh,
+        )
         raw_bibtex = fetch_text(
             f"https://doi.org/{urllib.parse.quote(card.doi)}",
-            work_dir / "citation.bib",
+            cache_path,
             cache_refresh,
             {"Accept": "application/x-bibtex"},
         )
+        bibtex_keywords = _bibtex_keywords(raw_bibtex)
         if raw_bibtex:
-            card.keywords = merge_keywords(card.keywords, _bibtex_keywords(raw_bibtex))
+            card.keywords = merge_keywords(card.keywords, bibtex_keywords)
+        _result_detail(
+            progress_detail,
+            "DOI BibTeX fetch",
+            (
+                f"received BibTeX; {_count_phrase(len(bibtex_keywords), 'keyword')}"
+                if raw_bibtex
+                else "no BibTeX response"
+            ),
+        )
+        cache_path = work_dir / "citation.csl.json"
+        _attempt_detail(
+            progress_detail,
+            "DOI CSL fetch",
+            cache_path=cache_path,
+            refresh=cache_refresh,
+        )
         csl_json = fetch_text(
             f"https://doi.org/{urllib.parse.quote(card.doi)}",
-            work_dir / "citation.csl.json",
+            cache_path,
             cache_refresh,
             {"Accept": "application/vnd.citationstyles.csl+json"},
         )
+        csl_result = "no CSL response"
         if csl_json:
             try:
                 csl = json.loads(csl_json)
@@ -1365,15 +1706,28 @@ def enrich_card(
                 if csl_candidate:
                     candidates.append(csl_candidate)
                     _promote_metadata_from_candidate(card, csl_candidate)
+                    csl_result = f"candidate score={csl_candidate.score}"
+                else:
+                    csl_result = "no metadata candidate in CSL"
             except json.JSONDecodeError:
-                pass
+                csl_result = "invalid CSL JSON"
+        _result_detail(progress_detail, "DOI CSL fetch", csl_result)
 
         if _should_search_for_published_version(card):
+            cache_path = work_dir / "crossref-search.json"
+            _attempt_detail(
+                progress_detail,
+                "crossref published-version search",
+                cache_path=cache_path,
+                refresh=cache_refresh,
+            )
             crossref_payload = fetch_json(
                 _crossref_url(card),
-                work_dir / "crossref-search.json",
+                cache_path,
                 cache_refresh,
             )
+            search_candidates: list[CitationCandidate] = []
+            published = None
             if isinstance(crossref_payload, dict):
                 search_candidates = crossref_candidates(crossref_payload, card)
                 candidates.extend(search_candidates)
@@ -1384,20 +1738,50 @@ def enrich_card(
                     card.doi_source = f"{published.source}:published-version"
                     card.doi_confidence = max(card.doi_confidence or 0.0, published.score / 100)
                     _promote_metadata_from_candidate(card, published)
+                    _result_detail(
+                        progress_detail,
+                        "crossref published-version search",
+                        f"selected {published.doi}; score={published.score}",
+                    )
+                    cache_path = work_dir / "citation.bib"
+                    _attempt_detail(
+                        progress_detail,
+                        "published DOI BibTeX refresh",
+                        cache_path=cache_path,
+                        refresh=True,
+                    )
                     raw_bibtex = fetch_text(
                         f"https://doi.org/{urllib.parse.quote(card.doi)}",
-                        work_dir / "citation.bib",
+                        cache_path,
                         True,
                         {"Accept": "application/x-bibtex"},
                     )
+                    bibtex_keywords = _bibtex_keywords(raw_bibtex)
                     if raw_bibtex:
-                        card.keywords = merge_keywords(card.keywords, _bibtex_keywords(raw_bibtex))
+                        card.keywords = merge_keywords(card.keywords, bibtex_keywords)
+                    _result_detail(
+                        progress_detail,
+                        "published DOI BibTeX refresh",
+                        (
+                            f"received BibTeX; {_count_phrase(len(bibtex_keywords), 'keyword')}"
+                            if raw_bibtex
+                            else "no BibTeX response"
+                        ),
+                    )
+                    cache_path = work_dir / "citation.csl.json"
+                    _attempt_detail(
+                        progress_detail,
+                        "published DOI CSL refresh",
+                        cache_path=cache_path,
+                        refresh=True,
+                    )
                     refreshed_csl_json = fetch_text(
                         f"https://doi.org/{urllib.parse.quote(card.doi)}",
-                        work_dir / "citation.csl.json",
+                        cache_path,
                         True,
                         {"Accept": "application/vnd.citationstyles.csl+json"},
                     )
+                    refreshed_csl_result = "no CSL response"
                     if refreshed_csl_json:
                         try:
                             refreshed_csl = json.loads(refreshed_csl_json)
@@ -1405,10 +1789,44 @@ def enrich_card(
                             if refreshed_candidate:
                                 candidates.append(refreshed_candidate)
                                 _promote_metadata_from_candidate(card, refreshed_candidate)
+                                refreshed_csl_result = (
+                                    f"candidate score={refreshed_candidate.score}"
+                                )
+                            else:
+                                refreshed_csl_result = "no metadata candidate in CSL"
                         except json.JSONDecodeError:
-                            pass
+                            refreshed_csl_result = "invalid CSL JSON"
+                    _result_detail(
+                        progress_detail,
+                        "published DOI CSL refresh",
+                        refreshed_csl_result,
+                    )
+                else:
+                    _result_detail(
+                        progress_detail,
+                        "crossref published-version search",
+                        _metadata_candidates_summary(search_candidates)
+                        if isinstance(crossref_payload, dict)
+                        else "no JSON response",
+                    )
+        else:
+            _skip_pass_detail(
+                progress_detail,
+                "crossref published-version search",
+                "venue is already complete or no DOI is available",
+            )
         if raw_bibtex or card.title:
+            _skip_pass_detail(
+                progress_detail,
+                "datacite metadata lookup",
+                "citation can be finalized without DataCite fallback",
+            )
             _finalize_citation_success(card, checked_at=checked_at, candidates=candidates)
+            _result_detail(
+                progress_detail,
+                "citation write",
+                f"{card.citation_status}; missing={','.join(card.enrichment_missing) or 'none'}",
+            )
             return EnrichmentResult(
                 card.citekey or card.slug,
                 card.citation_status,
@@ -1416,13 +1834,25 @@ def enrich_card(
                 changed=True,
             )
 
+        cache_path = work_dir / "datacite.json"
+        _attempt_detail(
+            progress_detail,
+            "datacite metadata lookup",
+            cache_path=cache_path,
+            refresh=cache_refresh,
+        )
         datacite_payload = fetch_json(
             f"https://api.datacite.org/dois/{urllib.parse.quote(card.doi)}",
-            work_dir / "datacite.json",
+            cache_path,
             cache_refresh,
         )
         if isinstance(datacite_payload, dict):
             datacite = datacite_candidate(datacite_payload, card)
+            _result_detail(
+                progress_detail,
+                "datacite metadata lookup",
+                _metadata_candidates_summary([datacite] if datacite else []),
+            )
             if datacite and datacite.score >= 88:
                 _promote_metadata_from_candidate(card, datacite)
                 card.doi_status = "resolved"
@@ -1445,6 +1875,8 @@ def enrich_card(
                     "citation generated from datacite",
                     changed=True,
                 )
+        else:
+            _result_detail(progress_detail, "datacite metadata lookup", "no JSON response")
 
     card.citation_status = "unresolved"
     card.doi_status = card.doi_status if card.doi_status != "missing" else "unresolved"
@@ -1581,12 +2013,26 @@ def enrich_cards(
     for index, card in enumerate(cards, start=1):
         if progress:
             progress(card, index, total, "checking")
+        detail_progress: EnrichmentDetailProgress | None = None
+        if progress:
+            def report_detail(
+                status: str,
+                *,
+                card: SourceCard = card,
+                index: int = index,
+                total: int = total,
+            ) -> None:
+                progress(card, index, total, status)
+
+            detail_progress = report_detail
+
         result = enrich_card(
             paths,
             card,
             options,
             fetch_json=fetch_json,
             fetch_text=fetch_text,
+            progress_detail=detail_progress,
         )
         if progress:
             progress(card, index, total, result.status)

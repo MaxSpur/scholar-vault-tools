@@ -17,6 +17,7 @@ from scholar_vault.citations import (
     detect_local_doi,
     enrich_abstract_card,
     enrich_card,
+    enrich_cards,
     extract_doi_from_text,
     extract_pdf_abstract,
     extract_pdf_keywords,
@@ -674,6 +675,73 @@ def test_ambiguous_candidate_behavior(tmp_path: Path) -> None:
     assert card.doi_status == "ambiguous"
 
 
+def test_citation_enrichment_progress_reports_provider_passes(tmp_path: Path) -> None:
+    paths = VaultPaths.from_root(tmp_path / "vault")
+    paths.ensure()
+    card = SourceCard(
+        slug="smith2024rag",
+        citekey="smith2024rag",
+        title="Evaluating Retrieval Augmented Generation Systems",
+        authors=["Jane Smith"],
+        year=2024,
+    )
+    crossref_payload = {
+        "message": {
+            "items": [
+                {
+                    "DOI": "10.1145/example",
+                    "title": ["Evaluating Retrieval Augmented Generation Systems"],
+                    "author": [{"given": "Jane", "family": "Smith"}],
+                    "published-print": {"date-parts": [[2024]]},
+                    "container-title": ["Journal of Retrieval Testing"],
+                    "URL": "https://doi.org/10.1145/example",
+                }
+            ]
+        }
+    }
+    csl_payload = {
+        "title": "Evaluating Retrieval Augmented Generation Systems",
+        "DOI": "10.1145/example",
+        "issued": {"date-parts": [[2024]]},
+        "container-title": "Journal of Retrieval Testing",
+        "author": [{"given": "Jane", "family": "Smith"}],
+    }
+    events: list[str] = []
+
+    def fake_json(url: str, cache_path: Path, refresh: bool) -> dict:
+        del url, refresh
+        if cache_path.name == "crossref.json":
+            return crossref_payload
+        return {"results": []}
+
+    def fake_text(url: str, cache_path: Path, refresh: bool, headers: dict[str, str]) -> str:
+        del url, cache_path, refresh
+        if headers.get("Accept") == "application/vnd.citationstyles.csl+json":
+            return json.dumps(csl_payload)
+        return "@article{smith2024rag, title={Evaluating Retrieval Augmented Generation Systems}}"
+
+    results = enrich_cards(
+        paths,
+        [card],
+        EnrichmentOptions(refresh=True),
+        fetch_json=fake_json,
+        fetch_text=fake_text,
+        progress=lambda _card, _index, _total, status: events.append(status),
+    )
+
+    assert results[0].status == "verified"
+    assert "checking" in events
+    assert any(event.startswith("attempt:crossref metadata search") for event in events)
+    assert any(
+        event.startswith("result:crossref metadata search -> 1 metadata candidate")
+        for event in events
+    )
+    assert any(event.startswith("skip-pass:europepmc metadata search") for event in events)
+    assert any(event.startswith("attempt:DOI CSL fetch") for event in events)
+    assert any(event.startswith("skip-pass:datacite metadata lookup") for event in events)
+    assert any(event.startswith("result:citation write -> verified") for event in events)
+
+
 def test_abstract_enrichment_upgrades_pdf_source_to_crossref_on_refresh(tmp_path: Path) -> None:
     paths = VaultPaths.from_root(tmp_path / "vault")
     paths.ensure()
@@ -709,6 +777,57 @@ def test_abstract_enrichment_upgrades_pdf_source_to_crossref_on_refresh(tmp_path
     assert result.status == "verified"
     assert card.abstract == "Provider abstract with substantially better provenance."
     assert card.abstract_source == "crossref"
+
+
+def test_abstract_enrichment_progress_reports_provider_passes(tmp_path: Path) -> None:
+    paths = VaultPaths.from_root(tmp_path / "vault")
+    paths.ensure()
+    card = SourceCard(
+        slug="smith2024rag",
+        citekey="smith2024rag",
+        title="Evaluating Retrieval Augmented Generation Systems",
+        authors=["Jane Smith"],
+        year=2024,
+        doi="10.1145/example",
+    )
+    crossref_payload = {
+        "message": {
+            "DOI": "10.1145/example",
+            "title": ["Evaluating Retrieval Augmented Generation Systems"],
+            "author": [{"given": "Jane", "family": "Smith"}],
+            "published-print": {"date-parts": [[2024]]},
+            "abstract": "<jats:p>Provider abstract with enough detail to accept.</jats:p>",
+            "URL": "https://doi.org/10.1145/example",
+        }
+    }
+    events: list[str] = []
+
+    def fake_json(url: str, cache_path: Path, refresh: bool) -> dict:
+        del url, refresh
+        if cache_path.name == "crossref.json":
+            return crossref_payload
+        return {"results": []}
+
+    results = enrich_cards(
+        paths,
+        [card],
+        EnrichmentOptions(abstracts=True, refresh_abstracts=True),
+        fetch_json=fake_json,
+        progress=lambda _card, _index, _total, status: events.append(status),
+    )
+
+    assert results[0].status == "verified"
+    assert "checking" in events
+    assert any(event.startswith("attempt:crossref DOI abstract lookup") for event in events)
+    assert any(
+        event.startswith("result:crossref DOI abstract lookup -> 1 abstract candidate")
+        for event in events
+    )
+    assert any(event.startswith("attempt:openalex abstract lookup") for event in events)
+    assert any(event.startswith("skip-pass:europepmc abstract lookup") for event in events)
+    assert any(
+        event.startswith("result:abstract write -> verified from crossref") for event in events
+    )
 
 
 def test_abstract_ambiguity_does_not_overwrite_existing_good_abstract(tmp_path: Path) -> None:

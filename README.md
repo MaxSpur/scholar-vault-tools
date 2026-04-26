@@ -210,7 +210,7 @@ Default Scholar Labs behavior is now selected-only:
 - The final import summary separates reused prior selections, existing vault-card links, newly accepted staged PDFs, review prompts, unresolved results, staged-file cleanup, and enrichment changes, so rerunning an old JSON should make clear why no match-review prompts appeared.
 - `import-run` is the lower-level transactional variant. It copies accepted PDFs into `pdfs/` but leaves staging untouched unless you later run `clean-staging`.
 - Most commands that accept `--vault`, and commands that accept `--staging`, can use configured defaults when those options are omitted.
-- Import and enrichment commands show terminal progress while scanning PDFs, matching results, querying metadata providers, and rebuilding derived files.
+- Import and enrichment commands show terminal progress while scanning PDFs, matching results, querying metadata providers, and rebuilding derived files. Enrichment logs include per-pass attempt/result/skip lines for local DOI/PDF scans and provider lookups.
 - Staged PDF scan results are cached in `.scholar-vault-pdf-scan-cache` inside the staging folder. Repeated imports reuse cached title, DOI, year, text, and hash data when a PDF's size and modification time are unchanged.
 
 Run notes are written as `runs/<run_id>/<Short Title.md>` instead of
@@ -255,7 +255,8 @@ the PDF.
 If the run already exists, the resume/update confirmation is shown in the GUI
 rather than as a hidden terminal prompt.
 After matching, GUI imports keep a small progress window open for citation and
-abstract enrichment. If enrichment leaves records incomplete, ambiguous, or
+abstract enrichment. The full output stream shows each provider pass and result,
+while the compact item stream stays focused on citekeys. If enrichment leaves records incomplete, ambiguous, or
 unresolved, a follow-up browser opens with the affected cards and quick actions
 to open the paper card or attached PDF.
 If GUI dependencies are unavailable in the current environment, the command
@@ -351,9 +352,11 @@ scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault -
 
 `enrich-citations` processes canonical `papers/*.md` cards only. It tries local DOI detection first, then cached provider lookups from Crossref, OpenAlex, Europe PMC, DataCite, and DOI content negotiation. Raw provider responses are cached under `raw/metadata/<citekey>/`. When a known DOI resolves to a preprint or repository record with incomplete venue metadata, enrichment may search for a strong published-version match and promote the published DOI and venue instead.
 
-After the one-line count summary, the command prints compact grouped details
-for generated, verified, incomplete, ambiguous, unresolved, and skipped records.
-Use the GUI result browser when you want to filter those groups and open the
+During processing, progress output reports local DOI/PDF scans, provider
+attempts, candidate counts, skipped fallback passes, and final write decisions.
+After the one-line count summary, the command prints compact grouped details for
+generated, verified, incomplete, ambiguous, unresolved, and skipped records. Use
+the GUI result browser when you want to filter those groups and open the
 associated paper card or PDF:
 
 ```fish
@@ -388,7 +391,7 @@ scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault -
 
 The abstract is not the Scholar Labs summary. Scholar Labs summaries explain why the source appeared in a prompt result; abstracts are provider or PDF metadata and are stored in the `## Abstract` section of each paper card. Frontmatter keeps only abstract status, source, confidence, fingerprint, and lock metadata so agents do not read the same long abstract twice.
 
-Abstract provider order is local DOI detection, Crossref REST metadata, Europe PMC fallback, OpenAlex reconstructed abstracts, DataCite descriptions, then local PDF text extraction. Crossref abstracts may include JATS/XML markup, which the tool strips before writing the card. OpenAlex abstracts are reconstructed from `abstract_inverted_index`. The tool never uses LLM summarization or Scholar Labs summaries as abstracts.
+Abstract provider order is local DOI detection, Crossref REST metadata, OpenAlex reconstructed abstracts, Europe PMC fallback, DataCite descriptions, then local PDF text extraction. Crossref abstracts may include JATS/XML markup, which the tool strips before writing the card. OpenAlex abstracts are reconstructed from `abstract_inverted_index`. The tool never uses LLM summarization or Scholar Labs summaries as abstracts.
 
 Abstract enrichment writes the `## Abstract` section plus these frontmatter fields: `abstract_status`, `abstract_source`, `abstract_source_url`, `abstract_confidence`, `abstract_last_checked`, `abstract_enriched_at`, `abstract_input_fingerprint`, and `abstract_lock`.
 Paper keywords are written to `keywords` frontmatter and the `## Keywords` section when available.

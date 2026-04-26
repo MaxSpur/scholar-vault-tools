@@ -150,6 +150,14 @@ def test_progress_parts_name_import_substages() -> None:
         "SKIPPED // no change; existing state, lock, cache, or retry rule",
         "nafis2024paper",
     )
+    assert _progress_parts(
+        "Enriching abstracts [result:crossref DOI abstract lookup -> 1 abstract candidate]: "
+        "nafis2024paper // Are We There Yet? // state=missing; pdf=yes"
+    ) == (
+        "ABSTRACT ENRICHMENT",
+        "RESULT // crossref DOI abstract lookup -> 1 abstract candidate",
+        "nafis2024paper // Are We There Yet? // state=missing; pdf=yes",
+    )
     assert (
         _progress_item_text(
             "Enriching abstracts [checking]: nafis2024paper // Are We There Yet? // "
@@ -174,6 +182,18 @@ def test_progress_parts_name_import_substages() -> None:
         "and staged PDFs // rank 3 // r03-examplepaper"
     )
     assert _progress_log_color("Enriching abstracts [unresolved]: example") == "#ff3b4f"
+    assert (
+        _progress_log_color(
+            "Enriching abstracts [attempt:crossref DOI abstract lookup]: example"
+        )
+        == "#ffb000"
+    )
+    assert (
+        _progress_log_color(
+            "Enriching abstracts [skip-pass:europepmc abstract lookup]: example"
+        )
+        == "#a7b2aa"
+    )
     log_html = _progress_log_html("Enriching citations [verified]: example", 1, 3)
     assert "&nbsp;1/3&nbsp;" in log_html
     assert "CITATION ENRICHMENT" in log_html

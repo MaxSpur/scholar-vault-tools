@@ -42,6 +42,7 @@
 - [x] Retry previously failed abstract enrichment by default instead of skipping with `abstract previously failed`.
 - [x] Refine GUI progress into one main output stream plus a compact top-right identifier stream with status color.
 - [x] Emit granular Scholar Labs matching progress for prior-manifest, vault-card, staged-PDF, review, and final decision substeps.
+- [x] Emit granular enrichment progress for local DOI/PDF scans, provider attempts, provider results, skips, and final writes.
 - [x] Promote automatic enrichment results in the import run report and keep GUI progress logs through the report and follow-up windows.
 - [x] Make post-import report/follow-up windows modeless and mark the import log as report-ready instead of busy/cancellable.
 - [x] Make Scholar Labs imports/resumes check staged PDFs as replacement candidates by default, with `--keep-existing-pdfs` as the opt-out.
