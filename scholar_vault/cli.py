@@ -28,6 +28,7 @@ from .importer import (
     reset_vault,
     resume_run,
     set_manual_abstract,
+    set_manual_keywords,
     undo_run,
 )
 from .models import (
@@ -79,7 +80,7 @@ def _complete_citekeys(ctx, args: list[str], incomplete: str) -> list[str]:
 
 
 def _complete_only_modes(incomplete: str) -> list[str]:
-    values = ["all", "missing-doi", "missing-bibtex", "missing-abstract"]
+    values = ["all", "missing-doi", "missing-bibtex", "missing-abstract", "missing-keywords"]
     return [value for value in values if value.startswith(incomplete)]
 
 
@@ -172,7 +173,10 @@ AutoEnrichArg = Annotated[
     bool,
     typer.Option(
         "--enrich/--no-enrich",
-        help="Run citation and abstract enrichment after accepted Scholar Labs matches.",
+        help=(
+            "Run citation, abstract, and keyword enrichment after accepted "
+            "Scholar Labs matches."
+        ),
     ),
 ]
 UpgradePdfsArg = Annotated[
@@ -220,12 +224,27 @@ AbstractLockArg = Annotated[
         help="Protect the manual abstract from future automatic abstract enrichment.",
     ),
 ]
+KeywordTextArg = Annotated[
+    str | None,
+    typer.Option("--text", help="Manual keywords. Commas, semicolons, or lines are accepted."),
+]
+KeywordFileArg = Annotated[
+    Path | None,
+    typer.Option("--file", exists=True, file_okay=True, dir_okay=False, resolve_path=True),
+]
+KeywordReplaceArg = Annotated[
+    bool,
+    typer.Option("--replace/--merge", help="Replace existing keywords instead of merging."),
+]
 OnlyArg = Annotated[
     str,
     typer.Option(
         "--only",
         autocompletion=_complete_only_modes,
-        help="Limit enrichment: all, missing-doi, missing-bibtex, or missing-abstract.",
+        help=(
+            "Limit enrichment: all, missing-doi, missing-bibtex, "
+            "missing-abstract, or missing-keywords."
+        ),
     ),
 ]
 RefreshArg = Annotated[
@@ -374,6 +393,8 @@ def _card_followup_kinds(card: SourceCard) -> list[str]:
         kinds.append("citation")
     if card.abstract_status in issue_states:
         kinds.append("abstract")
+    if card.pdf and not card.keywords:
+        kinds.append("keywords")
     if card.doi_status in {"ambiguous", "unresolved"}:
         kinds.append("doi")
     return kinds
@@ -386,7 +407,7 @@ def _followup_issue_label(summary: dict[str, Any] | None) -> str:
     kind_counts = summary.get("kinds", {})
     if not isinstance(kind_counts, dict) or not kind_counts:
         return f"{count} follow-up"
-    order = ["abstract", "citation", "metadata", "doi", "refresh"]
+    order = ["abstract", "keywords", "citation", "metadata", "doi", "refresh"]
     parts = []
     for kind in order:
         kind_count = int(kind_counts.get(kind, 0))
@@ -701,7 +722,7 @@ def _show_import_summary_ui(
 
 def _run_enrichment_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
     rows = []
-    for key in ("enrichment_details", "abstract_details"):
+    for key in ("enrichment_details", "abstract_details", "keyword_details"):
         value = summary.get(key, [])
         rows.extend(row for row in value if isinstance(row, dict))
     return rows
@@ -845,6 +866,7 @@ def _import_summary_lines(summary: dict[str, Any]) -> list[str]:
     decisions = summary.get("decision_summary") or {}
     citations = summary.get("citation_enrichment") or {}
     abstracts = summary.get("abstract_enrichment") or {}
+    keywords = summary.get("keyword_enrichment") or {}
     selected = int(summary.get("selected") or 0)
     reused = int(decisions.get("prior_selected_reused") or 0)
     linked = int(decisions.get("existing_cards_linked") or 0)
@@ -898,17 +920,22 @@ def _import_summary_lines(summary: dict[str, Any]) -> list[str]:
         )
     citation_processed = int(citations.get("processed") or 0)
     abstract_processed = int(abstracts.get("processed") or 0)
-    if citation_processed or abstract_processed:
+    keyword_processed = int(keywords.get("processed") or 0)
+    if citation_processed or abstract_processed or keyword_processed:
         citation_changed = int(citations.get("changed") or 0)
         abstract_changed = int(abstracts.get("changed") or 0)
+        keyword_changed = int(keywords.get("changed") or 0)
         citation_unchanged = max(citation_processed - citation_changed, 0)
         abstract_unchanged = max(abstract_processed - abstract_changed, 0)
+        keyword_unchanged = max(keyword_processed - keyword_changed, 0)
         lines.append(
             "- Enrichment: "
             f"citations checked {citation_processed} cards "
             f"({citation_changed} updated, {citation_unchanged} unchanged); "
             f"abstracts checked {abstract_processed} cards "
-            f"({abstract_changed} updated, {abstract_unchanged} unchanged)."
+            f"({abstract_changed} updated, {abstract_unchanged} unchanged); "
+            f"keywords checked {keyword_processed} cards "
+            f"({keyword_changed} updated, {keyword_unchanged} unchanged)."
         )
     if pdf_upgrades:
         lines.append(
@@ -1013,19 +1040,43 @@ def _with_progress(
         return result
 
 
-def _enrichment_progress_reporter(report, *, abstracts: bool = False):
+def _enrichment_progress_reporter(
+    report,
+    *,
+    abstracts: bool = False,
+    keywords: bool = False,
+):
     def progress(card: SourceCard, index: int, total: int, status: str) -> None:
-        report(_enrichment_progress_message(card, status, abstracts=abstracts), index, total)
+        report(
+            _enrichment_progress_message(
+                card,
+                status,
+                abstracts=abstracts,
+                keywords=keywords,
+            ),
+            index,
+            total,
+        )
 
     return progress
 
 
-def _enrichment_progress_message(card: SourceCard, status: str, *, abstracts: bool = False) -> str:
-    stage = "abstracts" if abstracts else "citations"
+def _enrichment_progress_message(
+    card: SourceCard,
+    status: str,
+    *,
+    abstracts: bool = False,
+    keywords: bool = False,
+) -> str:
+    stage = "keywords" if keywords else "abstracts" if abstracts else "citations"
     identifier = card.citekey or card.slug
     title = " ".join((card.title or identifier).split())
     context: list[str] = []
-    if abstracts:
+    if keywords:
+        context.append(f"state={'present' if card.keywords else 'missing'}")
+        context.append(f"count={len(card.keywords)}")
+        context.append(f"pdf={'yes' if card.pdf else 'no'}")
+    elif abstracts:
         context.append(f"state={card.abstract_status}")
         if card.abstract_source:
             context.append(f"source={card.abstract_source}")
@@ -1299,6 +1350,10 @@ def enrich_citations_command(
     force: ForceArg = False,
     ui: UiArg = False,
 ) -> None:
+    enrich_keywords = only == "missing-keywords"
+    enrich_abstracts = (
+        not enrich_keywords and (abstracts or refresh_abstracts or only == "missing-abstract")
+    )
     progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Enrichment")
     summary = _with_progress(
         "Enriching paper cards",
@@ -1314,15 +1369,21 @@ def enrich_citations_command(
             force=force,
             progress=_enrichment_progress_reporter(
                 report,
-                abstracts=abstracts or refresh_abstracts or only == "missing-abstract",
+                abstracts=enrich_abstracts,
+                keywords=enrich_keywords,
             ),
         ),
         gui_progress=progress_ui,
     )
     if progress_ui is not None:
         progress_ui.close()
-    enrich_abstracts = abstracts or refresh_abstracts or only == "missing-abstract"
-    if enrich_abstracts:
+    if enrich_keywords:
+        console.print(
+            f"Enriched keywords: processed={summary['processed']}, changed={summary['changed']}, "
+            f"skipped={summary['skipped']}, resolved={summary['resolved']}, "
+            f"unresolved={summary['unresolved']}."
+        )
+    elif enrich_abstracts:
         console.print(
             f"Enriched abstracts: processed={summary['processed']}, changed={summary['changed']}, "
             f"skipped={summary['skipped']}, resolved={summary['resolved']}, "
@@ -1336,7 +1397,15 @@ def enrich_citations_command(
             f"verified={summary['verified']}, ambiguous={summary['ambiguous']}, "
             f"unresolved={summary['unresolved']}."
         )
-    shown_in_ui = _show_enrichment_ui(summary, abstracts=enrich_abstracts) if ui else False
+    shown_in_ui = (
+        _show_enrichment_ui(
+            summary,
+            abstracts=enrich_abstracts,
+            title="Scholar Vault Keyword Results" if enrich_keywords else None,
+        )
+        if ui
+        else False
+    )
     if not shown_in_ui:
         _print_enrichment_details(summary)
 
@@ -1518,6 +1587,35 @@ def set_abstract_command(
     lock_note = "locked" if summary["locked"] else "unlocked"
     console.print(
         f"Set manual abstract for {summary['citekey']} ({lock_note}). "
+        f"Updated {summary['paper']}."
+    )
+
+
+@app.command("set-keywords")
+def set_keywords_command(
+    citekey: CitekeyArg,
+    text: KeywordTextArg = None,
+    keyword_file: KeywordFileArg = None,
+    replace: KeywordReplaceArg = False,
+    vault: VaultArg = None,
+) -> None:
+    if text and keyword_file:
+        raise typer.BadParameter("Use either --text or --file, not both.")
+    if keyword_file:
+        keywords = keyword_file.read_text(encoding="utf-8")
+    elif text:
+        keywords = text
+    else:
+        raise typer.BadParameter("Provide manual keywords with --text or --file.")
+
+    summary = set_manual_keywords(
+        _resolve_vault(vault),
+        citekey,
+        keywords,
+        replace=replace,
+    )
+    console.print(
+        f"Set {summary['count']} keywords for {summary['citekey']}. "
         f"Updated {summary['paper']}."
     )
 

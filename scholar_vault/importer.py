@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -924,12 +924,22 @@ def _build_match_review_request(
     )
 
 
-def _enrichment_progress_message(card: SourceCard, status: str, *, abstracts: bool) -> str:
-    stage = "abstracts" if abstracts else "citations"
+def _enrichment_progress_message(
+    card: SourceCard,
+    status: str,
+    *,
+    abstracts: bool = False,
+    keywords: bool = False,
+) -> str:
+    stage = "keywords" if keywords else "abstracts" if abstracts else "citations"
     identifier = card.citekey or card.slug
     title = " ".join((card.title or identifier).split())
     context: list[str] = []
-    if abstracts:
+    if keywords:
+        context.append(f"state={'present' if card.keywords else 'missing'}")
+        context.append(f"count={len(card.keywords)}")
+        context.append(f"pdf={'yes' if card.pdf else 'no'}")
+    elif abstracts:
         context.append(f"state={card.abstract_status}")
         if card.abstract_source:
             context.append(f"source={card.abstract_source}")
@@ -1803,6 +1813,7 @@ def import_scholar_labs_run(
     enrichment_results: list[EnrichmentResult] = []
     enrichment_details: list[dict[str, Any]] = []
     abstract_details: list[dict[str, Any]] = []
+    keyword_details: list[dict[str, Any]] = []
     if auto_enrich and not dry_run:
         selected_slugs = {
             Path(result.paper_card).stem
@@ -1838,6 +1849,19 @@ def import_scholar_labs_run(
                         total,
                     )
 
+            def report_keyword_progress(
+                card: SourceCard,
+                index: int,
+                total: int,
+                status: str,
+            ) -> None:
+                if progress:
+                    progress(
+                        _enrichment_progress_message(card, status, keywords=True),
+                        index,
+                        total,
+                    )
+
             citation_results = enrich_cards(
                 paths,
                 selected_cards,
@@ -1860,13 +1884,26 @@ def import_scholar_labs_run(
                 _enrichment_detail(paths, card, result, abstracts=True)
                 for card, result in zip(selected_cards, abstract_results, strict=False)
             )
+            keyword_results = enrich_cards(
+                paths,
+                selected_cards,
+                EnrichmentOptions(only="missing-keywords"),
+                progress=report_keyword_progress,
+            )
+            enrichment_results.extend(keyword_results)
+            keyword_details.extend(
+                _enrichment_detail(paths, card, result, abstracts=False, keywords=True)
+                for card, result in zip(selected_cards, keyword_results, strict=False)
+            )
             for card in selected_cards:
                 _save_card(paths, card)
 
     citation_processed = len(enrichment_details)
     abstract_processed = len(abstract_details)
+    keyword_processed = len(keyword_details)
     citation_changed = sum(1 for row in enrichment_details if row.get("changed"))
     abstract_changed = sum(1 for row in abstract_details if row.get("changed"))
+    keyword_changed = sum(1 for row in keyword_details if row.get("changed"))
 
     if log_entries:
         _write_log(paths, "import-labs" if archive_matched else "import-run", log_entries)
@@ -1904,8 +1941,13 @@ def import_scholar_labs_run(
             "processed": abstract_processed,
             "changed": abstract_changed,
         },
+        "keyword_enrichment": {
+            "processed": keyword_processed,
+            "changed": keyword_changed,
+        },
         "enrichment_details": enrichment_details,
         "abstract_details": abstract_details,
+        "keyword_details": keyword_details,
         "run": run_slug,
     }
 
@@ -2391,17 +2433,21 @@ def _enrichment_detail(
     result: EnrichmentResult,
     *,
     abstracts: bool,
+    keywords: bool = False,
 ) -> dict[str, Any]:
     if result.skipped:
         category = "skipped"
-    elif not abstracts and card.enrichment_status == "incomplete":
+    elif not abstracts and not keywords and card.enrichment_status == "incomplete":
         category = "incomplete"
     else:
         category = result.status
 
-    source = card.abstract_source if abstracts else card.citation_source or card.doi_source
+    if keywords:
+        source = result.source or ("pdf_extracted" if card.keywords else None)
+    else:
+        source = card.abstract_source if abstracts else card.citation_source or card.doi_source
     return {
-        "kind": "abstract" if abstracts else "citation",
+        "kind": "keywords" if keywords else "abstract" if abstracts else "citation",
         "category": category,
         "status": result.status,
         "citekey": card.citekey or card.slug,
@@ -2412,7 +2458,8 @@ def _enrichment_detail(
         "pdf_file": str(paths.vault / card.pdf) if card.pdf else None,
         "doi": card.doi,
         "source": source,
-        "missing_fields": list(card.enrichment_missing),
+        "missing_fields": list(result.missing_fields or card.enrichment_missing),
+        "keywords": list(card.keywords),
         "message": result.message,
         "changed": result.changed,
         "skipped": result.skipped,
@@ -2457,6 +2504,36 @@ def set_manual_abstract(
     }
 
 
+def set_manual_keywords(
+    vault: Path | str,
+    citekey: str,
+    keywords: str | Iterable[str],
+    *,
+    replace: bool = False,
+) -> dict[str, str | int | list[str]]:
+    paths = initialize_vault(vault)
+    raw_keywords = keywords.splitlines() if isinstance(keywords, str) else keywords
+    cleaned_keywords = normalize_keywords(raw_keywords)
+    if not cleaned_keywords:
+        raise ValueError("Manual keyword text is empty.")
+
+    cards = load_source_cards(paths)
+    card = next((item for item in cards if item.citekey == citekey or item.slug == citekey), None)
+    if card is None:
+        raise ValueError(f"No paper card found for citekey or slug: {citekey}")
+
+    card.keywords = cleaned_keywords if replace else _merge_unique(card.keywords, cleaned_keywords)
+    card.enrichment_refresh = False
+    _save_card(paths, card)
+    _rebuild_indexes(paths)
+    return {
+        "citekey": card.citekey or card.slug,
+        "paper": f"papers/{card.slug}.md",
+        "count": len(card.keywords),
+        "keywords": list(card.keywords),
+    }
+
+
 def rebuild_vault(vault: Path | str) -> dict[str, int]:
     paths = initialize_vault(vault, rebuild=False)
     return _rebuild_indexes(paths)
@@ -2481,10 +2558,23 @@ def enrich_citations(
     force: bool = False,
     progress: EnrichmentProgress | None = None,
 ) -> dict[str, Any]:
-    if only not in {"all", "missing-doi", "missing-bibtex", "missing-abstract"}:
-        raise ValueError("--only must be one of: missing-doi, missing-bibtex, missing-abstract")
+    valid_only = {
+        "all",
+        "missing-doi",
+        "missing-bibtex",
+        "missing-abstract",
+        "missing-keywords",
+    }
+    if only not in valid_only:
+        raise ValueError(
+            "--only must be one of: missing-doi, missing-bibtex, "
+            "missing-abstract, missing-keywords"
+        )
 
-    enrich_abstracts = abstracts or refresh_abstracts or only == "missing-abstract"
+    enrich_keywords = only == "missing-keywords"
+    enrich_abstracts = (
+        not enrich_keywords and (abstracts or refresh_abstracts or only == "missing-abstract")
+    )
 
     paths = initialize_vault(vault)
     cards = load_source_cards(paths)
@@ -2503,7 +2593,13 @@ def enrich_citations(
         raise ValueError(f"No paper card found for citekey: {citekey}")
 
     details = [
-        _enrichment_detail(paths, card, result, abstracts=enrich_abstracts)
+        _enrichment_detail(
+            paths,
+            card,
+            result,
+            abstracts=enrich_abstracts,
+            keywords=enrich_keywords,
+        )
         for card, result in zip(cards, results, strict=False)
     ]
 
@@ -2527,6 +2623,13 @@ def enrich_citations(
                 result
                 for result in results
                 if enrich_abstracts and result.status in {"resolved", "verified"}
+            ]
+        ),
+        "keywords": len(
+            [
+                result
+                for result in results
+                if enrich_keywords and result.status == "resolved"
             ]
         ),
         "details": details,

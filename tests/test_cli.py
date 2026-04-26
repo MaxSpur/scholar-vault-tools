@@ -166,6 +166,7 @@ def test_import_summary_explains_reused_prior_matches() -> None:
             },
             "citation_enrichment": {"processed": 3, "changed": 0},
             "abstract_enrichment": {"processed": 3, "changed": 0},
+            "keyword_enrichment": {"processed": 3, "changed": 1},
         }
     )
 
@@ -176,6 +177,7 @@ def test_import_summary_explains_reused_prior_matches() -> None:
     assert "No match-review prompts appeared" in output
     assert "citations checked 3 cards (0 updated, 3 unchanged)" in output
     assert "abstracts checked 3 cards (0 updated, 3 unchanged)" in output
+    assert "keywords checked 3 cards (1 updated, 2 unchanged)" in output
 
 
 def test_import_finish_keeps_progress_until_followup(monkeypatch) -> None:
@@ -266,6 +268,7 @@ def test_run_completion_uses_vault_runs(tmp_path) -> None:
         "missing-doi",
         "missing-bibtex",
         "missing-abstract",
+        "missing-keywords",
     ]
 
 

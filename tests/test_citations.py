@@ -203,6 +203,25 @@ This should not be included.
     ]
 
 
+def test_pdf_keyword_extraction_accepts_index_terms() -> None:
+    text = """
+TrajGraph: A Graph-Based Visual Analytics Approach
+
+Index Terms--Taxi trajectory data; urban network centrality; visual analytics;
+graph-based interaction
+
+1 Introduction
+This should not be included.
+"""
+
+    assert extract_pdf_keywords(text) == [
+        "Taxi trajectory data",
+        "urban network centrality",
+        "visual analytics",
+        "graph-based interaction",
+    ]
+
+
 def test_crossref_abstract_parsing_cleans_jats_markup() -> None:
     raw = "<jats:p>This &amp; that <jats:italic>matters</jats:italic>.</jats:p>"
 
@@ -740,6 +759,63 @@ def test_citation_enrichment_progress_reports_provider_passes(tmp_path: Path) ->
     assert any(event.startswith("attempt:DOI CSL fetch") for event in events)
     assert any(event.startswith("skip-pass:datacite metadata lookup") for event in events)
     assert any(event.startswith("result:citation write -> verified") for event in events)
+
+
+def test_keyword_enrichment_mode_extracts_pdf_index_terms(tmp_path: Path, monkeypatch) -> None:
+    paths = VaultPaths.from_root(tmp_path / "vault")
+    paths.ensure()
+    pdf = paths.pdfs / "source.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+    card = SourceCard(
+        slug="source",
+        citekey="source",
+        title="Source",
+        pdf="pdfs/source.pdf",
+    )
+    events: list[str] = []
+    monkeypatch.setattr(
+        "scholar_vault.citations.extract_pdf_text_excerpt",
+        lambda _path: "Index Terms--Taxi trajectory data; visual analytics\n\n1 Introduction",
+    )
+
+    results = enrich_cards(
+        paths,
+        [card],
+        EnrichmentOptions(only="missing-keywords"),
+        progress=lambda _card, _index, _total, status: events.append(status),
+    )
+
+    assert results[0].status == "resolved"
+    assert results[0].source == "pdf_extracted"
+    assert card.keywords == ["Taxi trajectory data", "visual analytics"]
+    assert any(event.startswith("attempt:PDF keyword extraction") for event in events)
+    assert any(
+        event.startswith("result:PDF keyword extraction -> added 2 keywords")
+        for event in events
+    )
+
+
+def test_keyword_enrichment_mode_reports_missing_keywords(tmp_path: Path, monkeypatch) -> None:
+    paths = VaultPaths.from_root(tmp_path / "vault")
+    paths.ensure()
+    pdf = paths.pdfs / "source.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+    card = SourceCard(
+        slug="source",
+        citekey="source",
+        title="Source",
+        pdf="pdfs/source.pdf",
+    )
+    monkeypatch.setattr(
+        "scholar_vault.citations.extract_pdf_text_excerpt",
+        lambda _path: "Title\n\nAbstract\nNo keyword block appears in this excerpt.",
+    )
+
+    results = enrich_cards(paths, [card], EnrichmentOptions(only="missing-keywords"))
+
+    assert results[0].status == "unresolved"
+    assert results[0].missing_fields == ("keywords",)
+    assert results[0].message == "no keywords found in attached PDF"
 
 
 def test_abstract_enrichment_upgrades_pdf_source_to_crossref_on_refresh(tmp_path: Path) -> None:

@@ -197,8 +197,8 @@ def normalize_keywords(values: Iterable[str] | str | None) -> list[str]:
             .replace("\u00ad", "")
         )
         value = re.sub(r"([A-Za-z])[-‐‑‒–—]\s*\n\s*([A-Za-z])", r"\1\2", value)
-        value = re.sub(r"(?im)^\s*(keywords?|index terms)\s*[\.:;—-]\s*", "", value)
-        for token in re.split(r"\s*(?:[,;]|[·•])\s*", value):
+        value = re.sub(r"(?im)^\s*(keywords?|index terms)\s*[\.:;‐‑‒–—-]\s*", "", value)
+        for token in re.split(r"\s*(?:[,;|]|[·•])\s*", value):
             cleaned = re.sub(r"\s+", " ", token).strip(" \t\n\r.:;,-")
             if not cleaned:
                 continue

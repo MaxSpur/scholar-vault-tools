@@ -51,11 +51,15 @@ Keywords: Immersive Analytics · Collaboration"""
 
 
 def test_normalize_keywords_splits_and_repairs_pdf_keyword_text() -> None:
-    raw = "Keywords: Immersive Analytics · Collaboration; Sci-\nentific Data Visualization"
+    raw = (
+        "Index Terms--Immersive Analytics · Collaboration | Mixed Reality; "
+        "Sci-\nentific Data Visualization"
+    )
 
     assert normalize_keywords(raw) == [
         "Immersive Analytics",
         "Collaboration",
+        "Mixed Reality",
         "Scientific Data Visualization",
     ]
 

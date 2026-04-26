@@ -204,7 +204,7 @@ Default Scholar Labs behavior is now selected-only:
 - If a later Scholar Labs run returns a paper that already has a canonical card and attached PDF, the run links to the existing card and adds that run's summary to the card instead of creating a duplicate.
 - Candidate results stay on the run page unless you explicitly opt in with `--include-without-pdf`.
 - `import-labs` copies accepted PDFs into `pdfs/`, verifies them, and then archives the matched originals out of staging into `raw/imported/`, leaving only unmatched PDFs in staging.
-- After committed matches, `import-labs`, `import`, `resume`, and `rerun` run citation and abstract enrichment for selected paper cards by default. Use `--no-enrich` when you want a faster import that skips provider lookups.
+- After committed matches, `import-labs`, `import`, `resume`, and `rerun` run citation, abstract, and PDF keyword enrichment for selected paper cards by default. Use `--no-enrich` when you want a faster import that skips provider lookups.
 - Paper-provided keywords from BibTeX, provider metadata, and local PDF text are stored separately from prompt-derived `topics`.
 - After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder without renaming it, for example `~/Downloads/scholar-labs-staging/used/example.json`. The run metadata is updated so `resume` and `rerun` still know where the export went.
 - The final import summary separates reused prior selections, existing vault-card links, newly accepted staged PDFs, review prompts, unresolved results, staged-file cleanup, and enrichment changes, so rerunning an old JSON should make clear why no match-review prompts appeared.
@@ -234,7 +234,7 @@ Auto-commit only high-confidence matches:
 scholar-vault import-labs --vault ~/Documents/Research/scholar-labs-vault --export ~/Downloads/scholar-labs-exports/example.json --staging ~/Downloads/scholar-labs-staging --commit
 ```
 
-Skip automatic citation and abstract enrichment if you only want to match and archive PDFs:
+Skip automatic citation, abstract, and keyword enrichment if you only want to match and archive PDFs:
 
 ```fish
 scholar-vault import-labs --commit --no-enrich
@@ -254,8 +254,8 @@ enrichment; `Space` / `⇧Space` to scroll the preview; and `⌘O` or `O` to ope
 the PDF.
 If the run already exists, the resume/update confirmation is shown in the GUI
 rather than as a hidden terminal prompt.
-After matching, GUI imports keep a small progress window open for citation and
-abstract enrichment. The full output stream shows each provider pass and result,
+After matching, GUI imports keep a small progress window open for citation,
+abstract, and keyword enrichment. The full output stream shows each provider pass and result,
 while the compact item stream stays focused on citekeys. If enrichment leaves records incomplete, ambiguous, or
 unresolved, a follow-up browser opens with the affected cards and quick actions
 to open the paper card or attached PDF.
@@ -344,6 +344,7 @@ scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault -
 scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-bibtex
 scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --abstracts
 scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-abstract
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-keywords
 scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --refresh
 scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --refresh-abstracts
 scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --retry-failed
@@ -394,7 +395,17 @@ The abstract is not the Scholar Labs summary. Scholar Labs summaries explain why
 Abstract provider order is local DOI detection, Crossref REST metadata, OpenAlex reconstructed abstracts, Europe PMC fallback, DataCite descriptions, then local PDF text extraction. Crossref abstracts may include JATS/XML markup, which the tool strips before writing the card. OpenAlex abstracts are reconstructed from `abstract_inverted_index`. The tool never uses LLM summarization or Scholar Labs summaries as abstracts.
 
 Abstract enrichment writes the `## Abstract` section plus these frontmatter fields: `abstract_status`, `abstract_source`, `abstract_source_url`, `abstract_confidence`, `abstract_last_checked`, `abstract_enriched_at`, `abstract_input_fingerprint`, and `abstract_lock`.
-Paper keywords are written to `keywords` frontmatter and the `## Keywords` section when available.
+Paper keywords are written to `keywords` frontmatter and the `## Keywords` section when available. PDF keyword extraction recognizes both `Keywords` and `Index Terms` labels, and accepts common separators such as commas, semicolons, pipes, middle dots, and bullets. To retry attached PDFs that have no captured keywords, run:
+
+```fish
+scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-keywords
+```
+
+If automatic PDF keyword extraction still finds nothing, GUI follow-up shows a keywords issue row like a missing abstract. You can also set keywords from the CLI:
+
+```fish
+scholar-vault set-keywords --citekey smith2024rag --text "Immersive Analytics; Collaboration; Usability Study"
+```
 
 Interpretation:
 

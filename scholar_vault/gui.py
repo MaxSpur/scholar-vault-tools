@@ -1385,6 +1385,15 @@ def _progress_parts(message: str) -> tuple[str, str, str]:
             f"{label} // {detail}",
             match.group(2),
         )
+    match = re.fullmatch(r"Enriching keywords \[([^\]]+)\]: (.+)", text)
+    if match:
+        status = match.group(1)
+        label, detail = _enrichment_status_parts(status, abstracts=False)
+        return (
+            "KEYWORD ENRICHMENT",
+            f"{label} // {detail}",
+            match.group(2),
+        )
     match = re.fullmatch(r"([^:]+): ([A-Za-z_-]+)", text)
     if match:
         return (
@@ -1527,7 +1536,7 @@ def _progress_substage_html(substage: str, color: str) -> str:
 def _progress_log_item_html(stage: str, item: str, *, include_context: bool = True) -> str:
     if not item:
         return ""
-    if stage in {"CITATION ENRICHMENT", "ABSTRACT ENRICHMENT"}:
+    if stage in {"CITATION ENRICHMENT", "ABSTRACT ENRICHMENT", "KEYWORD ENRICHMENT"}:
         parts = [part.strip() for part in item.split(" // ")]
         identifier = parts[0]
         context = parts[2] if len(parts) >= 3 else ""
@@ -1619,7 +1628,7 @@ def _progress_item_text(message: str) -> str:
     stage, _substage, item = _progress_parts(message)
     if not item:
         return ""
-    if stage in {"CITATION ENRICHMENT", "ABSTRACT ENRICHMENT"}:
+    if stage in {"CITATION ENRICHMENT", "ABSTRACT ENRICHMENT", "KEYWORD ENRICHMENT"}:
         parts = [part.strip() for part in item.split(" // ")]
         return parts[0]
     if stage == "MATCHING":
@@ -1633,7 +1642,7 @@ def _progress_item_text(message: str) -> str:
 
 def _progress_context_key(message: str) -> tuple[str, str] | None:
     stage, _substage, item = _progress_parts(message)
-    if stage not in {"CITATION ENRICHMENT", "ABSTRACT ENRICHMENT"}:
+    if stage not in {"CITATION ENRICHMENT", "ABSTRACT ENRICHMENT", "KEYWORD ENRICHMENT"}:
         return None
     parts = [part.strip() for part in item.split(" // ")]
     if len(parts) < 3 or not parts[0] or not parts[2]:
@@ -2092,8 +2101,10 @@ def _import_summary_model(summary: dict[str, Any], lines: list[str]) -> dict[str
     decisions = summary.get("decision_summary") or {}
     citations = summary.get("citation_enrichment") or {}
     abstracts = summary.get("abstract_enrichment") or {}
+    keywords = summary.get("keyword_enrichment") or {}
     citation_details = summary.get("enrichment_details") or []
     abstract_details = summary.get("abstract_details") or []
+    keyword_details = summary.get("keyword_details") or []
     selected = _summary_int(summary.get("selected"))
     unselected = _summary_int(summary.get("unselected_results"))
     export_results = _summary_int(decisions.get("export_results")) or selected + unselected
@@ -2106,8 +2117,13 @@ def _import_summary_model(summary: dict[str, Any], lines: list[str]) -> dict[str
     scan_cache_hits = _summary_int(decisions.get("staged_pdf_cache_hits"))
     citation_changed = _summary_int(citations.get("changed"))
     abstract_changed = _summary_int(abstracts.get("changed"))
+    keyword_changed = _summary_int(keywords.get("changed"))
     pdf_upgrades = _summary_int(decisions.get("pdf_upgrades"))
-    followup_issues = _summary_followup_issue_count(citation_details, abstract_details)
+    followup_issues = _summary_followup_issue_count(
+        citation_details,
+        abstract_details,
+        keyword_details,
+    )
 
     if review_rejected or unselected:
         status = "CHECK"
@@ -2191,10 +2207,12 @@ def _import_summary_model(summary: dict[str, Any], lines: list[str]) -> dict[str
             ("PDF upgrades", pdf_upgrades, "#45ffb0" if pdf_upgrades else "#426b58"),
             ("Citation updates", citation_changed, "#45ffb0" if citation_changed else "#426b58"),
             ("Abstract updates", abstract_changed, "#45ffb0" if abstract_changed else "#426b58"),
+            ("Keyword updates", keyword_changed, "#45ffb0" if keyword_changed else "#426b58"),
         ],
         "enrichment": [
             _summary_enrichment_counts("CITATIONS", citations, citation_details),
             _summary_enrichment_counts("ABSTRACTS", abstracts, abstract_details),
+            _summary_enrichment_counts("KEYWORDS", keywords, keyword_details),
         ],
     }
 
@@ -2605,9 +2623,9 @@ def _issue_row(
     layout.addLayout(top)
 
     message_text = str(detail.get("message") or detail.get("status") or "Follow-up needed")
-    if _can_resolve_missing_abstract(detail):
+    if _can_resolve_missing_abstract(detail) or _can_resolve_missing_keywords(detail):
         message = qt["QPushButton"](message_text)
-        message.clicked.connect(lambda: _resolve_missing_abstract(qt, detail, refresh, parent))
+        message.clicked.connect(lambda: _resolve_issue(qt, detail, refresh, parent))
         message.setStyleSheet(
             _button_stylesheet("danger")
             + "QPushButton { text-align: left; padding: 10px 12px; font-size: 20px; }"
@@ -2643,6 +2661,11 @@ def _issue_row(
         _style_button(resolve, "danger")
         resolve.clicked.connect(lambda: _resolve_missing_abstract(qt, detail, refresh, parent))
         actions.addWidget(resolve)
+    if _can_resolve_missing_keywords(detail):
+        resolve = qt["QPushButton"]("Resolve Keywords")
+        _style_button(resolve, "danger")
+        resolve.clicked.connect(lambda: _resolve_missing_keywords(qt, detail, refresh, parent))
+        actions.addWidget(resolve)
     open_card = qt["QPushButton"]("Open Card")
     open_pdf = qt["QPushButton"]("Open PDF")
     copy_citekey = qt["QPushButton"]("Copy Citekey")
@@ -2675,6 +2698,31 @@ def _can_resolve_missing_abstract(detail: dict[str, Any]) -> bool:
             or detail.get("category") == "unresolved"
         )
     )
+
+
+def _can_resolve_missing_keywords(detail: dict[str, Any]) -> bool:
+    return (
+        detail.get("kind") == "keywords"
+        and bool(detail.get("paper_file"))
+        and bool(detail.get("citekey"))
+        and (
+            str(detail.get("message") or "")
+            in {"no keywords found in attached PDF", "no attached PDF for keyword extraction"}
+            or detail.get("category") == "unresolved"
+        )
+    )
+
+
+def _resolve_issue(
+    qt: dict[str, Any],
+    detail: dict[str, Any],
+    refresh,
+    parent: Any | None = None,
+) -> None:
+    if _can_resolve_missing_keywords(detail):
+        _resolve_missing_keywords(qt, detail, refresh, parent)
+    elif _can_resolve_missing_abstract(detail):
+        _resolve_missing_abstract(qt, detail, refresh, parent)
 
 
 def _vault_from_detail(detail: dict[str, Any]) -> Path:
@@ -2763,6 +2811,98 @@ def _resolve_missing_abstract(
         detail["status"] = "manual_lock"
         detail["source"] = "manual"
         detail["message"] = "manual abstract saved"
+        detail["paper_path"] = result.get("paper") or detail.get("paper_path")
+        refresh()
+        dialog.accept()
+
+    buttons.accepted.connect(save)
+    buttons.rejected.connect(dialog.reject)
+    dialog.show()
+    dialog.raise_()
+    dialog.activateWindow()
+    dialog.exec()
+
+
+def _resolve_missing_keywords(
+    qt: dict[str, Any],
+    detail: dict[str, Any],
+    refresh,
+    parent: Any | None = None,
+) -> None:
+    pdf_file = str(detail.get("pdf_file") or "")
+    if pdf_file:
+        _open_path(qt, pdf_file)
+
+    dialog = qt["QDialog"](parent)
+    if parent is not None:
+        dialog.setWindowModality(qt["Qt"].WindowModality.WindowModal)
+    dialog.setWindowTitle("Resolve Missing Keywords")
+    dialog.resize(760, 500)
+    dialog.setStyleSheet(_dark_dialog_stylesheet())
+    layout = qt["QVBoxLayout"](dialog)
+    layout.setContentsMargins(24, 22, 24, 18)
+    layout.setSpacing(12)
+    title = qt["QLabel"](str(detail.get("title") or "Untitled paper"))
+    title.setWordWrap(True)
+    title.setFont(_summary_font(qt, 20, bold=True))
+    title.setStyleSheet("color: #f3fff7;")
+    layout.addWidget(title)
+
+    prompt = qt["QLabel"](
+        "Enter paper keywords or index terms copied from the PDF. Commas, semicolons, "
+        "bullets, and line breaks will be normalized before saving."
+    )
+    prompt.setWordWrap(True)
+    prompt.setFont(_summary_font(qt, 12))
+    layout.addWidget(prompt)
+
+    editor = qt["QTextEdit"]()
+    editor.setAcceptRichText(False)
+    editor_font = qt["QFont"]("Helvetica Neue")
+    editor_font.setPointSize(16)
+    editor.setFont(editor_font)
+    editor.setStyleSheet(
+        "QTextEdit { background: #07100b; color: #f3fff7; border: 1px solid #078a5d; "
+        "padding: 14px; selection-background-color: #1d6f4b; }"
+    )
+    layout.addWidget(editor, 1)
+
+    buttons = qt["QDialogButtonBox"](
+        qt["QDialogButtonBox"].StandardButton.Save
+        | qt["QDialogButtonBox"].StandardButton.Cancel
+    )
+    _style_dialog_buttons(buttons, "primary")
+    _style_standard_dialog_button(
+        buttons,
+        qt["QDialogButtonBox"].StandardButton.Cancel,
+        "muted",
+    )
+    layout.addWidget(buttons)
+
+    def save() -> None:
+        try:
+            from .importer import set_manual_keywords
+
+            result = set_manual_keywords(
+                _vault_from_detail(detail),
+                str(detail.get("citekey")),
+                editor.toPlainText(),
+            )
+        except Exception as exc:  # pragma: no cover - defensive UI error handling
+            box = qt["QMessageBox"](dialog)
+            box.setWindowTitle("Keywords Not Saved")
+            box.setIcon(qt["QMessageBox"].Icon.Warning)
+            box.setText(str(exc))
+            box.setStandardButtons(qt["QMessageBox"].StandardButton.Ok)
+            _style_message_box(qt, box)
+            box.exec()
+            return
+        detail["category"] = "resolved"
+        detail["status"] = "manual"
+        detail["source"] = "manual"
+        detail["message"] = "manual keywords saved"
+        detail["keywords"] = result.get("keywords") or []
+        detail["missing_fields"] = []
         detail["paper_path"] = result.get("paper") or detail.get("paper_path")
         refresh()
         dialog.accept()

@@ -32,7 +32,13 @@ from .sources import (
     write_text,
 )
 
-OnlyMode = Literal["all", "missing-doi", "missing-bibtex", "missing-abstract"]
+OnlyMode = Literal[
+    "all",
+    "missing-doi",
+    "missing-bibtex",
+    "missing-abstract",
+    "missing-keywords",
+]
 FetchJson = Callable[[str, Path, bool], dict[str, Any] | list[Any] | None]
 FetchText = Callable[[str, Path, bool, dict[str, str]], str | None]
 EnrichmentProgress = Callable[[SourceCard, int, int, str], None]
@@ -105,14 +111,14 @@ def now_iso() -> str:
 
 
 def _result_with_card_context(result: EnrichmentResult, card: SourceCard) -> EnrichmentResult:
-    source = card.abstract_source or card.citation_source or card.doi_source
+    source = result.source or card.abstract_source or card.citation_source or card.doi_source
     return replace(
         result,
         title=card.title,
         paper_path=f"papers/{card.slug}.md",
         doi=card.doi,
         source=source,
-        missing_fields=tuple(card.enrichment_missing),
+        missing_fields=tuple(result.missing_fields or card.enrichment_missing),
     )
 
 
@@ -217,6 +223,17 @@ def should_skip_abstract_card(card: SourceCard, options: EnrichmentOptions) -> s
     return None
 
 
+def should_skip_keyword_card(card: SourceCard, options: EnrichmentOptions) -> str | None:
+    requested_refresh = options.refresh or card.enrichment_refresh
+    if options.citekey and card.citekey != options.citekey:
+        return "citekey filter"
+    if card.metadata_lock and not options.force:
+        return "metadata_lock"
+    if card.keywords and not requested_refresh:
+        return "keywords present"
+    return None
+
+
 def metadata_dir(paths: VaultPaths, card: SourceCard) -> Path:
     key = card.citekey or card.slug
     return paths.raw_metadata / key
@@ -318,7 +335,7 @@ def extract_pdf_keywords(text: str | None) -> list[str]:
         return []
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     match = re.search(
-        r"(?im)^\s*(keywords?|index terms)\s*[\.:;—-]\s*(.*)$",
+        r"(?im)^\s*(keywords?|index terms)\s*[\.:;‐‑‒–—-]\s*(.*)$",
         normalized,
     )
     if not match:
@@ -1493,6 +1510,69 @@ def enrich_abstract_card(
     )
 
 
+def enrich_keyword_card(
+    paths: VaultPaths,
+    card: SourceCard,
+    options: EnrichmentOptions,
+    *,
+    progress_detail: EnrichmentDetailProgress | None = None,
+) -> EnrichmentResult:
+    skip_reason = should_skip_keyword_card(card, options)
+    if skip_reason:
+        return EnrichmentResult(card.citekey or card.slug, "skipped", skip_reason, skipped=True)
+
+    _attempt_detail(progress_detail, "PDF keyword extraction")
+    pdf_path = _card_pdf_path(paths, card)
+    if not pdf_path:
+        _result_detail(progress_detail, "PDF keyword extraction", "no attached PDF")
+        return EnrichmentResult(
+            card.citekey or card.slug,
+            "unresolved",
+            "no attached PDF for keyword extraction",
+            missing_fields=("keywords",),
+        )
+
+    keywords = extract_pdf_keywords(extract_pdf_text_excerpt(pdf_path))
+    if not keywords:
+        _result_detail(progress_detail, "PDF keyword extraction", "0 keywords")
+        return EnrichmentResult(
+            card.citekey or card.slug,
+            "unresolved",
+            "no keywords found in attached PDF",
+            missing_fields=("keywords",),
+        )
+
+    merged_keywords = merge_keywords(card.keywords, keywords)
+    if merged_keywords == card.keywords:
+        _result_detail(
+            progress_detail,
+            "PDF keyword extraction",
+            f"{_count_phrase(len(keywords), 'keyword')} already present",
+        )
+        return EnrichmentResult(
+            card.citekey or card.slug,
+            "skipped",
+            "keywords present",
+            skipped=True,
+            source="pdf_extracted",
+        )
+
+    card.keywords = merged_keywords
+    card.enrichment_refresh = False
+    _result_detail(
+        progress_detail,
+        "PDF keyword extraction",
+        f"added {_count_phrase(len(keywords), 'keyword')}",
+    )
+    return EnrichmentResult(
+        card.citekey or card.slug,
+        "resolved",
+        "keywords resolved from PDF",
+        changed=True,
+        source="pdf_extracted",
+    )
+
+
 def enrich_card(
     paths: VaultPaths,
     card: SourceCard,
@@ -1502,6 +1582,14 @@ def enrich_card(
     fetch_text: FetchText = _http_text,
     progress_detail: EnrichmentDetailProgress | None = None,
 ) -> EnrichmentResult:
+    if options.only == "missing-keywords":
+        return enrich_keyword_card(
+            paths,
+            card,
+            options,
+            progress_detail=progress_detail,
+        )
+
     if options.abstracts:
         return enrich_abstract_card(
             paths,

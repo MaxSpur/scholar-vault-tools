@@ -158,6 +158,14 @@ def test_progress_parts_name_import_substages() -> None:
         "RESULT // crossref DOI abstract lookup -> 1 abstract candidate",
         "nafis2024paper // Are We There Yet? // state=missing; pdf=yes",
     )
+    assert _progress_parts(
+        "Enriching keywords [result:PDF keyword extraction -> added 3 keywords]: "
+        "nafis2024paper // Are We There Yet? // state=present; count=3; pdf=yes"
+    ) == (
+        "KEYWORD ENRICHMENT",
+        "RESULT // PDF keyword extraction -> added 3 keywords",
+        "nafis2024paper // Are We There Yet? // state=present; count=3; pdf=yes",
+    )
     assert (
         _progress_item_text(
             "Enriching abstracts [checking]: nafis2024paper // Are We There Yet? // "
