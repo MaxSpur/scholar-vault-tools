@@ -78,6 +78,7 @@ class ScholarLabsExport(BaseModel):
     schema_version: str
     source: str
     exported_at: str
+    title: str | None = None
     prompt: str = ""
     results: list[ScholarLabsResult] = Field(default_factory=list)
 

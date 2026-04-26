@@ -17,6 +17,7 @@ def _write_export(path: Path, *, prompt: str, exported_at: str) -> Path:
         "schema_version": "0.2",
         "source": "google_scholar_labs",
         "exported_at": exported_at,
+        "title": prompt.title(),
         "prompt": prompt,
         "results": [
             {

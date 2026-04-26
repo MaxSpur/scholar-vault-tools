@@ -4,7 +4,7 @@
   // Scholar-specific exporter. This depends on Google Scholar `gs_*` selectors.
   // Do not replace this with generic article/main/card scraping logic without
   // testing on a real Scholar Labs results page first.
-  const schemaVersion = "0.2";
+  const schemaVersion = "0.3";
 
   const clean = (value) =>
     (value || "")
@@ -30,6 +30,54 @@
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "")
       .slice(0, 80) || "scholar-labs";
+
+  const titleCase = (value) => {
+    const lower = clean(value).toLowerCase();
+    return lower ? lower[0].toUpperCase() + lower.slice(1) : "";
+  };
+
+  const inferRunTitle = (promptText) => {
+    const stopWords = new Set([
+      "about",
+      "after",
+      "also",
+      "and",
+      "are",
+      "can",
+      "find",
+      "for",
+      "from",
+      "have",
+      "into",
+      "key",
+      "literature",
+      "most",
+      "not",
+      "on",
+      "paper",
+      "papers",
+      "peer",
+      "reviewed",
+      "research",
+      "search",
+      "sources",
+      "that",
+      "the",
+      "their",
+      "these",
+      "this",
+      "to",
+      "useful",
+      "with",
+      "would",
+    ]);
+    const tokens = clean(promptText).match(/[A-Za-z0-9][A-Za-z0-9-]*/g) || [];
+    const selected = tokens
+      .map((token) => token.replace(/^-|-$/g, ""))
+      .filter((token) => token.length > 2 && !stopWords.has(token.toLowerCase()))
+      .slice(0, 6);
+    return selected.map(titleCase).join(" ") || "Scholar Labs Run";
+  };
 
   const parseCount = (label) => {
     const match = clean(label).match(/\b(\d+)\b/);
@@ -295,16 +343,28 @@
     return;
   }
 
+  const defaultTitle = inferRunTitle(prompt);
+  const enteredTitle = window.prompt(
+    `Title for this Scholar Vault run:\n\nScholar Labs prompt:\n${prompt}`,
+    defaultTitle
+  );
+  if (enteredTitle === null) {
+    console.log("[Scholar Labs Export] Export canceled before saving JSON.");
+    return;
+  }
+  const runTitle = clean(enteredTitle) || defaultTitle;
+
   const payload = {
     schema_version: schemaVersion,
     source: "google_scholar_labs",
     exported_at: new Date().toISOString(),
+    title: runTitle,
     prompt,
     results,
   };
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const filename = `scholar-labs-${slugify(prompt)}-${timestamp}.json`;
+  const filename = `scholar-labs-${slugify(runTitle || prompt)}-${timestamp}.json`;
 
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json;charset=utf-8",

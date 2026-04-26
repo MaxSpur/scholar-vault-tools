@@ -335,6 +335,93 @@ def make_confirmer(title: str = "Scholar Vault") -> _Confirmer:
     return _Confirmer(_load_qt_modules(require_fitz=False), title)
 
 
+def prompt_run_title(
+    default_title: str,
+    prompt: str,
+    export_file: str | None = None,
+) -> str | None:
+    qt = _load_qt_modules(require_fitz=False)
+    app = _application(qt)
+    dialog = qt["QDialog"]()
+    dialog.setWindowTitle("Scholar Vault Import")
+    dialog.resize(820, 420)
+    dialog.setStyleSheet(_dark_dialog_stylesheet())
+
+    layout = qt["QVBoxLayout"](dialog)
+    layout.setContentsMargins(28, 24, 28, 20)
+    layout.setSpacing(14)
+
+    kicker = qt["QLabel"]("SCHOLAR VAULT // IMPORT")
+    kicker.setFont(_summary_font(qt, 12, mono=True, bold=True))
+    kicker.setStyleSheet("color: #00f0a8;")
+    layout.addWidget(kicker)
+
+    heading = qt["QLabel"]("TITLE THIS RUN")
+    heading.setFont(_summary_font(qt, 30, bold=True))
+    heading.setStyleSheet("color: #f3fff7;")
+    layout.addWidget(heading)
+
+    body = qt["QLabel"](
+        "This Scholar Labs JSON does not include a run title. Confirm the suggested "
+        "title or replace it before the import starts."
+    )
+    body.setWordWrap(True)
+    body.setFont(_summary_font(qt, 13))
+    body.setStyleSheet("color: #a8ffd3;")
+    layout.addWidget(body)
+
+    if export_file:
+        export_label = qt["QLabel"](str(export_file))
+        export_label.setWordWrap(True)
+        export_label.setFont(_summary_font(qt, 10, mono=True))
+        export_label.setStyleSheet("color: #68c792;")
+        layout.addWidget(export_label)
+
+    field = qt["QLineEdit"]()
+    field.setText(default_title)
+    field.setPlaceholderText(default_title)
+    field.setMinimumHeight(46)
+    field.selectAll()
+    layout.addWidget(field)
+
+    prompt_label = qt["QLabel"]("Prompt from JSON")
+    prompt_label.setFont(_summary_font(qt, 11, mono=True, bold=True))
+    prompt_label.setStyleSheet("color: #8ce7b8;")
+    layout.addWidget(prompt_label)
+
+    prompt_text = qt["QTextEdit"]()
+    prompt_text.setReadOnly(True)
+    prompt_text.setPlainText(prompt)
+    prompt_text.setMinimumHeight(110)
+    prompt_text.setFont(_summary_font(qt, 11))
+    prompt_text.setStyleSheet(
+        "QTextEdit { color: #d7ffe8; background: #00120b; border: 1px solid #006b45; "
+        "padding: 8px; }"
+    )
+    layout.addWidget(prompt_text, 1)
+
+    buttons = qt["QHBoxLayout"]()
+    buttons.addStretch(1)
+    cancel = qt["QPushButton"]("Cancel Import")
+    accept = qt["QPushButton"]("Use Title")
+    cancel.setMinimumWidth(140)
+    accept.setMinimumWidth(140)
+    _style_button(cancel, "muted")
+    _style_button(accept, "success")
+    cancel.clicked.connect(dialog.reject)
+    accept.clicked.connect(dialog.accept)
+    buttons.addWidget(cancel)
+    buttons.addWidget(accept)
+    layout.addLayout(buttons)
+
+    qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.reject)
+    result = dialog.exec()
+    app.processEvents()
+    if result == qt["QDialog"].DialogCode.Accepted:
+        return field.text().strip() or default_title
+    return None
+
+
 def _confirmation_model(prompt: str) -> dict[str, str]:
     normalized = " ".join(prompt.strip().split())
     run_match = re.fullmatch(r"Run (.+) already exists\. Resume and update it\?", normalized)

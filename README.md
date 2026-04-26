@@ -216,8 +216,10 @@ Run notes are written as `runs/<run_id>/<Short Title.md>` instead of
 `index.md`. This gives Obsidian Graph and the file sidebar meaningful run/prompt
 nodes. Each run note has frontmatter `type: scholar_labs_run`, `title`,
 `note_file`, and tag `scholar-vault/run`, so Graph groups can color prompts
-separately from paper cards. If you do not provide a title, `scholar-vault`
-infers a short title from the prompt topic.
+separately from paper cards. The Scholar Labs browser exporter asks for this
+title before saving JSON and stores it in the export. For older JSON files
+without a title, `import-labs` displays the full Scholar Labs prompt and asks
+you to confirm or replace the inferred title before importing.
 
 Dry-run the import without creating paper cards or copying PDFs:
 
@@ -258,7 +260,7 @@ to open the paper card or attached PDF.
 If GUI dependencies are unavailable in the current environment, the command
 falls back to terminal prompts.
 
-Set a short Obsidian run title during import:
+You can still override the JSON title during import:
 
 ```fish
 scholar-vault import-labs --vault ~/Documents/Research/scholar-labs-vault --export ~/Downloads/scholar-labs-exports/example.json --staging ~/Downloads/scholar-labs-staging --commit --title "Immersive Analytics Sources"

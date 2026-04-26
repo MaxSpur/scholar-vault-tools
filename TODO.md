@@ -15,6 +15,7 @@
 - [x] Promote trusted DOI metadata into canonical paper card fields so venues/authors/titles are not left as Scholar preview strings.
 - [x] Add canonical-card abstract enrichment with separate abstract provenance, locks, refresh behavior, and exports.
 - [x] Add short Obsidian-facing run titles, `--title`, and `rename-run` while keeping stable run IDs.
+- [x] Store run titles in Scholar Labs JSON exports and prompt for a title, with the full JSON prompt visible, when importing older untitled exports.
 - [x] Add user-level default paths and make `import-labs` select the newest unused Scholar Labs export JSON automatically.
 - [x] Run citation and abstract enrichment automatically after selected Scholar Labs matches and show progress in long-running import/enrichment commands.
 - [x] Rerender existing paper cards during rebuild so template improvements like Quick access apply retroactively.

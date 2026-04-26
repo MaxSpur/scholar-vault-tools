@@ -53,6 +53,7 @@
 - Maintenance commands should report what they touched. `rebuild` is safer to trust when it summarizes rewritten cards, normalized records, and regenerated derived outputs.
 - Obsidian Graph uses Markdown file basenames, so generated run notes should not be named `index.md`. Use meaningful run filenames and keep machine state in `index.yaml`.
 - Keep run IDs and Obsidian run-note titles separate. The run ID is for idempotence and manifests; the short title is for human navigation and Graph labels.
+- When asking for a run title, show the full Scholar Labs prompt from the JSON. The title decision depends on the prompt context, so truncated prompt text is not enough.
 - If a user renames a generated run note in Obsidian, preserve that filename through `note_file`; do not slugify it back into a machine-looking name during rebuild.
 - Rebuild must rerender generated paper Markdown when templates change. Metadata-only rebuilds leave old body layout problems such as missing Quick access sections in existing cards.
 - PyYAML parses unquoted timestamp scalars into `datetime`/`date` objects. Normalize frontmatter-loaded date values back to ISO strings before Pydantic model validation.

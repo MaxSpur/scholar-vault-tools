@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from click.exceptions import Exit
 from typer.testing import CliRunner
 
@@ -14,6 +16,34 @@ from scholar_vault.cli import (
 from scholar_vault.importer import initialize_vault
 from scholar_vault.models import ImportCanceled, MatchReviewAbort
 from scholar_vault.sources import write_yaml
+
+
+def _write_cli_export(
+    path,
+    *,
+    title: str | None = None,
+    prompt: str = "retrieval augmented generation evaluation with grounded evidence",
+):
+    payload = {
+        "schema_version": "0.2",
+        "source": "google_scholar_labs",
+        "exported_at": "2026-04-22T16:00:00+02:00",
+        "prompt": prompt,
+        "results": [
+            {
+                "rank": 1,
+                "scholar_cid": "cid-001",
+                "title": "Result Paper 1",
+                "authors_preview": "Jane Smith",
+                "year": 2024,
+                "venue_preview": "Test Venue",
+            }
+        ],
+    }
+    if title is not None:
+        payload["title"] = title
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
 
 
 def test_interactive_progress_uses_plain_lines(capsys) -> None:
@@ -309,7 +339,7 @@ def test_import_labs_checks_for_pdf_upgrades_by_default(tmp_path, monkeypatch) -
     export = tmp_path / "export.json"
     initialize_vault(vault)
     staging.mkdir()
-    export.write_text("{}", encoding="utf-8")
+    _write_cli_export(export, title="CLI Export Title")
 
     def fake_import_scholar_labs_run(*_args, **kwargs):
         calls.append(kwargs)
@@ -340,6 +370,54 @@ def test_import_labs_checks_for_pdf_upgrades_by_default(tmp_path, monkeypatch) -
 
     assert result.exit_code == 0
     assert calls[0]["upgrade_pdfs"] is True
+    assert calls[0]["title"] == "CLI Export Title"
+
+
+def test_import_labs_prompts_for_title_when_export_has_none(tmp_path, monkeypatch) -> None:
+    calls = []
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    export = tmp_path / "export.json"
+    prompt = (
+        "Find peer-reviewed papers on collaborative immersive analytics for multimodal "
+        "urban mobility data, including VR and AR systems, shared workspaces, and "
+        "evaluation methods that could support a postdoctoral proposal."
+    )
+    initialize_vault(vault)
+    staging.mkdir()
+    _write_cli_export(export, prompt=prompt)
+
+    def fake_import_scholar_labs_run(*_args, **kwargs):
+        calls.append(kwargs)
+        return {"run": "2026-04-22_example-run"}
+
+    monkeypatch.setattr(
+        "scholar_vault.cli.import_scholar_labs_run",
+        fake_import_scholar_labs_run,
+    )
+    monkeypatch.setattr(
+        "scholar_vault.cli._finish_import_workflow",
+        lambda *_args, **_kwargs: None,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "import-labs",
+            "--vault",
+            str(vault),
+            "--staging",
+            str(staging),
+            "--export",
+            str(export),
+            "--dry-run",
+        ],
+        input="Custom Prompted Run\n",
+    )
+
+    assert result.exit_code == 0
+    assert prompt in result.output
+    assert calls[0]["title"] == "Custom Prompted Run"
 
 
 def test_rebuild_command_prints_summary(tmp_path) -> None:

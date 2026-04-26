@@ -30,8 +30,14 @@ from .importer import (
     set_manual_abstract,
     undo_run,
 )
-from .models import ImportCanceled, MatchReviewAbort, MatchReviewRequest, SourceCard
-from .sources import VaultPaths, load_run_records, load_source_cards
+from .models import (
+    ImportCanceled,
+    MatchReviewAbort,
+    MatchReviewRequest,
+    ScholarLabsExport,
+    SourceCard,
+)
+from .sources import VaultPaths, infer_run_title, load_run_records, load_source_cards
 
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
 console = Console()
@@ -257,6 +263,49 @@ YesArg = Annotated[
 
 def _confirm(prompt: str) -> bool:
     return typer.confirm(prompt, default=False)
+
+
+def _load_export_for_title(export_path: Path) -> ScholarLabsExport:
+    return ScholarLabsExport.model_validate_json(export_path.read_text(encoding="utf-8"))
+
+
+def _prompt_run_title_cli(default_title: str, prompt: str) -> str:
+    console.print("Scholar Labs export does not include a run title.")
+    console.print("Prompt:")
+    console.print(prompt.strip() or "(empty)", soft_wrap=True)
+    selected = typer.prompt("Run title", default=default_title)
+    return selected.strip() or default_title
+
+
+def _prompt_run_title_gui(default_title: str, prompt: str, export_path: Path) -> str | None:
+    try:
+        from .gui import GuiUnavailable, prompt_run_title
+    except Exception as exc:  # pragma: no cover - defensive optional import path
+        console.print(f"Title UI unavailable ({exc}). Falling back to terminal prompt.")
+        return _prompt_run_title_cli(default_title, prompt)
+    try:
+        return prompt_run_title(default_title, prompt, str(export_path))
+    except GuiUnavailable as exc:
+        console.print(f"Title UI unavailable ({exc}). Falling back to terminal prompt.")
+        return _prompt_run_title_cli(default_title, prompt)
+
+
+def _resolve_import_title(title: str | None, export_path: Path, *, ui: bool) -> str | None:
+    if title and title.strip():
+        return title.strip()
+    export = _load_export_for_title(export_path)
+    if export.title and export.title.strip():
+        return export.title.strip()
+    default_title = infer_run_title(export.prompt)
+    selected = (
+        _prompt_run_title_gui(default_title, export.prompt, export_path)
+        if ui
+        else _prompt_run_title_cli(default_title, export.prompt)
+    )
+    if selected is None:
+        console.print("Import canceled.")
+        raise typer.Exit(code=0)
+    return selected.strip() or default_title
 
 
 def _match_review_prompt(request: MatchReviewRequest) -> str:
@@ -1055,6 +1104,7 @@ def import_run_command(
     title: TitleArg = None,
     ui: UiArg = False,
 ) -> None:
+    resolved_title = _resolve_import_title(title, export, ui=ui)
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
     confirm = _confirm_callback(ui)
     progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
@@ -1070,7 +1120,7 @@ def import_run_command(
             archive_matched=False,
             archive_export=archive_export,
             upgrade_pdfs=upgrade_pdfs,
-            title=title,
+            title=resolved_title,
             confirm=confirm,
             review_match=review_match,
             progress=report,
@@ -1101,6 +1151,7 @@ def import_labs_command(
     resolved_vault = _resolve_vault(vault)
     resolved_staging = _resolve_staging(staging)
     resolved_export = _resolve_latest_export(export, fallback_dir=resolved_staging)
+    resolved_title = _resolve_import_title(title, resolved_export, ui=ui)
     summary = _with_progress(
         "Importing Scholar Labs run",
         lambda report: import_scholar_labs_run(
@@ -1114,7 +1165,7 @@ def import_labs_command(
             archive_export=archive_export,
             auto_enrich=auto_enrich,
             upgrade_pdfs=upgrade_pdfs,
-            title=title,
+            title=resolved_title,
             confirm=confirm,
             review_match=review_match,
             progress=report,
@@ -1145,6 +1196,7 @@ def import_alias_command(
     resolved_vault = _resolve_vault(vault)
     resolved_staging = _resolve_staging(staging)
     resolved_export = _resolve_latest_export(export, fallback_dir=resolved_staging)
+    resolved_title = _resolve_import_title(title, resolved_export, ui=ui)
     summary = _with_progress(
         "Importing Scholar Labs run",
         lambda report: import_scholar_labs_run(
@@ -1158,7 +1210,7 @@ def import_alias_command(
             archive_export=archive_export,
             auto_enrich=auto_enrich,
             upgrade_pdfs=upgrade_pdfs,
-            title=title,
+            title=resolved_title,
             confirm=confirm,
             review_match=review_match,
             progress=report,

@@ -966,6 +966,29 @@ def _report_match_progress(
         )
 
 
+def _run_title_from_inputs(
+    export: ScholarLabsExport,
+    existing_run: RunRecord | None,
+    title: str | None,
+) -> tuple[str, bool]:
+    explicit_title = clean_markdown_text(title)
+    if explicit_title:
+        return run_display_title(explicit_title, export.prompt), True
+
+    export_title = clean_markdown_text(export.title)
+    existing_title = clean_markdown_text(existing_run.title if existing_run else None)
+    inferred_title = infer_run_title(export.prompt)
+
+    if export_title and (
+        not existing_title or normalize_title(existing_title) == normalize_title(inferred_title)
+    ):
+        return run_display_title(export_title, export.prompt), bool(
+            existing_title and normalize_title(existing_title) != normalize_title(export_title)
+        )
+
+    return run_display_title(existing_title or export_title or None, export.prompt), False
+
+
 def import_scholar_labs_run(
     vault: Path | str,
     export_path: Path | str,
@@ -994,11 +1017,10 @@ def import_scholar_labs_run(
     export = _load_validated_scholar_export(paths, export_file)
     run_slug, run_date = _run_slug(export, export_file)
     existing_run = _load_run_record(paths, run_slug)
-    run_title = run_display_title(
-        title or (existing_run.title if existing_run else None),
-        export.prompt,
+    run_title, title_changes_existing = _run_title_from_inputs(export, existing_run, title)
+    run_note_file = (
+        existing_run.note_file if existing_run and not title_changes_existing else None
     )
-    run_note_file = existing_run.note_file if existing_run and title is None else None
     run_ref = _run_ref_from_parts(run_slug, run_date, run_title, export.prompt, run_note_file)
     if existing_run and not dry_run and not commit and confirm is not None:
         if not confirm(f"Run {run_slug} already exists. Resume and update it?"):
@@ -1797,7 +1819,7 @@ def resume_run(
         archive_export=run.archive_matched_from_staging,
         auto_enrich=auto_enrich,
         upgrade_pdfs=upgrade_pdfs,
-        title=run.title,
+        title=None,
         confirm=confirm,
         review_match=review_match,
         progress=progress,

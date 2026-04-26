@@ -52,6 +52,7 @@ def _write_export(
     *,
     prompt: str = "retrieval augmented generation evaluation with grounded evidence",
     exported_at: str = "2026-04-22T16:00:00+02:00",
+    title: str | None = None,
 ) -> Path:
     results = []
     for index in range(result_count):
@@ -82,6 +83,8 @@ def _write_export(
         "prompt": prompt,
         "results": results,
     }
+    if title is not None:
+        payload["title"] = title
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return path
 
@@ -141,6 +144,43 @@ def test_import_run_creates_only_selected_paper_cards(tmp_path: Path) -> None:
     assert len([entry for entry in manifest["entries"] if entry.get("decision") == "accepted"]) == 3
     assert len(list((vault / "pdfs").glob("*.pdf"))) == 3
     assert len(list(staging.glob("*.pdf"))) == 3
+
+
+def test_import_run_uses_export_title_for_run_note(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_export(exports / "sample.json", 1, title="Curated Mobility Sources")
+    _write_pdf_with_title(staging / "paper-1.pdf", "Result Paper 1")
+
+    summary = import_scholar_labs_run(vault, export_path, staging, commit=True)
+    run_id = str(summary["run"])
+    run_yaml = _run_yaml(vault, run_id)
+
+    assert run_yaml["title"] == "Curated Mobility Sources"
+    assert (vault / "runs" / run_id / "Curated Mobility Sources.md").exists()
+
+
+def test_resume_promotes_export_title_when_existing_title_was_inferred(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _write_export(exports / "sample.json", 1)
+    _write_pdf_with_title(staging / "paper-1.pdf", "Result Paper 1")
+
+    first = import_scholar_labs_run(vault, export_path, staging, commit=True)
+    run_id = str(first["run"])
+    _rewrite_export(export_path, title="Curated Rerun Sources")
+
+    resume_run(vault, run_id, commit=True)
+    run_yaml = _run_yaml(vault, run_id)
+
+    assert run_yaml["title"] == "Curated Rerun Sources"
+    assert (vault / "runs" / run_id / "Curated Rerun Sources.md").exists()
 
 
 def test_rejected_match_leaves_pdf_in_staging(tmp_path: Path) -> None:
