@@ -2732,6 +2732,80 @@ def _vault_from_detail(detail: dict[str, Any]) -> Path:
     return Path(str(paper_file)).expanduser().resolve().parent.parent
 
 
+def _add_manual_save_progress_panel(
+    qt: dict[str, Any],
+    layout: Any,
+    *,
+    total_steps: int = 19,
+) -> dict[str, Any]:
+    frame = qt["QFrame"]()
+    frame.setStyleSheet(
+        "QFrame { background: #07100b; border: 1px solid #26553b; }"
+        "QLabel { color: #baffdc; border: 0; }"
+    )
+    frame_layout = qt["QVBoxLayout"](frame)
+    frame_layout.setContentsMargins(12, 10, 12, 10)
+    frame_layout.setSpacing(8)
+
+    heading = qt["QLabel"]("SAVE PROGRESS")
+    heading.setFont(_summary_font(qt, 10, bold=True))
+    heading.setStyleSheet("color: #45ffb0; letter-spacing: 1px;")
+    frame_layout.addWidget(heading)
+
+    status = qt["QLabel"]("Ready to save.")
+    status.setWordWrap(True)
+    status.setFont(_summary_font(qt, 12, bold=True))
+    frame_layout.addWidget(status)
+
+    bar = qt["QProgressBar"]()
+    bar.setRange(0, total_steps)
+    bar.setValue(0)
+    bar.setTextVisible(False)
+    frame_layout.addWidget(bar)
+
+    log = qt["QTextEdit"]()
+    log.setReadOnly(True)
+    log.setAcceptRichText(True)
+    log.setMaximumHeight(96)
+    log.setLineWrapMode(qt["QTextEdit"].LineWrapMode.NoWrap)
+    log.setStyleSheet(
+        "QTextEdit { background: #020806; color: #d7ffe8; border: 1px solid #153b2a; "
+        "font-family: Menlo, Monaco, monospace; font-size: 11px; padding: 6px; }"
+    )
+    frame_layout.addWidget(log)
+    layout.addWidget(frame)
+    return {
+        "bar": bar,
+        "count": 0,
+        "log": log,
+        "status": status,
+        "total": total_steps,
+    }
+
+
+def _manual_save_progress_callback(
+    qt: dict[str, Any],
+    app: Any,
+    widgets: dict[str, Any],
+):
+    def progress(message: str) -> None:
+        count = int(widgets.get("count") or 0) + 1
+        widgets["count"] = count
+        bar = widgets["bar"]
+        if count >= int(widgets.get("total") or 0) or message == "Done":
+            bar.setMaximum(count)
+        bar.setValue(count)
+        widgets["status"].setText(message)
+        widgets["log"].append(
+            f'<span style="color:#45ffb0">{count:02d}</span> {html.escape(message)}'
+        )
+        scroll = widgets["log"].verticalScrollBar()
+        scroll.setValue(scroll.maximum())
+        app.processEvents()
+
+    return progress
+
+
 def _resolve_missing_abstract(
     qt: dict[str, Any],
     detail: dict[str, Any],
@@ -2776,6 +2850,8 @@ def _resolve_missing_abstract(
     )
     layout.addWidget(editor, 1)
 
+    progress_widgets = _add_manual_save_progress_panel(qt, layout)
+
     buttons = qt["QDialogButtonBox"](
         qt["QDialogButtonBox"].StandardButton.Save
         | qt["QDialogButtonBox"].StandardButton.Cancel
@@ -2789,6 +2865,12 @@ def _resolve_missing_abstract(
     layout.addWidget(buttons)
 
     def save() -> None:
+        app = _application(qt)
+        progress = _manual_save_progress_callback(qt, app, progress_widgets)
+        editor.setReadOnly(True)
+        buttons.setEnabled(False)
+        dialog.setCursor(qt["Qt"].CursorShape.WaitCursor)
+        progress("Starting save")
         try:
             from .importer import set_manual_abstract
 
@@ -2797,8 +2879,13 @@ def _resolve_missing_abstract(
                 str(detail.get("citekey")),
                 editor.toPlainText(),
                 source_url=str(detail.get("pdf") or detail.get("pdf_file") or ""),
+                progress=progress,
             )
         except Exception as exc:  # pragma: no cover - defensive UI error handling
+            progress("Save failed")
+            dialog.unsetCursor()
+            buttons.setEnabled(True)
+            editor.setReadOnly(False)
             box = qt["QMessageBox"](dialog)
             box.setWindowTitle("Abstract Not Saved")
             box.setIcon(qt["QMessageBox"].Icon.Warning)
@@ -2812,7 +2899,10 @@ def _resolve_missing_abstract(
         detail["source"] = "manual"
         detail["message"] = "manual abstract saved"
         detail["paper_path"] = result.get("paper") or detail.get("paper_path")
+        progress("Refreshing follow-up list")
         refresh()
+        progress("Done")
+        dialog.unsetCursor()
         dialog.accept()
 
     buttons.accepted.connect(save)
@@ -2867,6 +2957,8 @@ def _resolve_missing_keywords(
     )
     layout.addWidget(editor, 1)
 
+    progress_widgets = _add_manual_save_progress_panel(qt, layout)
+
     buttons = qt["QDialogButtonBox"](
         qt["QDialogButtonBox"].StandardButton.Save
         | qt["QDialogButtonBox"].StandardButton.Cancel
@@ -2880,6 +2972,12 @@ def _resolve_missing_keywords(
     layout.addWidget(buttons)
 
     def save() -> None:
+        app = _application(qt)
+        progress = _manual_save_progress_callback(qt, app, progress_widgets)
+        editor.setReadOnly(True)
+        buttons.setEnabled(False)
+        dialog.setCursor(qt["Qt"].CursorShape.WaitCursor)
+        progress("Starting save")
         try:
             from .importer import set_manual_keywords
 
@@ -2887,8 +2985,13 @@ def _resolve_missing_keywords(
                 _vault_from_detail(detail),
                 str(detail.get("citekey")),
                 editor.toPlainText(),
+                progress=progress,
             )
         except Exception as exc:  # pragma: no cover - defensive UI error handling
+            progress("Save failed")
+            dialog.unsetCursor()
+            buttons.setEnabled(True)
+            editor.setReadOnly(False)
             box = qt["QMessageBox"](dialog)
             box.setWindowTitle("Keywords Not Saved")
             box.setIcon(qt["QMessageBox"].Icon.Warning)
@@ -2904,7 +3007,10 @@ def _resolve_missing_keywords(
         detail["keywords"] = result.get("keywords") or []
         detail["missing_fields"] = []
         detail["paper_path"] = result.get("paper") or detail.get("paper_path")
+        progress("Refreshing follow-up list")
         refresh()
+        progress("Done")
+        dialog.unsetCursor()
         dialog.accept()
 
     buttons.accepted.connect(save)

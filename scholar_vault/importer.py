@@ -90,6 +90,7 @@ from .sources import (
 ConfirmCallback = Callable[[str], bool]
 MatchReviewCallback = Callable[[MatchReviewRequest], bool]
 ProgressCallback = Callable[[str, int | None, int | None], None]
+ManualSaveProgress = Callable[[str], None]
 
 PDF_SCAN_CACHE_FILENAME = ".scholar-vault-pdf-scan-cache"
 PDF_SCAN_CACHE_SCHEMA_VERSION = 1
@@ -97,6 +98,11 @@ PDF_SCAN_CACHE_SCHEMA_VERSION = 1
 
 def _now_iso() -> str:
     return datetime.now().astimezone().replace(microsecond=0).isoformat()
+
+
+def _manual_save_step(progress: ManualSaveProgress | None, message: str) -> None:
+    if progress is not None:
+        progress(message)
 
 
 def _parse_datetime(value: str | None) -> datetime:
@@ -594,13 +600,20 @@ def _normalize_attached_pdf_filename(paths: VaultPaths, card: SourceCard) -> boo
     return True
 
 
-def _rebuild_indexes(paths: VaultPaths) -> dict[str, int]:
+def _rebuild_indexes(
+    paths: VaultPaths,
+    *,
+    progress: ManualSaveProgress | None = None,
+) -> dict[str, int]:
+    _manual_save_step(progress, "Loading run records")
     runs = load_run_records(paths)
     run_refs = {run.slug: _run_ref(run) for run in runs}
+    _manual_save_step(progress, "Loading paper cards")
     cards = load_source_cards(paths)
     cards_changed = False
     cards_normalized = 0
     pdf_filenames_normalized = 0
+    _manual_save_step(progress, "Normalizing paper card references")
     for card in cards:
         card_changed = False
         normalized_discovered_in = [
@@ -621,6 +634,7 @@ def _rebuild_indexes(paths: VaultPaths) -> dict[str, int]:
             cards_changed = True
             cards_normalized += 1
     paper_cards_written = 0
+    _manual_save_step(progress, "Rendering paper cards")
     for card in cards:
         rendered = render_paper_markdown(card)
         paper_path = paths.papers / f"{card.slug}.md"
@@ -633,23 +647,29 @@ def _rebuild_indexes(paths: VaultPaths) -> dict[str, int]:
             write_text(paper_path, rendered)
             paper_cards_written += 1
 
+    _manual_save_step(progress, "Loading import manifests")
     manifests = load_import_manifests(paths)
     topic_cards = group_cards_by_topic(cards)
 
+    _manual_save_step(progress, "Writing index pages")
     write_text(paths.indexes / "prompts.md", render_prompts_index(runs))
     write_text(paths.indexes / "papers.md", render_papers_index(cards))
     write_text(paths.indexes / "topics.md", render_topics_index(topic_cards))
     write_text(paths.indexes / "missing-pdfs.md", render_missing_pdfs(runs))
     write_text(paths.indexes / "unmatched.md", render_unmatched_index(manifests))
     write_text(paths.indexes / "zotero-migration.md", render_zotero_migration())
+    _manual_save_step(progress, "Writing LLM context files")
     write_text(paths.vault / "llms.txt", render_llms_txt())
     write_text(paths.vault / "llms-full.txt", render_llms_full(cards, runs, manifests))
+    _manual_save_step(progress, "Writing library exports")
     write_json(paths.exports / "library.json", _cards_to_library_json(cards))
     write_json(paths.exports / "library.csl.json", _cards_to_csl_json(cards))
     write_library_bib(cards, paths.exports / "library.bib")
 
+    _manual_save_step(progress, "Writing topic pages")
     for topic, topic_list in topic_cards.items():
         write_text(paths.topics / f"{topic_slug(topic)}.md", render_topic_page(topic, topic_list))
+    _manual_save_step(progress, "Writing run notes")
     for run in runs:
         _write_run(paths, run, cards)
     return {
@@ -2473,17 +2493,22 @@ def set_manual_abstract(
     *,
     source_url: str | None = None,
     lock: bool = True,
+    progress: ManualSaveProgress | None = None,
 ) -> dict[str, str | bool]:
+    _manual_save_step(progress, "Opening vault")
     paths = initialize_vault(vault)
+    _manual_save_step(progress, "Cleaning abstract text")
     cleaned = clean_markdown_text(normalize_copied_abstract(abstract))
     if not cleaned:
         raise ValueError("Manual abstract text is empty.")
 
+    _manual_save_step(progress, "Loading paper cards")
     cards = load_source_cards(paths)
     card = next((item for item in cards if item.citekey == citekey or item.slug == citekey), None)
     if card is None:
         raise ValueError(f"No paper card found for citekey or slug: {citekey}")
 
+    _manual_save_step(progress, "Updating abstract metadata")
     checked_at = _now_iso()
     card.abstract = cleaned
     card.abstract_status = "manual_lock" if lock else "resolved"
@@ -2495,8 +2520,11 @@ def set_manual_abstract(
     card.abstract_input_fingerprint = abstract_fingerprint(card)
     card.abstract_lock = lock
     card.enrichment_refresh = False
+    _manual_save_step(progress, "Writing paper card")
     _save_card(paths, card)
-    _rebuild_indexes(paths)
+    _manual_save_step(progress, "Rebuilding derived files")
+    _rebuild_indexes(paths, progress=progress)
+    _manual_save_step(progress, "Manual save complete")
     return {
         "citekey": card.citekey or card.slug,
         "paper": f"papers/{card.slug}.md",
@@ -2510,22 +2538,30 @@ def set_manual_keywords(
     keywords: str | Iterable[str],
     *,
     replace: bool = False,
+    progress: ManualSaveProgress | None = None,
 ) -> dict[str, str | int | list[str]]:
+    _manual_save_step(progress, "Opening vault")
     paths = initialize_vault(vault)
+    _manual_save_step(progress, "Normalizing keyword separators")
     raw_keywords = keywords.splitlines() if isinstance(keywords, str) else keywords
     cleaned_keywords = normalize_keywords(raw_keywords)
     if not cleaned_keywords:
         raise ValueError("Manual keyword text is empty.")
 
+    _manual_save_step(progress, "Loading paper cards")
     cards = load_source_cards(paths)
     card = next((item for item in cards if item.citekey == citekey or item.slug == citekey), None)
     if card is None:
         raise ValueError(f"No paper card found for citekey or slug: {citekey}")
 
+    _manual_save_step(progress, "Updating keyword metadata")
     card.keywords = cleaned_keywords if replace else _merge_unique(card.keywords, cleaned_keywords)
     card.enrichment_refresh = False
+    _manual_save_step(progress, "Writing paper card")
     _save_card(paths, card)
-    _rebuild_indexes(paths)
+    _manual_save_step(progress, "Rebuilding derived files")
+    _rebuild_indexes(paths, progress=progress)
+    _manual_save_step(progress, "Manual save complete")
     return {
         "citekey": card.citekey or card.slug,
         "paper": f"papers/{card.slug}.md",

@@ -407,6 +407,10 @@ If automatic PDF keyword extraction still finds nothing, GUI follow-up shows a k
 scholar-vault set-keywords --citekey smith2024rag --text "Immersive Analytics; Collaboration; Usability Study"
 ```
 
+When the GUI saves a manually entered abstract or keywords, it shows each
+save stage: text cleanup, card write, derived index rebuild, exports, topic
+pages, run notes, and follow-up refresh.
+
 Interpretation:
 
 - `missing`: no abstract has been found yet.

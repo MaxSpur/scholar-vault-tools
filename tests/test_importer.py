@@ -855,11 +855,13 @@ def test_set_manual_abstract_locks_and_rerenders_card(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
+    progress_steps: list[str] = []
     summary = set_manual_abstract(
         vault,
         "smith2024rag",
         "Manual abstract.\n\nSecond paragraph.",
         source_url="https://example.com/abstract",
+        progress=progress_steps.append,
     )
     saved = load_source_cards(initialize_vault(vault))[0]
     rendered = (paths.papers / "smith2024rag.md").read_text(encoding="utf-8")
@@ -871,6 +873,16 @@ def test_set_manual_abstract_locks_and_rerenders_card(tmp_path: Path) -> None:
     assert saved.abstract_source_url == "https://example.com/abstract"
     assert saved.abstract_lock is True
     assert "## Abstract\nManual abstract.\n\nSecond paragraph." in rendered
+    assert progress_steps[:6] == [
+        "Opening vault",
+        "Cleaning abstract text",
+        "Loading paper cards",
+        "Updating abstract metadata",
+        "Writing paper card",
+        "Rebuilding derived files",
+    ]
+    assert "Writing library exports" in progress_steps
+    assert progress_steps[-1] == "Manual save complete"
 
 
 def test_set_manual_keywords_normalizes_and_rerenders_card(tmp_path: Path) -> None:
@@ -886,10 +898,12 @@ def test_set_manual_keywords_normalizes_and_rerenders_card(tmp_path: Path) -> No
         encoding="utf-8",
     )
 
+    progress_steps: list[str] = []
     summary = set_manual_keywords(
         vault,
         "smith2024rag",
         "Index Terms--Retrieval | Benchmarking\nCollaborative analysis",
+        progress=progress_steps.append,
     )
     saved = load_source_cards(initialize_vault(vault))[0]
     rendered = (paths.papers / "smith2024rag.md").read_text(encoding="utf-8")
@@ -897,6 +911,9 @@ def test_set_manual_keywords_normalizes_and_rerenders_card(tmp_path: Path) -> No
     assert summary["count"] == 3
     assert saved.keywords == ["Retrieval", "Benchmarking", "Collaborative analysis"]
     assert "## Keywords\n- Retrieval\n- Benchmarking\n- Collaborative analysis" in rendered
+    assert "Normalizing keyword separators" in progress_steps
+    assert "Writing topic pages" in progress_steps
+    assert progress_steps[-1] == "Manual save complete"
 
 
 def test_set_manual_abstract_normalizes_preview_pdf_copy(tmp_path: Path) -> None:

@@ -41,6 +41,7 @@
 - Summary dialogs should not mirror terminal prose. Use large counts, status color, and a compact flow/breakdown first, then keep the raw text as a secondary selectable log.
 - Manual abstracts need a command path as well as an Obsidian editing path. Lock manual text by default so later provider refreshes do not erase curated abstracts.
 - Follow-up UI rows should foreground the issue message and route directly to a resolution action. Missing abstracts need PDF opening, paste cleanup, and manual-lock saving in one path.
+- Manual follow-up saves are not just one file write. They also rebuild indexes, exports, topic pages, and run notes, so the GUI should show those steps instead of leaving the dialog apparently frozen.
 - Progress windows should not show raw status strings as the main label. Parse workflow messages into stage, substage, current item, and a short recent-step log so the user can tell what phase is active.
 - For long enrichment runs, append progress events to a scrolling log instead of replacing a single line. Color status lines so skipped, unresolved, verified, and completed work are easy to scan.
 - Enrichment progress should log the provider pass structure, not only card start/end states. Emit attempt/result/skip events around local DOI/PDF scans, Crossref, OpenAlex, Europe PMC, DataCite, DOI content negotiation, and final writes.
