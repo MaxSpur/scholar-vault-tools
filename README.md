@@ -462,12 +462,14 @@ scholar-vault rerun --vault ~/Documents/Research/scholar-labs-vault --run 2026-0
 ```
 
 If a selected paper already has a PDF but you later download a better
-publisher/full-text version into staging, rerun with PDF upgrades enabled. This
-keeps normal reruns idempotent, but scores staged PDFs against already attached
-cards and opens the match-review UI before replacing a canonical attachment:
+publisher/full-text version into staging, `import-labs`, `resume`, and `rerun`
+check staged PDFs against already attached cards by default. They open the
+match-review UI before replacing a canonical attachment; use
+`--keep-existing-pdfs` when you only want to attach PDFs for still-unmatched
+results.
 
 ```fish
-scholar-vault rerun --vault ~/Documents/Research/scholar-labs-vault --run 2026-04-22_example-prompt --ui --upgrade-pdfs
+scholar-vault rerun --vault ~/Documents/Research/scholar-labs-vault --run 2026-04-22_example-prompt --ui
 ```
 
 Rename an existing run note for Obsidian Graph:

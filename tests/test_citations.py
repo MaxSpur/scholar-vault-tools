@@ -5,8 +5,11 @@ from pathlib import Path
 
 from scholar_vault.bibtex import write_library_bib
 from scholar_vault.citations import (
+    CitationCandidate,
     EnrichmentOptions,
     EnrichmentResult,
+    _candidate_is_consistent,
+    _promote_metadata_from_candidate,
     abstract_fingerprint,
     card_fingerprint,
     clean_provider_abstract,
@@ -52,6 +55,56 @@ def test_detect_local_doi_from_pdf_text(tmp_path: Path, monkeypatch) -> None:
     assert doi == "10.1145/3440207"
     assert source == "pdf_text"
     assert confidence == 0.95
+
+
+def test_exact_doi_candidate_promotes_published_metadata_despite_title_change() -> None:
+    card = SourceCard(
+        slug="mokbel2023towardsmobilitydatasciencevision",
+        citekey="mokbel2023towardsmobilitydatasciencevision",
+        title="Towards mobility data science (vision paper)",
+        authors=["Mohamed F. Mokbel", "Mahmoud Sakr"],
+        year=2023,
+        venue="arXiv preprint arXiv:2307.05717, 2023",
+        doi="10.1145/3652158",
+    )
+    candidate = CitationCandidate(
+        doi="10.1145/3652158",
+        title="Mobility Data Science: Perspectives and Challenges",
+        authors=["Mohamed F. Mokbel", "Mahmoud Sakr"],
+        year=2024,
+        venue="ACM Transactions on Spatial Algorithms and Systems",
+        source="doi-csl",
+        score=41,
+    )
+
+    assert _candidate_is_consistent(card, candidate)
+    assert _promote_metadata_from_candidate(card, candidate)
+    assert card.title == "Mobility Data Science: Perspectives and Challenges"
+    assert card.year == 2024
+    assert card.venue == "ACM Transactions on Spatial Algorithms and Systems"
+
+
+def test_exact_doi_candidate_rejects_incompatible_first_author() -> None:
+    card = SourceCard(
+        slug="source",
+        title="Towards mobility data science (vision paper)",
+        authors=["Mohamed F. Mokbel"],
+        year=2023,
+        doi="10.1145/3652158",
+    )
+    candidate = CitationCandidate(
+        doi="10.1145/3652158",
+        title="Mobility Data Science: Perspectives and Challenges",
+        authors=["Someone Else"],
+        year=2024,
+        venue="ACM Transactions on Spatial Algorithms and Systems",
+        source="doi-csl",
+        score=41,
+    )
+
+    assert not _candidate_is_consistent(card, candidate)
+    assert not _promote_metadata_from_candidate(card, candidate)
+    assert card.title == "Towards mobility data science (vision paper)"
 
 
 def test_enrich_card_extracts_pdf_keywords(tmp_path: Path, monkeypatch) -> None:

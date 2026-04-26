@@ -239,6 +239,109 @@ def test_run_completion_uses_vault_runs(tmp_path) -> None:
     ]
 
 
+def test_rerun_checks_for_pdf_upgrades_by_default(tmp_path, monkeypatch) -> None:
+    calls = []
+    vault = tmp_path / "vault"
+    initialize_vault(vault)
+
+    def fake_resume_run(*_args, **kwargs):
+        calls.append(kwargs)
+        return {"run": "2026-04-22_example-run"}
+
+    monkeypatch.setattr("scholar_vault.cli.resume_run", fake_resume_run)
+    monkeypatch.setattr(
+        "scholar_vault.cli._finish_import_workflow",
+        lambda *_args, **_kwargs: None,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "rerun",
+            "--vault",
+            str(vault),
+            "--run",
+            "2026-04-22_example-run",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls[0]["upgrade_pdfs"] is True
+
+
+def test_rerun_can_keep_existing_pdfs(tmp_path, monkeypatch) -> None:
+    calls = []
+    vault = tmp_path / "vault"
+    initialize_vault(vault)
+
+    def fake_resume_run(*_args, **kwargs):
+        calls.append(kwargs)
+        return {"run": "2026-04-22_example-run"}
+
+    monkeypatch.setattr("scholar_vault.cli.resume_run", fake_resume_run)
+    monkeypatch.setattr(
+        "scholar_vault.cli._finish_import_workflow",
+        lambda *_args, **_kwargs: None,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "rerun",
+            "--vault",
+            str(vault),
+            "--run",
+            "2026-04-22_example-run",
+            "--dry-run",
+            "--keep-existing-pdfs",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls[0]["upgrade_pdfs"] is False
+
+
+def test_import_labs_checks_for_pdf_upgrades_by_default(tmp_path, monkeypatch) -> None:
+    calls = []
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    export = tmp_path / "export.json"
+    initialize_vault(vault)
+    staging.mkdir()
+    export.write_text("{}", encoding="utf-8")
+
+    def fake_import_scholar_labs_run(*_args, **kwargs):
+        calls.append(kwargs)
+        return {"run": "2026-04-22_example-run"}
+
+    monkeypatch.setattr(
+        "scholar_vault.cli.import_scholar_labs_run",
+        fake_import_scholar_labs_run,
+    )
+    monkeypatch.setattr(
+        "scholar_vault.cli._finish_import_workflow",
+        lambda *_args, **_kwargs: None,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "import-labs",
+            "--vault",
+            str(vault),
+            "--staging",
+            str(staging),
+            "--export",
+            str(export),
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls[0]["upgrade_pdfs"] is True
+
+
 def test_rebuild_command_prints_summary(tmp_path) -> None:
     vault = tmp_path / "vault"
     initialize_vault(vault)

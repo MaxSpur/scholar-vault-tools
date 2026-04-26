@@ -1051,7 +1051,7 @@ def import_run_command(
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
     archive_export: ArchiveExportArg = False,
-    upgrade_pdfs: UpgradePdfsArg = False,
+    upgrade_pdfs: UpgradePdfsArg = True,
     title: TitleArg = None,
     ui: UiArg = False,
 ) -> None:
@@ -1090,7 +1090,7 @@ def import_labs_command(
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
     auto_enrich: AutoEnrichArg = True,
-    upgrade_pdfs: UpgradePdfsArg = False,
+    upgrade_pdfs: UpgradePdfsArg = True,
     archive_export: ArchiveExportArg = True,
     title: TitleArg = None,
     ui: UiArg = False,
@@ -1134,7 +1134,7 @@ def import_alias_command(
     commit: CommitArg = False,
     include_without_pdf: IncludeWithoutPdfArg = False,
     auto_enrich: AutoEnrichArg = True,
-    upgrade_pdfs: UpgradePdfsArg = False,
+    upgrade_pdfs: UpgradePdfsArg = True,
     archive_export: ArchiveExportArg = True,
     title: TitleArg = None,
     ui: UiArg = False,
@@ -1303,7 +1303,7 @@ def resume_command(
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     auto_enrich: AutoEnrichArg = True,
-    upgrade_pdfs: UpgradePdfsArg = False,
+    upgrade_pdfs: UpgradePdfsArg = True,
     ui: UiArg = False,
 ) -> None:
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
@@ -1335,7 +1335,7 @@ def rerun_command(
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     auto_enrich: AutoEnrichArg = True,
-    upgrade_pdfs: UpgradePdfsArg = False,
+    upgrade_pdfs: UpgradePdfsArg = True,
     ui: UiArg = False,
 ) -> None:
     resolved_vault = _resolve_vault(vault)
@@ -1369,7 +1369,7 @@ def re_run_command(
     dry_run: DryRunArg = False,
     commit: CommitArg = False,
     auto_enrich: AutoEnrichArg = True,
-    upgrade_pdfs: UpgradePdfsArg = False,
+    upgrade_pdfs: UpgradePdfsArg = True,
     ui: UiArg = False,
 ) -> None:
     resolved_vault = _resolve_vault(vault)

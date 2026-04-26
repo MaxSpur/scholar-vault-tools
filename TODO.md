@@ -43,7 +43,7 @@
 - [x] Emit granular Scholar Labs matching progress for prior-manifest, vault-card, staged-PDF, review, and final decision substeps.
 - [x] Promote automatic enrichment results in the import run report and keep GUI progress logs through the report and follow-up windows.
 - [x] Make post-import report/follow-up windows modeless and mark the import log as report-ready instead of busy/cancellable.
-- [x] Add an explicit Scholar Labs `--upgrade-pdfs` rerun path for replacing preprint PDFs with better staged publisher PDFs.
+- [x] Make Scholar Labs imports/resumes check staged PDFs as replacement candidates by default, with `--keep-existing-pdfs` as the opt-out.
 - [x] Add `runs` / `list-runs` discovery plus shell completion for run IDs, citekeys, and constrained CLI option values.
 - [x] Add a `rerun --ui` run picker for choosing previous Scholar Labs runs with counts and provenance details.
 - [ ] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.

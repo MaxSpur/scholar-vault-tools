@@ -7,7 +7,7 @@
 - The Scholar Labs browser exporter is DOM-specific. Treat `prompt == "Google Scholar"` or `results == []` as a broken export, not as an empty but valid import.
 - For Scholar Labs, the run is the place to keep all candidate results. `papers/` should default to selected/attached sources only, otherwise Obsidian and LLM navigation get noisy fast.
 - If a workflow is meant to empty matched PDFs out of staging, make that explicit in the command name. The lower-level importer should stay safe by default, and the user-facing Labs convenience command can opt into verified copy-then-archive behavior.
-- Re-running a Scholar Labs JSON should stay idempotent by default, but better replacement PDFs need an explicit upgrade mode that reviews staged candidates even when a prior manifest already selected the paper.
+- Scholar Labs imports/resumes should rescan staged PDFs for better replacements by default, but keep `--keep-existing-pdfs` as the explicit idempotent opt-out for cases where attachments should not change.
 - Rerun workflows need discoverability as much as idempotence. Keep previous run IDs listable from the CLI and shell-completable from the configured vault so users do not have to inspect `runs/*/index.yaml` manually.
 - Preserve script defaults but make GUI defaults explicit. A terminal `rerun` can reuse the latest run, while `rerun --ui` should show a chooser before starting work.
 - GUI counters should name the underlying record concept. Do not label per-run newly accepted staged files as total PDFs, and do not call unselected Scholar results "left" when the workflow intentionally imports only downloaded/selected papers.
@@ -22,6 +22,7 @@
 - Citation enrichment needs explicit state. Fingerprints, retry counts, `metadata_lock`, and raw provider caches prevent repeatedly hitting APIs or overwriting curated metadata by accident.
 - DOI enrichment should promote canonical provider metadata back onto paper cards when the match is strong. Otherwise DOI discovery succeeds but Scholar preview fields like `IEEE Transactions on …, 2024` remain in the canonical record.
 - DOI records can point to preprints rather than final publications. If a preprint DOI lacks a real venue, search for a strong published-version DOI before accepting incomplete venue metadata as final.
+- Exact DOI metadata can legitimately have a different title/year than a preprint card. Let DOI-work metadata promote the canonical title, year, and venue when DOI, first author, and year are compatible.
 - Keep abstracts separate from Scholar Labs summaries. Abstract enrichment needs its own source, confidence, lock, and fingerprint fields so provider text does not overwrite the reason a source was added.
 - PDF abstract headings are often run-in labels such as `Abstract.` rather than standalone `Abstract` headings. Recognize those forms and normalize PDF line wrapping/hyphenation before accepting local abstract fallback text.
 - Keep paper-provided keywords separate from project `topics`. Topics are prompt/rationale navigation labels, while keywords should come from BibTeX, provider metadata, or PDF keyword blocks and should be the source for BibTeX/CSL keyword exports.

@@ -851,7 +851,31 @@ def _candidate_is_consistent(card: SourceCard, candidate: CitationCandidate) -> 
         return False
     if card.doi and candidate.doi and normalize_doi(card.doi) != normalize_doi(candidate.doi):
         return False
+    if _candidate_has_exact_doi(card, candidate):
+        return _candidate_authors_compatible(card, candidate) and _candidate_year_compatible(
+            card, candidate
+        )
     return candidate.score >= 88
+
+
+def _candidate_has_exact_doi(card: SourceCard, candidate: CitationCandidate) -> bool:
+    card_doi = normalize_doi(card.doi)
+    candidate_doi = normalize_doi(candidate.doi)
+    return bool(card_doi and candidate_doi and card_doi == candidate_doi)
+
+
+def _candidate_authors_compatible(card: SourceCard, candidate: CitationCandidate) -> bool:
+    current_surnames = _author_surnames(card.authors or parse_people(card.authors_preview))
+    candidate_surnames = _author_surnames(candidate.authors)
+    if not current_surnames or not candidate_surnames:
+        return True
+    return current_surnames[0] == candidate_surnames[0]
+
+
+def _candidate_year_compatible(card: SourceCard, candidate: CitationCandidate) -> bool:
+    if not card.year or not candidate.year:
+        return True
+    return abs(card.year - candidate.year) <= 2
 
 
 def _is_published_metadata_candidate(candidate: CitationCandidate) -> bool:
@@ -876,8 +900,16 @@ def _published_version_candidate(
         candidate
         for candidate in candidates
         if _is_published_metadata_candidate(candidate)
-        and candidate.score >= 88
-        and score_title_match(card.title, candidate.title) >= 95
+        and (
+            (
+                _candidate_has_exact_doi(card, candidate)
+                and _candidate_is_consistent(card, candidate)
+            )
+            or (
+                candidate.score >= 88
+                and score_title_match(card.title, candidate.title) >= 95
+            )
+        )
     ]
     if not viable:
         return None
@@ -897,7 +929,10 @@ def _promote_metadata_from_candidate(card: SourceCard, candidate: CitationCandid
         return False
 
     changed = False
-    if candidate.title and normalize_title(candidate.title) == normalize_title(card.title):
+    exact_doi = _candidate_has_exact_doi(card, candidate)
+    if candidate.title and (
+        exact_doi or normalize_title(candidate.title) == normalize_title(card.title)
+    ):
         if candidate.title != card.title:
             card.title = candidate.title
             changed = True
@@ -915,7 +950,14 @@ def _promote_metadata_from_candidate(card: SourceCard, candidate: CitationCandid
                 card.authors = candidate.authors
                 changed = True
 
-    if candidate.year and not card.year:
+    if candidate.year and (
+        not card.year
+        or (
+            exact_doi
+            and card.year != candidate.year
+            and _candidate_year_compatible(card, candidate)
+        )
+    ):
         card.year = candidate.year
         changed = True
 
@@ -1423,7 +1465,10 @@ def enrich_card(
 def _strong_consistency(card: SourceCard, candidates: list[CitationCandidate]) -> bool:
     if not card.doi:
         return False
-    return any(candidate.doi == card.doi and candidate.score >= 94 for candidate in candidates)
+    return any(
+        _candidate_has_exact_doi(card, candidate) and _candidate_is_consistent(card, candidate)
+        for candidate in candidates
+    )
 
 
 def _csl_candidate(payload: dict[str, Any], card: SourceCard) -> CitationCandidate | None:
