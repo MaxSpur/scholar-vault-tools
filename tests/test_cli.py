@@ -141,7 +141,37 @@ def test_import_summary_explains_reused_prior_matches() -> None:
     assert "3 reused from previous run manifest" in output
     assert "0 newly accepted staged PDFs" in output
     assert "No match-review prompts appeared" in output
-    assert "3 citation cards processed, 0 changed" in output
+    assert "citations checked 3 cards (0 updated, 3 unchanged)" in output
+    assert "abstracts checked 3 cards (0 updated, 3 unchanged)" in output
+
+
+def test_import_finish_keeps_progress_until_followup(monkeypatch) -> None:
+    from scholar_vault import cli
+
+    events: list[str] = []
+
+    class Progress:
+        def close(self) -> None:
+            events.append("close-progress")
+
+    summary = {"abstract_details": [{"category": "unresolved"}]}
+    monkeypatch.setattr(cli, "_print_run_summary", lambda _summary: events.append("summary"))
+    monkeypatch.setattr(
+        cli,
+        "_show_import_summary_ui",
+        lambda _summary, *, ui, followup_pending: events.append(
+            f"report:{ui}:{followup_pending}"
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "_show_import_enrichment_followup",
+        lambda _summary, *, ui: events.append(f"followup:{ui}"),
+    )
+
+    cli._finish_import_workflow(summary, ui=True, progress_ui=Progress())
+
+    assert events == ["summary", "report:True:True", "followup:True", "close-progress"]
 
 
 def test_rebuild_command_prints_summary(tmp_path) -> None:

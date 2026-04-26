@@ -41,5 +41,6 @@
 - [x] Retry previously failed abstract enrichment by default instead of skipping with `abstract previously failed`.
 - [x] Refine GUI progress into one main output stream plus a compact top-right identifier stream with status color.
 - [x] Emit granular Scholar Labs matching progress for prior-manifest, vault-card, staged-PDF, review, and final decision substeps.
+- [x] Promote automatic enrichment results in the import run report and keep GUI progress logs through the report and follow-up windows.
 - [ ] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

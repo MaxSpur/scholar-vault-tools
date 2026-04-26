@@ -374,6 +374,7 @@ def _show_enrichment_ui(
     *,
     abstracts: bool,
     title: str | None = None,
+    close_label: str | None = None,
 ) -> bool:
     rows = _detail_rows(summary)
     if not rows:
@@ -384,7 +385,12 @@ def _show_enrichment_ui(
         console.print(f"Review UI unavailable ({exc}). Showing terminal details instead.")
         return False
     try:
-        show_enrichment_results(rows, abstracts=abstracts, title=title)
+        show_enrichment_results(
+            rows,
+            abstracts=abstracts,
+            title=title,
+            close_label=close_label,
+        )
     except GuiUnavailable as exc:
         console.print(f"Review UI unavailable ({exc}). Showing terminal details instead.")
         return False
@@ -406,7 +412,17 @@ def _make_gui_progress(enabled: bool, title: str):
         return None
 
 
-def _show_import_summary_ui(summary: dict[str, Any], *, ui: bool) -> None:
+def _close_gui_progress(progress_ui) -> None:
+    if progress_ui is not None:
+        progress_ui.close()
+
+
+def _show_import_summary_ui(
+    summary: dict[str, Any],
+    *,
+    ui: bool,
+    followup_pending: bool = False,
+) -> None:
     if not ui:
         return
     try:
@@ -415,7 +431,11 @@ def _show_import_summary_ui(summary: dict[str, Any], *, ui: bool) -> None:
         console.print(f"Summary UI unavailable ({exc}).")
         return
     try:
-        show_import_summary(summary, _import_summary_lines(summary))
+        show_import_summary(
+            summary,
+            _import_summary_lines(summary),
+            followup_pending=followup_pending,
+        )
     except GuiUnavailable as exc:
         console.print(f"Summary UI unavailable ({exc}).")
 
@@ -455,6 +475,7 @@ def _show_import_enrichment_followup(summary: dict[str, Any], *, ui: bool) -> No
                 {"details": problems},
                 abstracts=False,
                 title="Scholar Vault Import Follow-Up",
+                close_label="Close Follow-Up and Logs",
             )
             if not shown:
                 console.print("Enrichment follow-up issues:")
@@ -465,6 +486,28 @@ def _show_import_enrichment_followup(summary: dict[str, Any], *, ui: bool) -> No
     if problems:
         console.print("Enrichment follow-up issues:")
         _print_enrichment_details({"details": problems})
+
+
+def _has_import_followup(summary: dict[str, Any]) -> bool:
+    return bool(_problem_rows(_run_enrichment_rows(summary)))
+
+
+def _finish_import_workflow(
+    summary: dict[str, Any],
+    *,
+    ui: bool,
+    progress_ui=None,
+) -> None:
+    try:
+        _print_run_summary(summary)
+        _show_import_summary_ui(
+            summary,
+            ui=ui,
+            followup_pending=_has_import_followup(summary),
+        )
+        _show_import_enrichment_followup(summary, ui=ui)
+    finally:
+        _close_gui_progress(progress_ui)
 
 
 def _require_configured_path(
@@ -590,12 +633,16 @@ def _import_summary_lines(summary: dict[str, Any]) -> list[str]:
     citation_processed = int(citations.get("processed") or 0)
     abstract_processed = int(abstracts.get("processed") or 0)
     if citation_processed or abstract_processed:
+        citation_changed = int(citations.get("changed") or 0)
+        abstract_changed = int(abstracts.get("changed") or 0)
+        citation_unchanged = max(citation_processed - citation_changed, 0)
+        abstract_unchanged = max(abstract_processed - abstract_changed, 0)
         lines.append(
             "- Enrichment: "
-            f"{citation_processed} citation cards processed, "
-            f"{int(citations.get('changed') or 0)} changed; "
-            f"{abstract_processed} abstract cards processed, "
-            f"{int(abstracts.get('changed') or 0)} changed."
+            f"citations checked {citation_processed} cards "
+            f"({citation_changed} updated, {citation_unchanged} unchanged); "
+            f"abstracts checked {abstract_processed} cards "
+            f"({abstract_changed} updated, {abstract_unchanged} unchanged)."
         )
     if review_prompts == 0 and selected:
         if reused == selected:
@@ -805,11 +852,7 @@ def import_run_command(
         interactive=review_match is not None,
         gui_progress=progress_ui,
     )
-    if progress_ui is not None:
-        progress_ui.close()
-    _print_run_summary(summary)
-    _show_import_summary_ui(summary, ui=ui)
-    _show_import_enrichment_followup(summary, ui=ui)
+    _finish_import_workflow(summary, ui=ui, progress_ui=progress_ui)
 
 
 @app.command("import-labs")
@@ -851,11 +894,7 @@ def import_labs_command(
         interactive=review_match is not None,
         gui_progress=progress_ui,
     )
-    if progress_ui is not None:
-        progress_ui.close()
-    _print_run_summary(summary)
-    _show_import_summary_ui(summary, ui=ui)
-    _show_import_enrichment_followup(summary, ui=ui)
+    _finish_import_workflow(summary, ui=ui, progress_ui=progress_ui)
 
 
 @app.command("import")
@@ -897,11 +936,7 @@ def import_alias_command(
         interactive=review_match is not None,
         gui_progress=progress_ui,
     )
-    if progress_ui is not None:
-        progress_ui.close()
-    _print_run_summary(summary)
-    _show_import_summary_ui(summary, ui=ui)
-    _show_import_enrichment_followup(summary, ui=ui)
+    _finish_import_workflow(summary, ui=ui, progress_ui=progress_ui)
 
 
 @app.command("import-pdf")
@@ -1058,11 +1093,7 @@ def resume_command(
         interactive=review_match is not None,
         gui_progress=progress_ui,
     )
-    if progress_ui is not None:
-        progress_ui.close()
-    _print_run_summary(summary)
-    _show_import_summary_ui(summary, ui=ui)
-    _show_import_enrichment_followup(summary, ui=ui)
+    _finish_import_workflow(summary, ui=ui, progress_ui=progress_ui)
 
 
 @app.command("rerun")
@@ -1094,11 +1125,7 @@ def rerun_command(
         interactive=review_match is not None,
         gui_progress=progress_ui,
     )
-    if progress_ui is not None:
-        progress_ui.close()
-    _print_run_summary(summary)
-    _show_import_summary_ui(summary, ui=ui)
-    _show_import_enrichment_followup(summary, ui=ui)
+    _finish_import_workflow(summary, ui=ui, progress_ui=progress_ui)
 
 
 @app.command("re-run")
@@ -1130,11 +1157,7 @@ def re_run_command(
         interactive=review_match is not None,
         gui_progress=progress_ui,
     )
-    if progress_ui is not None:
-        progress_ui.close()
-    _print_run_summary(summary)
-    _show_import_summary_ui(summary, ui=ui)
-    _show_import_enrichment_followup(summary, ui=ui)
+    _finish_import_workflow(summary, ui=ui, progress_ui=progress_ui)
 
 
 @app.command("rename-run")

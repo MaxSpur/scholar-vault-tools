@@ -1445,13 +1445,14 @@ def show_import_summary(
     lines: list[str],
     *,
     title: str = "Scholar Vault Import Summary",
+    followup_pending: bool = False,
 ) -> None:
     qt = _load_qt_modules(require_fitz=False)
     app = _application(qt)
     model = _import_summary_model(summary, lines)
     dialog = qt["QDialog"]()
     dialog.setWindowTitle(title)
-    dialog.resize(1120, 700)
+    dialog.resize(1120, 760)
     dialog.setStyleSheet(_dark_dialog_stylesheet())
 
     shell = qt["QHBoxLayout"](dialog)
@@ -1464,17 +1465,17 @@ def show_import_summary(
     shell.addWidget(rail)
 
     layout = qt["QVBoxLayout"]()
-    layout.setContentsMargins(28, 24, 28, 20)
-    layout.setSpacing(18)
+    layout.setContentsMargins(24, 20, 24, 18)
+    layout.setSpacing(12)
     shell.addLayout(layout, 1)
 
     header = qt["QHBoxLayout"]()
     title_block = qt["QVBoxLayout"]()
     kicker = qt["QLabel"]("SCHOLAR VAULT // IMPORT")
-    kicker.setFont(_summary_font(qt, 13, mono=True, bold=True))
+    kicker.setFont(_summary_font(qt, 12, mono=True, bold=True))
     kicker.setStyleSheet("color: #69ffad; letter-spacing: 0px;")
     heading = qt["QLabel"]("RUN REPORT")
-    heading.setFont(_summary_font(qt, 34, bold=True))
+    heading.setFont(_summary_font(qt, 30, bold=True))
     heading.setStyleSheet("color: #f3fff7;")
     run_label = qt["QLabel"](str(model["run"]))
     run_label.setFont(_summary_font(qt, 12, mono=True))
@@ -1499,14 +1500,16 @@ def show_import_summary(
     layout.addLayout(metrics)
 
     middle = qt["QHBoxLayout"]()
-    middle.setSpacing(14)
+    middle.setSpacing(12)
     middle.addWidget(_summary_flow_panel(qt, model), 2)
-    middle.addWidget(_summary_breakdown_panel(qt, model), 1)
+    middle.addWidget(_summary_enrichment_panel(qt, model), 1)
     layout.addLayout(middle, 1)
+
+    layout.addWidget(_summary_breakdown_panel(qt, model), 0)
 
     log = qt["QLabel"]("\n".join(model["lines"]))
     log.setWordWrap(True)
-    log.setFont(_summary_font(qt, 11, mono=True))
+    log.setFont(_summary_font(qt, 10, mono=True))
     log.setTextInteractionFlags(qt["Qt"].TextInteractionFlag.TextSelectableByMouse)
     log.setStyleSheet(
         "QLabel { color: #8ce7b8; background: #07100b; "
@@ -1515,6 +1518,11 @@ def show_import_summary(
     layout.addWidget(log)
 
     buttons = qt["QDialogButtonBox"](qt["QDialogButtonBox"].StandardButton.Ok)
+    ok_button = buttons.button(qt["QDialogButtonBox"].StandardButton.Ok)
+    if ok_button is not None:
+        ok_button.setText(
+            "Continue to Follow-Up" if followup_pending else "Close Report and Logs"
+        )
     _style_dialog_buttons(buttons, "primary")
     buttons.accepted.connect(dialog.accept)
     layout.addWidget(buttons)
@@ -1541,10 +1549,62 @@ def _summary_int(value: object) -> int:
         return 0
 
 
+def _summary_enrichment_counts(
+    label: str,
+    summary_counts: dict[str, Any],
+    details: list[dict[str, Any]],
+) -> dict[str, Any]:
+    problem_skip_messages = {
+        "retry limit reached",
+        "abstract previously failed",
+        "metadata_lock",
+    }
+    checked = _summary_int(summary_counts.get("processed")) or len(details)
+    updated = _summary_int(summary_counts.get("changed"))
+    skipped_rows = {
+        index
+        for index, row in enumerate(details)
+        if row.get("skipped") or row.get("category") == "skipped"
+    }
+    issue_rows = {
+        index
+        for index, row in enumerate(details)
+        if row.get("category") in {"ambiguous", "unresolved", "incomplete"}
+        or (
+            row.get("category") == "skipped"
+            and str(row.get("message") or "") in problem_skip_messages
+        )
+    }
+    skipped = len(skipped_rows)
+    issues = len(issue_rows)
+    ok = max(checked - len(skipped_rows | issue_rows), 0)
+    unchanged = max(checked - updated, 0)
+    if issues:
+        color = "#ff3b4f"
+    elif updated:
+        color = "#45ffb0"
+    elif checked:
+        color = "#8bffd0"
+    else:
+        color = "#426b58"
+    return {
+        "label": label,
+        "checked": checked,
+        "updated": updated,
+        "unchanged": unchanged,
+        "ok": ok,
+        "issues": issues,
+        "skipped": skipped,
+        "color": color,
+    }
+
+
 def _import_summary_model(summary: dict[str, Any], lines: list[str]) -> dict[str, Any]:
     decisions = summary.get("decision_summary") or {}
     citations = summary.get("citation_enrichment") or {}
     abstracts = summary.get("abstract_enrichment") or {}
+    citation_details = summary.get("enrichment_details") or []
+    abstract_details = summary.get("abstract_details") or []
     selected = _summary_int(summary.get("selected"))
     unselected = _summary_int(summary.get("unselected_results"))
     export_results = _summary_int(decisions.get("export_results")) or selected + unselected
@@ -1634,8 +1694,12 @@ def _import_summary_model(summary: dict[str, Any], lines: list[str]) -> dict[str
                 "#ff3b4f" if without_candidate else "#426b58",
             ),
             ("Rejected in review", review_rejected, "#ff3b4f" if review_rejected else "#426b58"),
-            ("Citations changed", citation_changed, "#45ffb0" if citation_changed else "#426b58"),
-            ("Abstracts changed", abstract_changed, "#45ffb0" if abstract_changed else "#426b58"),
+            ("Citation updates", citation_changed, "#45ffb0" if citation_changed else "#426b58"),
+            ("Abstract updates", abstract_changed, "#45ffb0" if abstract_changed else "#426b58"),
+        ],
+        "enrichment": [
+            _summary_enrichment_counts("CITATIONS", citations, citation_details),
+            _summary_enrichment_counts("ABSTRACTS", abstracts, abstract_details),
         ],
     }
 
@@ -1743,6 +1807,61 @@ def _summary_flow_node(qt: dict[str, Any], label: str, value: int, color: str) -
     return node
 
 
+def _summary_enrichment_panel(qt: dict[str, Any], model: dict[str, Any]) -> Any:
+    panel = _summary_panel(qt)
+    layout = qt["QVBoxLayout"](panel)
+    layout.setContentsMargins(14, 12, 14, 12)
+    layout.setSpacing(10)
+    title = qt["QLabel"]("ENRICHMENT")
+    title.setFont(_summary_font(qt, 12, mono=True, bold=True))
+    title.setStyleSheet("color: #8ce7b8; border: none;")
+    layout.addWidget(title)
+    for item in model["enrichment"]:
+        layout.addWidget(_summary_enrichment_block(qt, item))
+    layout.addStretch(1)
+    return panel
+
+
+def _summary_enrichment_block(qt: dict[str, Any], item: dict[str, Any]) -> Any:
+    color = str(item["color"])
+    block = qt["QFrame"]()
+    block.setStyleSheet(f"QFrame {{ background: #020403; border: 1px solid {color}; }}")
+    layout = qt["QVBoxLayout"](block)
+    layout.setContentsMargins(10, 8, 10, 8)
+    layout.setSpacing(4)
+
+    top = qt["QHBoxLayout"]()
+    label = qt["QLabel"](str(item["label"]))
+    label.setFont(_summary_font(qt, 10, mono=True, bold=True))
+    label.setStyleSheet("color: #8ce7b8; border: none;")
+    checked = qt["QLabel"](f"{item['checked']} checked")
+    checked.setAlignment(qt["Qt"].AlignmentFlag.AlignRight)
+    checked.setFont(_summary_font(qt, 12, mono=True, bold=True))
+    checked.setStyleSheet(f"color: {color}; border: none;")
+    top.addWidget(label, 1)
+    top.addWidget(checked, 0)
+    layout.addLayout(top)
+
+    updates = qt["QLabel"](
+        f"{item['updated']} updated / {item['unchanged']} unchanged"
+        if item["checked"]
+        else "not run"
+    )
+    updates.setFont(_summary_font(qt, 10, mono=True))
+    updates.setStyleSheet("color: #baffdc; border: none;")
+    layout.addWidget(updates)
+
+    footer = qt["QLabel"](
+        f"{item['ok']} ok / {item['issues']} issues / {item['skipped']} skipped"
+        if item["checked"]
+        else "no enrichment events"
+    )
+    footer.setFont(_summary_font(qt, 10, mono=True))
+    footer.setStyleSheet("color: #8ce7b8; border: none;")
+    layout.addWidget(footer)
+    return block
+
+
 def _summary_breakdown_panel(qt: dict[str, Any], model: dict[str, Any]) -> Any:
     panel = _summary_panel(qt)
     layout = qt["QVBoxLayout"](panel)
@@ -1772,6 +1891,7 @@ def show_enrichment_results(
     *,
     abstracts: bool = False,
     title: str | None = None,
+    close_label: str | None = None,
 ) -> None:
     qt = _load_qt_modules(require_fitz=False)
     app = _application(qt)
@@ -1888,7 +2008,7 @@ def show_enrichment_results(
         list_layout.addStretch(1)
 
     buttons = qt["QHBoxLayout"]()
-    close = qt["QPushButton"]("Close")
+    close = qt["QPushButton"](close_label or "Close")
     _style_button(close, "primary")
     buttons.addStretch(1)
     buttons.addWidget(close)

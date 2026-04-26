@@ -83,8 +83,13 @@ def test_import_summary_model_highlights_reused_manifest() -> None:
                 "review_rejected": 0,
                 "results_without_candidate": 11,
             },
-            "citation_enrichment": {"changed": 1},
-            "abstract_enrichment": {"changed": 0},
+            "citation_enrichment": {"processed": 19, "changed": 1},
+            "abstract_enrichment": {"processed": 19, "changed": 0},
+            "enrichment_details": [
+                {"category": "verified"},
+                {"category": "skipped", "skipped": True},
+            ],
+            "abstract_details": [{"category": "unresolved"}],
         },
         ["Processed run 2026-04-23_example."],
     )
@@ -94,6 +99,12 @@ def test_import_summary_model_highlights_reused_manifest() -> None:
     assert model["flow"][2] == ("REUSED", 19, "#41e893")
     assert "No review prompts" in model["notice"]
     assert model["breakdown"][0][1] == 11
+    assert model["enrichment"][0]["checked"] == 19
+    assert model["enrichment"][0]["updated"] == 1
+    assert model["enrichment"][0]["unchanged"] == 18
+    assert model["enrichment"][0]["skipped"] == 1
+    assert model["enrichment"][1]["checked"] == 19
+    assert model["enrichment"][1]["issues"] == 1
 
 
 def test_progress_parts_name_import_substages() -> None:
