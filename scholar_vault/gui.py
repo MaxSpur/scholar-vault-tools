@@ -16,7 +16,7 @@ class GuiUnavailable(RuntimeError):
 
 def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
     try:
-        from PySide6.QtCore import Qt, QTimer, QUrl
+        from PySide6.QtCore import QEventLoop, Qt, QTimer, QUrl
         from PySide6.QtGui import QDesktopServices, QFont, QImage, QKeySequence, QPixmap, QShortcut
         from PySide6.QtWidgets import (
             QApplication,
@@ -49,6 +49,7 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
         "QDesktopServices": QDesktopServices,
         "QDialog": QDialog,
         "QDialogButtonBox": QDialogButtonBox,
+        "QEventLoop": QEventLoop,
         "QFileDialog": QFileDialog,
         "QFrame": QFrame,
         "QFont": QFont,
@@ -94,6 +95,18 @@ def _open_path(qt: dict[str, Any], path: str | None) -> None:
     if not path:
         return
     qt["QDesktopServices"].openUrl(qt["QUrl"].fromLocalFile(str(Path(path).expanduser())))
+
+
+def _exec_modeless_dialog(qt: dict[str, Any], app: Any, dialog: Any) -> None:
+    dialog.setModal(False)
+    dialog.setWindowModality(qt["Qt"].WindowModality.NonModal)
+    loop = qt["QEventLoop"]()
+    dialog.finished.connect(lambda _code: loop.quit())
+    dialog.show()
+    dialog.raise_()
+    dialog.activateWindow()
+    loop.exec()
+    app.processEvents()
 
 
 def _dark_dialog_stylesheet() -> str:
@@ -1266,6 +1279,18 @@ def _progress_stream(
     return stream
 
 
+def _progress_finished_state() -> dict[str, str]:
+    return {
+        "stage": "REPORT READY",
+        "substage": (
+            "Import, enrichment, and rebuild finished. Review the run report; "
+            "this log stays scrollable until the final window closes."
+        ),
+        "counter": "DONE",
+        "action": "Close Log",
+    }
+
+
 def _append_progress_stream(stream: Any, html_text: str) -> None:
     if not html_text:
         return
@@ -1279,6 +1304,7 @@ class _ProgressReporter:
         self._qt = qt
         self._app = _application(qt)
         self._cancelled = False
+        self._finished = False
         self._last_step = ""
         self._active_item = ""
         self._item_order: list[str] = []
@@ -1353,18 +1379,44 @@ class _ProgressReporter:
         buttons.addStretch(1)
         self._cancel = qt["QPushButton"]("Cancel Import")
         _style_button(self._cancel, "danger")
-        self._cancel.clicked.connect(self._request_cancel)
+        self._cancel.clicked.connect(self._handle_action_button)
         buttons.addWidget(self._cancel)
         layout.addLayout(buttons)
 
         self._dialog.show()
         self._app.processEvents()
 
+    def _handle_action_button(self) -> None:
+        if self._finished:
+            self._dialog.accept()
+            self._app.processEvents()
+            return
+        self._request_cancel()
+
     def _request_cancel(self) -> None:
+        if self._finished:
+            self._dialog.accept()
+            self._app.processEvents()
+            return
         self._cancelled = True
         self._stage.setText("CANCELING")
         self._substage.setText("Canceling after the current step...")
         self._counter.setText("STOP")
+        self._app.processEvents()
+
+    def _mark_finished(self) -> None:
+        state = _progress_finished_state()
+        self._finished = True
+        self._stage.setText(state["stage"])
+        self._substage.setText(state["substage"])
+        self._bar.setRange(0, 1)
+        self._bar.setValue(1)
+        self._counter.setText(state["counter"])
+        self._counter.setStyleSheet(
+            "color: #030504; background: #45ffb0; padding: 4px 8px;"
+        )
+        self._cancel.setText(state["action"])
+        _style_button(self._cancel, "neutral")
         self._app.processEvents()
 
     def __call__(
@@ -1379,7 +1431,11 @@ class _ProgressReporter:
         stage, substage, item = _progress_parts(message)
         self._stage.setText(stage)
         self._substage.setText(substage)
-        if current is not None and total:
+        if complete:
+            self._bar.setRange(0, 1)
+            self._bar.setValue(1)
+            self._counter.setText("DONE")
+        elif current is not None and total:
             self._bar.setRange(0, total)
             self._bar.setValue(current)
             self._counter.setText(f"{current}/{total}")
@@ -1412,6 +1468,8 @@ class _ProgressReporter:
             self._item_order.append(item_step)
             self._item_events[item_step] = (message, current, total)
             self._render_item_log()
+        if complete:
+            self._mark_finished()
         self._app.processEvents()
         if self._cancelled and not complete:
             raise MatchReviewAbort("Import canceled from progress window.")
@@ -1506,6 +1564,7 @@ def show_import_summary(
     layout.addLayout(middle, 1)
 
     layout.addWidget(_summary_breakdown_panel(qt, model), 0)
+    layout.addWidget(_summary_next_step_panel(qt, model, followup_pending), 0)
 
     log = qt["QLabel"]("\n".join(model["lines"]))
     log.setWordWrap(True)
@@ -1521,14 +1580,13 @@ def show_import_summary(
     ok_button = buttons.button(qt["QDialogButtonBox"].StandardButton.Ok)
     if ok_button is not None:
         ok_button.setText(
-            "Continue to Follow-Up" if followup_pending else "Close Report and Logs"
+            "Open Follow-Up Issues" if followup_pending else "Close Report and Import Log"
         )
     _style_dialog_buttons(buttons, "primary")
     buttons.accepted.connect(dialog.accept)
     layout.addWidget(buttons)
     qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.accept)
-    dialog.exec()
-    app.processEvents()
+    _exec_modeless_dialog(qt, app, dialog)
 
 
 def _summary_font(qt: dict[str, Any], size: int, *, mono: bool = False, bold: bool = False):
@@ -1599,6 +1657,26 @@ def _summary_enrichment_counts(
     }
 
 
+def _summary_followup_issue_count(*detail_lists: list[dict[str, Any]]) -> int:
+    problem_categories = {"incomplete", "ambiguous", "unresolved"}
+    problem_skip_messages = {
+        "retry limit reached",
+        "abstract previously failed",
+        "metadata_lock",
+    }
+    count = 0
+    for details in detail_lists:
+        for row in details:
+            if row.get("category") in problem_categories:
+                count += 1
+            elif (
+                row.get("category") == "skipped"
+                and str(row.get("message") or "") in problem_skip_messages
+            ):
+                count += 1
+    return count
+
+
 def _import_summary_model(summary: dict[str, Any], lines: list[str]) -> dict[str, Any]:
     decisions = summary.get("decision_summary") or {}
     citations = summary.get("citation_enrichment") or {}
@@ -1616,6 +1694,7 @@ def _import_summary_model(summary: dict[str, Any], lines: list[str]) -> dict[str
     without_candidate = _summary_int(decisions.get("results_without_candidate"))
     citation_changed = _summary_int(citations.get("changed"))
     abstract_changed = _summary_int(abstracts.get("changed"))
+    followup_issues = _summary_followup_issue_count(citation_details, abstract_details)
 
     if review_rejected or unselected:
         status = "CHECK"
@@ -1641,6 +1720,7 @@ def _import_summary_model(summary: dict[str, Any], lines: list[str]) -> dict[str
         "status_color": status_color,
         "notice": _summary_notice(selected, reused, linked, review_prompts),
         "lines": lines,
+        "followup_issues": followup_issues,
         "metrics": [
             {
                 "label": "EXPORT",
@@ -1862,6 +1942,45 @@ def _summary_enrichment_block(qt: dict[str, Any], item: dict[str, Any]) -> Any:
     return block
 
 
+def _summary_next_step_panel(
+    qt: dict[str, Any],
+    model: dict[str, Any],
+    followup_pending: bool,
+) -> Any:
+    issues = _summary_int(model.get("followup_issues"))
+    pending = followup_pending or bool(issues)
+    border = "#ff3b4f" if pending else "#45ffb0"
+    panel = _summary_panel(qt, border)
+    layout = qt["QHBoxLayout"](panel)
+    layout.setContentsMargins(14, 10, 14, 10)
+    label = qt["QLabel"]("NEXT")
+    label.setFont(_summary_font(qt, 11, mono=True, bold=True))
+    label.setStyleSheet(f"color: {border}; border: none;")
+    if pending:
+        if issues:
+            issue_text = (
+                f"{issues} enrichment issue" if issues == 1 else f"{issues} enrichment issues"
+            )
+        else:
+            issue_text = "Enrichment follow-up issues"
+        message = (
+            f"{issue_text} will open in a follow-up window after this report. "
+            "The import log stays available for review until the final window closes."
+        )
+    else:
+        message = (
+            "No enrichment follow-up issues are queued. Closing this report also closes "
+            "the import log."
+        )
+    text = qt["QLabel"](message)
+    text.setWordWrap(True)
+    text.setFont(_summary_font(qt, 11, mono=True))
+    text.setStyleSheet("color: #baffdc; border: none;")
+    layout.addWidget(label, 0)
+    layout.addWidget(text, 1)
+    return panel
+
+
 def _summary_breakdown_panel(qt: dict[str, Any], model: dict[str, Any]) -> Any:
     panel = _summary_panel(qt)
     layout = qt["QVBoxLayout"](panel)
@@ -2019,8 +2138,7 @@ def show_enrichment_results(
     qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.accept)
 
     refresh_list()
-    dialog.exec()
-    app.processEvents()
+    _exec_modeless_dialog(qt, app, dialog)
 
 
 def _issue_color(detail: dict[str, Any]) -> str:

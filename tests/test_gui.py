@@ -17,6 +17,7 @@ def test_gui_dependency_loader_smoke() -> None:
     modules = _load_qt_modules(require_fitz=True)
 
     assert "QApplication" in modules
+    assert "QEventLoop" in modules
     assert "fitz" in modules
 
 
@@ -105,6 +106,19 @@ def test_import_summary_model_highlights_reused_manifest() -> None:
     assert model["enrichment"][0]["skipped"] == 1
     assert model["enrichment"][1]["checked"] == 19
     assert model["enrichment"][1]["issues"] == 1
+    assert model["followup_issues"] == 1
+
+
+def test_progress_finished_state_marks_report_ready() -> None:
+    from scholar_vault.gui import _progress_finished_state
+
+    state = _progress_finished_state()
+
+    assert state["stage"] == "REPORT READY"
+    assert state["substage"].startswith("Import, enrichment, and rebuild finished")
+    assert "scrollable" in state["substage"]
+    assert state["counter"] == "DONE"
+    assert state["action"] == "Close Log"
 
 
 def test_progress_parts_name_import_substages() -> None:

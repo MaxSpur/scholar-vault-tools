@@ -475,7 +475,7 @@ def _show_import_enrichment_followup(summary: dict[str, Any], *, ui: bool) -> No
                 {"details": problems},
                 abstracts=False,
                 title="Scholar Vault Import Follow-Up",
-                close_label="Close Follow-Up and Logs",
+                close_label="Close Follow-Up and Import Log",
             )
             if not shown:
                 console.print("Enrichment follow-up issues:")

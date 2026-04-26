@@ -29,6 +29,7 @@
 - In the match-review GUI, distinguish rejecting one candidate from aborting the import. `Esc` should abort the whole process and prevent later steps such as enrichment.
 - A GUI import should not go visually silent after matching. Keep post-match enrichment progress visible and finish with only actionable follow-up rows, not every successful or unchanged card.
 - When a GUI import has both a run report and a follow-up issue window, keep progress/log windows alive until the last window closes and label buttons according to whether more workflow UI is still coming.
+- Post-import report and follow-up dialogs should be modeless while the CLI waits, so the user can bring the import log forward and scroll it before closing the final workflow window.
 - Import summaries must distinguish selected results that reused an existing run manifest or vault card from newly accepted staged PDFs. "Matched PDFs" alone is ambiguous when rerunning old Scholar Labs JSON.
 - Summary dialogs should not mirror terminal prose. Use large counts, status color, and a compact flow/breakdown first, then keep the raw text as a secondary selectable log.
 - Manual abstracts need a command path as well as an Obsidian editing path. Lock manual text by default so later provider refreshes do not erase curated abstracts.

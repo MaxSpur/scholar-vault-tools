@@ -42,5 +42,6 @@
 - [x] Refine GUI progress into one main output stream plus a compact top-right identifier stream with status color.
 - [x] Emit granular Scholar Labs matching progress for prior-manifest, vault-card, staged-PDF, review, and final decision substeps.
 - [x] Promote automatic enrichment results in the import run report and keep GUI progress logs through the report and follow-up windows.
+- [x] Make post-import report/follow-up windows modeless and mark the import log as report-ready instead of busy/cancellable.
 - [ ] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.
