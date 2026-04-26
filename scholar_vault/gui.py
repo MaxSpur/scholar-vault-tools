@@ -451,16 +451,19 @@ def _build_confirmation_dialog(qt: dict[str, Any], title: str, prompt: str) -> A
 def _run_picker_counts(run: Any) -> tuple[int, int, int]:
     selected = sum(1 for result in run.results if result.status == "selected")
     total = run.result_count or len(run.results)
-    left = sum(1 for result in run.results if result.status != "selected")
-    return selected, total, left
+    attached = sum(
+        1
+        for result in run.results
+        if result.status == "selected" and result.pdf_status == "attached"
+    )
+    return total, selected, attached
 
 
 def _run_picker_title(run: Any) -> str:
     title = (run.title or "").strip()
     if title:
         return title
-    prompt = " ".join((run.prompt or "").split())
-    return prompt[:96] + "..." if len(prompt) > 96 else prompt
+    return run.slug
 
 
 def _run_picker_date(run: Any) -> str:
@@ -468,44 +471,57 @@ def _run_picker_date(run: Any) -> str:
     return value[:16].replace("T", " ") if "T" in value else value
 
 
-def _run_picker_model(runs: list[Any], vault: str) -> dict[str, Any]:
+def _run_picker_model(
+    runs: list[Any],
+    vault: str,
+    *,
+    issue_counts: dict[str, int] | None = None,
+) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
+    issue_counts = issue_counts or {}
     sorted_runs = sorted(
         runs,
         key=lambda run: (run.exported_at or run.date, run.slug),
         reverse=True,
     )
     for index, run in enumerate(sorted_runs):
-        selected, total, left = _run_picker_counts(run)
+        total, selected, attached = _run_picker_counts(run)
         prompt = " ".join((run.prompt or "").split())
         rows.append(
             {
                 "run_id": run.slug,
                 "title": _run_picker_title(run),
                 "exported": _run_picker_date(run),
-                "selected": selected,
                 "total": total,
-                "left": left,
-                "matched_files": len(run.matched_files),
+                "selected": selected,
+                "attached": attached,
+                "issues": issue_counts.get(run.slug, 0),
+                "accepted_now": len(run.matched_files),
                 "unmatched_files": len(run.unmatched_files),
                 "export_file": Path(run.export_file).name,
                 "staging_folder": run.staging_folder,
                 "note_file": run.note_file or "",
-                "prompt": prompt[:180] + "..." if len(prompt) > 180 else prompt,
+                "prompt": prompt,
                 "is_latest": index == 0,
             }
         )
     return {"vault": vault, "rows": rows}
 
 
-def _run_picker_metric(qt: dict[str, Any], label: str, value: object) -> Any:
+def _run_picker_metric(
+    qt: dict[str, Any],
+    label: str,
+    value: object,
+    *,
+    color: str = "#f3fff7",
+) -> Any:
     box = qt["QVBoxLayout"]()
     label_widget = qt["QLabel"](label)
     label_widget.setFont(_summary_font(qt, 9, mono=True, bold=True))
     label_widget.setStyleSheet("color: #8ce7b8; border: none;")
     value_widget = qt["QLabel"](str(value))
     value_widget.setFont(_summary_font(qt, 15, mono=True, bold=True))
-    value_widget.setStyleSheet("color: #f3fff7; border: none;")
+    value_widget.setStyleSheet(f"color: {color}; border: none;")
     box.addWidget(label_widget)
     box.addWidget(value_widget)
     return box
@@ -516,15 +532,18 @@ def _build_run_picker_row(
     row: dict[str, Any],
     choose: Any,
 ) -> Any:
-    panel = _summary_panel(qt, "#69ffad" if row["is_latest"] else "#26553b")
-    layout = qt["QHBoxLayout"](panel)
-    layout.setContentsMargins(14, 12, 14, 12)
-    layout.setSpacing(14)
-
-    copy = qt["QVBoxLayout"]()
-    copy.setSpacing(5)
+    panel = qt["QFrame"]()
+    panel.setStyleSheet(
+        "QFrame { background: #030504; border: none; "
+        f"border-left: {'3px solid #69ffad' if row['is_latest'] else '0px solid #030504'}; "
+        "border-bottom: 1px solid #26553b; }"
+    )
+    layout = qt["QVBoxLayout"](panel)
+    layout.setContentsMargins(14, 13, 14, 13)
+    layout.setSpacing(8)
 
     title_row = qt["QHBoxLayout"]()
+    title_row.setSpacing(10)
     title = qt["QLabel"](row["title"] or row["run_id"])
     title.setFont(_summary_font(qt, 15, bold=True))
     title.setStyleSheet("color: #f3fff7; border: none;")
@@ -537,51 +556,66 @@ def _build_run_picker_row(
             "color: #030504; background: #69ffad; border: none; padding: 3px 7px;"
         )
         title_row.addWidget(latest, 0)
-    copy.addLayout(title_row)
+    button = qt["QPushButton"]("Rerun")
+    button.setMinimumWidth(96)
+    button.setMinimumHeight(38)
+    _style_button(button, "primary" if row["is_latest"] else "neutral")
+    button.clicked.connect(lambda _checked=False, run_id=row["run_id"]: choose(run_id))
+    title_row.addWidget(button, 0)
+    layout.addLayout(title_row)
 
     run_id = qt["QLabel"](row["run_id"])
     run_id.setFont(_summary_font(qt, 10, mono=True))
     run_id.setStyleSheet("color: #68c792; border: none;")
     run_id.setTextInteractionFlags(qt["Qt"].TextInteractionFlag.TextSelectableByMouse)
-    copy.addWidget(run_id)
+    layout.addWidget(run_id)
 
     prompt = qt["QLabel"](row["prompt"])
     prompt.setFont(_summary_font(qt, 10))
     prompt.setStyleSheet("color: #baffdc; border: none;")
     prompt.setWordWrap(True)
-    copy.addWidget(prompt)
+    prompt.setTextInteractionFlags(qt["Qt"].TextInteractionFlag.TextSelectableByMouse)
+    layout.addWidget(prompt)
 
     details = qt["QLabel"](
         f"export: {row['export_file'] or '-'}"
         + (f"  // note: {row['note_file']}" if row["note_file"] else "")
+        + f"  // accepted as new PDFs in that import: {row['accepted_now']}"
+        + f"  // unmatched staged files recorded: {row['unmatched_files']}"
     )
     details.setFont(_summary_font(qt, 9, mono=True))
     details.setStyleSheet("color: #8ce7b8; border: none;")
     details.setWordWrap(True)
-    copy.addWidget(details)
-    layout.addLayout(copy, 1)
+    layout.addWidget(details)
 
     metrics = qt["QHBoxLayout"]()
-    metrics.setSpacing(12)
+    metrics.setSpacing(18)
     metrics.addLayout(_run_picker_metric(qt, "EXPORTED", row["exported"]))
-    metrics.addLayout(_run_picker_metric(qt, "SELECTED", f"{row['selected']}/{row['total']}"))
-    metrics.addLayout(_run_picker_metric(qt, "LEFT", row["left"]))
-    metrics.addLayout(_run_picker_metric(qt, "PDFS", row["matched_files"]))
-    layout.addLayout(metrics, 0)
-
-    button = qt["QPushButton"]("Rerun")
-    button.setMinimumWidth(96)
-    button.setMinimumHeight(40)
-    _style_button(button, "primary" if row["is_latest"] else "neutral")
-    button.clicked.connect(lambda _checked=False, run_id=row["run_id"]: choose(run_id))
-    layout.addWidget(button, 0)
+    metrics.addLayout(_run_picker_metric(qt, "RESULTS", row["total"]))
+    metrics.addLayout(_run_picker_metric(qt, "PAPER CARDS", row["selected"]))
+    metrics.addLayout(_run_picker_metric(qt, "ATTACHED PDFS", row["attached"]))
+    metrics.addLayout(
+        _run_picker_metric(
+            qt,
+            "FOLLOW-UP",
+            row["issues"],
+            color="#ff3b4f" if row["issues"] else "#45ffb0",
+        )
+    )
+    metrics.addStretch(1)
+    layout.addLayout(metrics)
     return panel
 
 
-def choose_rerun(runs: list[Any], vault: str) -> str | None:
+def choose_rerun(
+    runs: list[Any],
+    vault: str,
+    *,
+    issue_counts: dict[str, int] | None = None,
+) -> str | None:
     qt = _load_qt_modules(require_fitz=False)
     app = _application(qt)
-    model = _run_picker_model(runs, vault)
+    model = _run_picker_model(runs, vault, issue_counts=issue_counts)
     selected: dict[str, str | None] = {"run_id": None}
 
     dialog = qt["QDialog"]()
@@ -606,8 +640,8 @@ def choose_rerun(runs: list[Any], vault: str) -> str | None:
     heading.setFont(_summary_font(qt, 30, bold=True))
     heading.setStyleSheet("color: #f3fff7;")
     subheading = qt["QLabel"](
-        "Most recent runs appear first. Pick one to rescan staging PDFs, reuse prior "
-        "decisions, and continue into the normal import workflow."
+        "Most recent runs appear first. Pick one to rescan staging PDFs, reuse "
+        "prior decisions, and then continue into the normal import workflow."
     )
     subheading.setFont(_summary_font(qt, 12))
     subheading.setStyleSheet("color: #8ce7b8;")
@@ -637,10 +671,16 @@ def choose_rerun(runs: list[Any], vault: str) -> str | None:
 
     scroll = qt["QScrollArea"]()
     scroll.setWidgetResizable(True)
+    scroll.setFrameShape(qt["QFrame"].Shape.NoFrame)
+    scroll.setStyleSheet(
+        "QScrollArea { background: #030504; border: 1px solid #26553b; }"
+        "QScrollArea > QWidget > QWidget { background: #030504; }"
+    )
     container = qt["QWidget"]()
+    container.setStyleSheet("background: #030504;")
     rows_layout = qt["QVBoxLayout"](container)
     rows_layout.setContentsMargins(0, 0, 0, 0)
-    rows_layout.setSpacing(10)
+    rows_layout.setSpacing(0)
     if model["rows"]:
         for row in model["rows"]:
             rows_layout.addWidget(_build_run_picker_row(qt, row, choose))

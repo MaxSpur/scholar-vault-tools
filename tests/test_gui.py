@@ -249,7 +249,12 @@ def test_run_picker_model_sorts_and_counts_runs() -> None:
             "raw_export_file": "raw/scholar-labs/old.json",
             "result_count": 2,
             "results": [
-                {"rank": 1, "title": "Selected", "status": "selected"},
+                {
+                    "rank": 1,
+                    "title": "Selected",
+                    "status": "selected",
+                    "pdf_status": "attached",
+                },
                 {"rank": 2, "title": "Missing", "status": "unmatched"},
             ],
             "matched_files": ["a.pdf"],
@@ -260,29 +265,43 @@ def test_run_picker_model_sorts_and_counts_runs() -> None:
         {
             "slug": "2026-04-22_new-run",
             "date": "2026-04-22",
-            "prompt": "newer prompt",
+            "prompt": (
+                "newer prompt with enough detail that it should stay complete in the "
+                "run picker model instead of being abbreviated"
+            ),
             "exported_at": "2026-04-22T10:30:00+02:00",
             "export_file": "/tmp/new.json",
             "raw_export_file": "raw/scholar-labs/new.json",
             "result_count": 3,
             "results": [
-                {"rank": 1, "title": "Selected", "status": "selected"},
+                {
+                    "rank": 1,
+                    "title": "Selected",
+                    "status": "selected",
+                    "pdf_status": "attached",
+                },
                 {"rank": 2, "title": "Candidate", "status": "candidate"},
                 {"rank": 3, "title": "Missing", "status": "unmatched"},
             ],
         }
     )
 
-    model = _run_picker_model([older, newer], "/tmp/vault")
+    model = _run_picker_model(
+        [older, newer],
+        "/tmp/vault",
+        issue_counts={"2026-04-22_new-run": 2},
+    )
 
     assert model["rows"][0]["run_id"] == "2026-04-22_new-run"
     assert model["rows"][0]["is_latest"] is True
     assert model["rows"][0]["selected"] == 1
     assert model["rows"][0]["total"] == 3
-    assert model["rows"][0]["left"] == 2
-    assert model["rows"][0]["title"] == "newer prompt"
+    assert model["rows"][0]["attached"] == 1
+    assert model["rows"][0]["issues"] == 2
+    assert "abbreviated" in model["rows"][0]["prompt"]
+    assert model["rows"][0]["title"] == "2026-04-22_new-run"
     assert model["rows"][1]["run_id"] == "2026-04-21_old-run"
-    assert model["rows"][1]["matched_files"] == 1
+    assert model["rows"][1]["accepted_now"] == 1
     assert model["rows"][1]["unmatched_files"] == 1
 
 

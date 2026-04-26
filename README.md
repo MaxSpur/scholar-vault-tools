@@ -436,8 +436,9 @@ completed from the configured vault, so `scholar-vault rerun --run <tab>` shows
 recorded run IDs.
 
 For the desktop workflow, omit `--run` and pass `--ui` to choose from a run
-browser with run IDs, titles, exported dates, selected/result counts, unresolved
-counts, and staged-PDF history:
+browser with run IDs, titles, full prompts, exported dates, result counts,
+paper-card counts, attached-PDF counts, follow-up issue counts, and staged-PDF
+history:
 
 ```fish
 scholar-vault rerun --ui

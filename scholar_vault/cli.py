@@ -30,7 +30,7 @@ from .importer import (
     undo_run,
 )
 from .models import ImportCanceled, MatchReviewAbort, MatchReviewRequest, SourceCard
-from .sources import load_run_records, load_source_cards
+from .sources import VaultPaths, load_run_records, load_source_cards
 
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
 console = Console()
@@ -49,7 +49,7 @@ def _complete_run_ids(ctx, args: list[str], incomplete: str) -> list[str]:
     if vault is None:
         return []
     try:
-        paths = initialize_vault(Path(vault).expanduser().resolve())
+        paths = VaultPaths.from_root(Path(vault).expanduser().resolve())
         run_ids = [run.slug for run in load_run_records(paths)]
     except Exception:
         return []
@@ -63,7 +63,7 @@ def _complete_citekeys(ctx, args: list[str], incomplete: str) -> list[str]:
     if vault is None:
         return []
     try:
-        paths = initialize_vault(Path(vault).expanduser().resolve())
+        paths = VaultPaths.from_root(Path(vault).expanduser().resolve())
         citekeys = [card.citekey for card in load_source_cards(paths) if card.citekey]
     except Exception:
         return []
@@ -313,13 +313,41 @@ def _confirm_callback(ui: bool):
         return _confirm
 
 
+def _card_needs_followup(card: SourceCard) -> bool:
+    issue_states = {"incomplete", "ambiguous", "unresolved"}
+    return (
+        card.enrichment_status in issue_states
+        or card.citation_status in issue_states
+        or card.abstract_status in issue_states
+        or card.doi_status in {"ambiguous", "unresolved"}
+        or bool(card.enrichment_refresh)
+    )
+
+
+def _run_followup_issue_counts(paths, runs) -> dict[str, int]:
+    cards = {f"papers/{card.slug}.md": card for card in load_source_cards(paths)}
+    counts: dict[str, int] = {}
+    for run in runs:
+        seen: set[str] = set()
+        for result in run.results:
+            if result.status != "selected" or not result.paper_card:
+                continue
+            if result.paper_card in seen:
+                continue
+            seen.add(result.paper_card)
+            card = cards.get(result.paper_card)
+            if card is not None and _card_needs_followup(card):
+                counts[run.slug] = counts.get(run.slug, 0) + 1
+    return counts
+
+
 def _select_rerun_run_id(vault: Path, run: str | None, *, ui: bool) -> str:
     if run:
         return run
     if not ui:
         return latest_run_id(vault)
 
-    paths = initialize_vault(vault)
+    paths = VaultPaths.from_root(vault)
     runs = load_run_records(paths)
     if not runs:
         raise typer.BadParameter(f"No runs found in vault: {paths.vault}")
@@ -329,7 +357,11 @@ def _select_rerun_run_id(vault: Path, run: str | None, *, ui: bool) -> str:
         console.print(f"Rerun UI unavailable ({exc}). Falling back to latest run.")
         return latest_run_id(vault)
     try:
-        selected = choose_rerun(runs, str(paths.vault))
+        selected = choose_rerun(
+            runs,
+            str(paths.vault),
+            issue_counts=_run_followup_issue_counts(paths, runs),
+        )
     except GuiUnavailable as exc:
         console.print(f"Rerun UI unavailable ({exc}). Falling back to latest run.")
         return latest_run_id(vault)
@@ -429,8 +461,19 @@ def _short_run_timestamp(run) -> str:
     return value
 
 
+def _run_table_counts(run) -> tuple[int, int, int]:
+    total = run.result_count or len(run.results)
+    selected = sum(1 for result in run.results if result.status == "selected")
+    attached = sum(
+        1
+        for result in run.results
+        if result.status == "selected" and result.pdf_status == "attached"
+    )
+    return total, selected, attached
+
+
 def _print_runs_table(vault: Path, *, limit: int | None = None) -> None:
-    paths = initialize_vault(vault)
+    paths = VaultPaths.from_root(vault)
     runs = sorted(
         load_run_records(paths),
         key=lambda run: (run.exported_at or run.date, run.slug),
@@ -442,24 +485,21 @@ def _print_runs_table(vault: Path, *, limit: int | None = None) -> None:
         console.print(f"No runs found in {paths.vault}.")
         return
 
+    issue_counts = _run_followup_issue_counts(paths, runs)
+    console.print("Scholar Vault Runs")
     console.print(f"Vault: {paths.vault}")
-    table = Table(title="Scholar Vault Runs")
-    table.add_column("Run ID", style="cyan", no_wrap=True)
-    table.add_column("Exported", no_wrap=True)
-    table.add_column("Sel/All", justify="right", no_wrap=True)
-    table.add_column("Left", justify="right", no_wrap=True)
-    table.add_column("Title")
     for run in runs:
-        selected = sum(1 for result in run.results if result.status == "selected")
-        unmatched = sum(1 for result in run.results if result.status != "selected")
-        table.add_row(
-            run.slug,
-            _short_run_timestamp(run),
-            f"{selected}/{run.result_count or len(run.results)}",
-            str(unmatched),
-            _short_run_title(run),
+        total, selected, attached = _run_table_counts(run)
+        console.print(f"\n[cyan]{run.slug}[/cyan]")
+        console.print(f"  title: {_short_run_title(run)}")
+        console.print(
+            "  "
+            f"exported: {_short_run_timestamp(run)}  "
+            f"results: {total}  "
+            f"paper_cards: {selected}  "
+            f"attached_pdfs: {attached}  "
+            f"follow_up: {issue_counts.get(run.slug, 0)}"
         )
-    console.print(table)
 
 
 def _detail_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:

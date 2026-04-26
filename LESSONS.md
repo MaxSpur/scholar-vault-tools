@@ -10,6 +10,7 @@
 - Re-running a Scholar Labs JSON should stay idempotent by default, but better replacement PDFs need an explicit upgrade mode that reviews staged candidates even when a prior manifest already selected the paper.
 - Rerun workflows need discoverability as much as idempotence. Keep previous run IDs listable from the CLI and shell-completable from the configured vault so users do not have to inspect `runs/*/index.yaml` manually.
 - Preserve script defaults but make GUI defaults explicit. A terminal `rerun` can reuse the latest run, while `rerun --ui` should show a chooser before starting work.
+- GUI counters should name the underlying record concept. Do not label per-run newly accepted staged files as total PDFs, and do not call unselected Scholar results "left" when the workflow intentionally imports only downloaded/selected papers.
 - When moving user-facing input files for workflow hygiene, update all provenance paths that future commands use. Archiving a used JSON export is only useful if `resume` still points at the moved file.
 - Prefer moving used exports into a folder over renaming them. Scholar Labs prompt-derived JSON names can already be long enough to approach filesystem limits.
 - When defaulting to the "latest" browser export, only consider top-level `.json` files in the configured exports folder or staging fallback. Ignore `used/` so reruns do not accidentally re-ingest archived exports.
