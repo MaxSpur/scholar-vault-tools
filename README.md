@@ -213,6 +213,7 @@ Default Scholar Labs behavior is now selected-only:
 - Most commands that accept `--vault`, and commands that accept `--staging`, can use configured defaults when those options are omitted.
 - Import and enrichment commands show terminal progress while scanning PDFs, matching results, querying metadata providers, and rebuilding derived files. Enrichment logs include per-pass attempt/result/skip lines for local DOI/PDF scans and provider lookups.
 - Staged PDF scan results are cached in `.scholar-vault-pdf-scan-cache` inside the staging folder. Repeated imports reuse cached title, DOI, year, text, and hash data when a PDF's size and modification time are unchanged.
+- `match-staging --ui` rows can open the staged PDF directly. Rows already attached to a vault card can also open the card or move the redundant staging copy into `staging/trash/`.
 
 Run notes are written as `runs/<run_id>/<Short Title.md>` instead of
 `index.md`. This gives Obsidian Graph and the file sidebar meaningful run/prompt

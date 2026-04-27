@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import re
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -97,6 +98,29 @@ def _open_path(qt: dict[str, Any], path: str | None) -> None:
     if not path:
         return
     qt["QDesktopServices"].openUrl(qt["QUrl"].fromLocalFile(str(Path(path).expanduser())))
+
+
+def _unique_staging_trash_path(staging: str, source: str) -> Path:
+    staging_root = Path(staging).expanduser().resolve()
+    source_path = Path(source).expanduser().resolve()
+    if not source_path.exists():
+        raise FileNotFoundError(f"Staged PDF no longer exists: {source_path}")
+    if staging_root != source_path.parent and staging_root not in source_path.parents:
+        raise ValueError(f"PDF is not inside the staging folder: {source_path}")
+    trash_dir = staging_root / "trash"
+    trash_dir.mkdir(parents=True, exist_ok=True)
+    destination = trash_dir / source_path.name
+    counter = 2
+    while destination.exists():
+        destination = trash_dir / f"{source_path.stem}-{counter}{source_path.suffix}"
+        counter += 1
+    return destination
+
+
+def _move_staged_pdf_to_trash(staging: str, source: str) -> Path:
+    destination = _unique_staging_trash_path(staging, source)
+    shutil.move(str(Path(source).expanduser()), str(destination))
+    return destination
 
 
 def _exec_modeless_dialog(qt: dict[str, Any], app: Any, dialog: Any) -> None:
@@ -875,7 +899,10 @@ def _staging_match_model(summary: dict[str, Any]) -> dict[str, Any]:
                 "score_color": _staging_match_color(score),
                 "result_title": _clip_text(row.get("result_title"), 120),
                 "pdf_label": _clip_text(pdf_label, 90),
+                "pdf_path": str(row.get("pdf_path") or ""),
                 "pdf_title": _clip_text(pdf_title, 120) if pdf_title else "",
+                "paper_card": str(row.get("paper_card") or ""),
+                "attached": bool(row.get("attached")),
                 "reason": str(row.get("reason") or ""),
                 "decision": str(row.get("decision") or ""),
                 "state": (
@@ -894,7 +921,15 @@ def _staging_match_model(summary: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _build_staging_match_row(qt: dict[str, Any], row: dict[str, Any], choose: Any) -> Any:
+def _build_staging_match_row(
+    qt: dict[str, Any],
+    row: dict[str, Any],
+    choose: Any,
+    *,
+    open_pdf: Any,
+    open_card: Any,
+    remove_pdf: Any,
+) -> Any:
     panel = qt["QFrame"]()
     panel.setStyleSheet(
         "QFrame { background: #030504; border: none; border-bottom: 1px solid #26553b; }"
@@ -947,12 +982,47 @@ def _build_staging_match_row(qt: dict[str, Any], row: dict[str, Any], choose: An
     detail.addWidget(run_id)
     layout.addLayout(detail, 1)
 
-    button = qt["QPushButton"]("Rerun")
-    button.setMinimumWidth(110)
-    button.setMinimumHeight(42)
-    _style_button(button, "primary" if row["score"] >= 90 else "neutral")
-    button.clicked.connect(lambda _checked=False, run_id=row["run_id"]: choose(run_id))
-    layout.addWidget(button, 0)
+    actions = qt["QVBoxLayout"]()
+    actions.setSpacing(8)
+    rerun = qt["QPushButton"]("Rerun")
+    rerun.setMinimumWidth(118)
+    rerun.setMinimumHeight(34)
+    _style_button(rerun, "primary" if row["score"] >= 90 else "neutral")
+    rerun.clicked.connect(lambda _checked=False, run_id=row["run_id"]: choose(run_id))
+    actions.addWidget(rerun)
+
+    if row.get("pdf_path"):
+        open_pdf_button = qt["QPushButton"]("Open PDF")
+        open_pdf_button.setMinimumWidth(118)
+        open_pdf_button.setMinimumHeight(32)
+        _style_button(open_pdf_button, "neutral")
+        open_pdf_button.clicked.connect(
+            lambda _checked=False, selected=row: open_pdf(selected)
+        )
+        actions.addWidget(open_pdf_button)
+
+    if row.get("attached") and row.get("paper_card"):
+        open_card_button = qt["QPushButton"]("Open Card")
+        open_card_button.setMinimumWidth(118)
+        open_card_button.setMinimumHeight(32)
+        _style_button(open_card_button, "neutral")
+        open_card_button.clicked.connect(
+            lambda _checked=False, selected=row: open_card(selected)
+        )
+        actions.addWidget(open_card_button)
+
+    if row.get("attached") and row.get("pdf_path"):
+        remove_button = qt["QPushButton"]("Remove PDF")
+        remove_button.setMinimumWidth(118)
+        remove_button.setMinimumHeight(32)
+        _style_button(remove_button, "danger")
+        remove_button.clicked.connect(
+            lambda _checked=False, selected=row: remove_pdf(selected)
+        )
+        actions.addWidget(remove_button)
+
+    actions.addStretch(1)
+    layout.addLayout(actions, 0)
     return panel
 
 
@@ -1124,6 +1194,51 @@ def choose_staging_match(
             app.processEvents()
             run_search(clear_query=False)
 
+    def open_row_pdf(row: dict[str, Any]) -> None:
+        _open_path(qt, str(row.get("pdf_path") or ""))
+
+    def open_row_card(row: dict[str, Any]) -> None:
+        paper_card = str(row.get("paper_card") or "")
+        if paper_card:
+            _open_path(qt, str(Path(vault).expanduser() / paper_card))
+
+    def remove_row_pdf(row: dict[str, Any]) -> None:
+        source = str(row.get("pdf_path") or "")
+        if not source:
+            return
+        box = qt["QMessageBox"](dialog)
+        box.setWindowTitle("Remove Staging PDF")
+        box.setIcon(qt["QMessageBox"].Icon.Warning)
+        box.setText(
+            "Move this already attached staging PDF into the staging trash folder?"
+        )
+        box.setInformativeText(
+            f"{Path(source).name}\n\nThe vault card keeps its own PDF copy."
+        )
+        box.setStandardButtons(
+            qt["QMessageBox"].StandardButton.Ok
+            | qt["QMessageBox"].StandardButton.Cancel
+        )
+        _style_message_box(qt, box)
+        if box.exec() != qt["QMessageBox"].StandardButton.Ok:
+            return
+        try:
+            destination = _move_staged_pdf_to_trash(staging, source)
+        except Exception as exc:  # pragma: no cover - defensive UI error handling
+            error = qt["QMessageBox"](dialog)
+            error.setWindowTitle("PDF Not Removed")
+            error.setIcon(qt["QMessageBox"].Icon.Warning)
+            error.setText(str(exc))
+            error.setStandardButtons(qt["QMessageBox"].StandardButton.Ok)
+            _style_message_box(qt, error)
+            error.exec()
+            return
+        if pdf_field.text().strip() == source:
+            pdf_field.clear()
+        status.setText(f"Moved {Path(source).name} to {destination.parent}.")
+        app.processEvents()
+        run_search(clear_query=False)
+
     def clear_rows() -> None:
         while rows_layout.count():
             item = rows_layout.takeAt(0)
@@ -1137,7 +1252,16 @@ def choose_staging_match(
         clear_rows()
         if model["rows"]:
             for row in model["rows"]:
-                rows_layout.addWidget(_build_staging_match_row(qt, row, choose))
+                rows_layout.addWidget(
+                    _build_staging_match_row(
+                        qt,
+                        row,
+                        choose,
+                        open_pdf=open_row_pdf,
+                        open_card=open_row_card,
+                        remove_pdf=remove_row_pdf,
+                    )
+                )
             rows_layout.addStretch(1)
         else:
             empty = qt["QLabel"]("No previous run result matched above the threshold.")

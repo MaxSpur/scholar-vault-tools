@@ -15,6 +15,7 @@
 - `rebuild` should repair stale run links as well as rerender files. Use conservative identity checks such as Scholar CID or exact normalized title, not fuzzy matching, when backfilling existing card/PDF attachments into older runs.
 - Explicit absence needs its own state. A rendered "no publication keywords" section must round-trip through the card parser without becoming a real keyword and without reappearing in follow-up queues.
 - The leftover staging PDF GUI is a parent queue, not a one-shot launcher. Reviewed reruns should return to the same window and refresh the remaining candidates.
+- Already-attached staging-match rows should support direct inspection and non-destructive cleanup. Move redundant staging PDFs into a staging-local `trash/` folder instead of deleting them or archiving them into the vault.
 - Preserve script defaults but make GUI defaults explicit. A terminal `rerun` can reuse the latest run, while `rerun --ui` should show a chooser before starting work.
 - GUI counters should name the underlying record concept. Do not label per-run newly accepted staged files as total PDFs, and do not call unselected Scholar results "left" when the workflow intentionally imports only downloaded/selected papers.
 - When moving user-facing input files for workflow hygiene, update all provenance paths that future commands use. Archiving a used JSON export is only useful if `resume` still points at the moved file.

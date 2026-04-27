@@ -360,11 +360,14 @@ def test_staging_match_model_formats_rows() -> None:
                     "score": 92,
                     "result_title": "Origin-Destination Flow Data Smoothing and Mapping",
                     "pdf_filename": "leftover.pdf",
+                    "pdf_path": "/tmp/leftover.pdf",
                     "pdf_title": "Origin-Destination Flow Data Smoothing and Mapping",
+                    "paper_card": "papers/origin-destination.md",
+                    "attached": True,
                     "reason": "title",
                     "decision": "auto",
-                    "status": "unmatched",
-                    "pdf_status": "missing",
+                    "status": "selected",
+                    "pdf_status": "attached",
                 }
             ],
         }
@@ -375,7 +378,25 @@ def test_staging_match_model_formats_rows() -> None:
     assert model["cache_hits"] == 1
     assert model["rows"][0]["score_color"] == "#45ffb0"
     assert model["rows"][0]["run_id"] == "2026-04-22_example"
-    assert model["rows"][0]["state"] == "unmatched / missing"
+    assert model["rows"][0]["pdf_path"] == "/tmp/leftover.pdf"
+    assert model["rows"][0]["paper_card"] == "papers/origin-destination.md"
+    assert model["rows"][0]["attached"] is True
+    assert model["rows"][0]["state"] == "selected / attached / already attached"
+
+
+def test_move_staged_pdf_to_trash_uses_staging_trash_folder(tmp_path: Path) -> None:
+    from scholar_vault.gui import _move_staged_pdf_to_trash
+
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    pdf = staging / "leftover.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+
+    destination = _move_staged_pdf_to_trash(str(staging), str(pdf))
+
+    assert destination == staging / "trash" / "leftover.pdf"
+    assert destination.exists()
+    assert not pdf.exists()
 
 
 def test_missing_abstract_issue_is_resolvable() -> None:
