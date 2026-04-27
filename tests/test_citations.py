@@ -11,6 +11,7 @@ from scholar_vault.citations import (
     _candidate_is_consistent,
     _promote_metadata_from_candidate,
     abstract_fingerprint,
+    abstract_looks_truncated,
     card_fingerprint,
     clean_provider_abstract,
     crossref_candidates,
@@ -180,6 +181,25 @@ This should not be included.
     assert "usability studies" in extracted
     assert "Keywords" not in extracted
     assert "Introduction" not in extracted
+
+
+def test_pdf_abstract_extraction_rejects_truncated_snippet() -> None:
+    text = """
+Title
+
+Abstract
+The study of movement is progressing rapidly as a subdiscipline in Geographic
+Information Science. At the fulcrum of this new research area are movement
+observations. Movem...
+
+1 Introduction
+This should not be included.
+"""
+
+    assert abstract_looks_truncated(
+        "The study of movement is progressing rapidly. Movem..."
+    )
+    assert extract_pdf_abstract(text) == ""
 
 
 def test_pdf_keyword_extraction_accepts_springer_keywords() -> None:
@@ -1005,6 +1025,74 @@ def test_abstract_enrichment_second_run_skips_unchanged_resolved_card() -> None:
         should_skip_abstract_card(card, EnrichmentOptions(abstracts=True))
         == "abstract fingerprint unchanged"
     )
+
+
+def test_abstract_enrichment_retries_truncated_resolved_card() -> None:
+    card = SourceCard(
+        slug="dodge2016analysismovementdata",
+        citekey="dodge2016analysismovementdata",
+        title="Analysis of Movement Data",
+        abstract=(
+            "The study of movement is progressing rapidly as a subdiscipline in "
+            "Geographic Information Science. Movem..."
+        ),
+        abstract_status="resolved",
+        abstract_source="crossref",
+    )
+    card.abstract_input_fingerprint = abstract_fingerprint(card)
+
+    assert should_skip_abstract_card(card, EnrichmentOptions(abstracts=True)) is None
+
+
+def test_abstract_enrichment_rejects_truncated_provider_candidate(tmp_path: Path) -> None:
+    paths = VaultPaths.from_root(tmp_path / "vault")
+    paths.ensure()
+    card = SourceCard(
+        slug="dodge2016analysismovementdata",
+        citekey="dodge2016analysismovementdata",
+        title="Analysis of Movement Data",
+        authors=["S. Dodge"],
+        year=2016,
+        doi="10.1145/example",
+        abstract=(
+            "The study of movement is progressing rapidly as a subdiscipline in "
+            "Geographic Information Science. Movem..."
+        ),
+        abstract_status="resolved",
+        abstract_source="crossref",
+    )
+    card.abstract_input_fingerprint = abstract_fingerprint(card)
+    crossref_payload = {
+        "message": {
+            "DOI": "10.1145/example",
+            "title": ["Analysis of Movement Data"],
+            "author": [{"given": "S.", "family": "Dodge"}],
+            "published-print": {"date-parts": [[2016]]},
+            "abstract": (
+                "The study of movement is progressing rapidly as a subdiscipline in "
+                "Geographic Information Science. Movem..."
+            ),
+            "URL": "https://doi.org/10.1145/example",
+        }
+    }
+
+    def fake_json(url: str, cache_path: Path, refresh: bool) -> dict:
+        del url, refresh
+        if cache_path.name == "crossref.json":
+            return crossref_payload
+        return {"results": []}
+
+    result = enrich_abstract_card(
+        paths,
+        card,
+        EnrichmentOptions(abstracts=True),
+        fetch_json=fake_json,
+    )
+
+    assert result.status == "unresolved"
+    assert result.message == "truncated abstract rejected"
+    assert card.abstract is None
+    assert card.abstract_status == "unresolved"
 
 
 def test_abstract_enrichment_retries_previous_failure_by_default() -> None:

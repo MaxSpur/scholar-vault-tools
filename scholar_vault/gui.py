@@ -1170,9 +1170,14 @@ def choose_staging_match(
         scroll.setEnabled(False)
         cancel.setEnabled(False)
         dialog.setCursor(qt["Qt"].CursorShape.WaitCursor)
+        dialog.hide()
+        app.processEvents()
         try:
             run_callback(run_id)
         except Exception as exc:  # pragma: no cover - defensive UI error handling
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
             box = qt["QMessageBox"](dialog)
             box.setWindowTitle("Reviewed Rerun Failed")
             box.setIcon(qt["QMessageBox"].Icon.Warning)
@@ -1191,6 +1196,10 @@ def choose_staging_match(
             if pdf_field.text().strip() and not Path(pdf_field.text().strip()).exists():
                 pdf_field.clear()
             status.setText("Reviewed rerun finished; refreshing leftover matches...")
+            if not dialog.isVisible():
+                dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
             app.processEvents()
             run_search(clear_query=False)
 
@@ -1359,7 +1368,11 @@ def choose_staging_match(
 
     qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.reject)
     qt["QTimer"].singleShot(0, lambda: run_search(clear_query=False))
-    result = dialog.exec()
+    if run_callback is None:
+        result = dialog.exec()
+    else:
+        _exec_modeless_dialog(qt, app, dialog)
+        result = dialog.result()
     app.processEvents()
     if result == qt["QDialog"].DialogCode.Accepted:
         return selected["run_id"]

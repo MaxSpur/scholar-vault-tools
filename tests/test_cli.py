@@ -10,6 +10,7 @@ from scholar_vault.cli import (
     _complete_run_ids,
     _enrichment_progress_reporter,
     _import_summary_lines,
+    _show_enrichment_ui,
     _with_progress,
     app,
 )
@@ -129,6 +130,72 @@ def test_enrichment_progress_reporter_includes_stage() -> None:
             5,
         )
     ]
+
+
+def test_enrichment_ui_filters_to_real_followup_issues(monkeypatch) -> None:
+    from scholar_vault import gui
+
+    shown: list[dict] = []
+
+    def fake_show_enrichment_results(details, **_kwargs) -> None:
+        shown.extend(details)
+
+    monkeypatch.setattr(gui, "show_enrichment_results", fake_show_enrichment_results)
+
+    result = _show_enrichment_ui(
+        {
+            "details": [
+                {
+                    "kind": "citation",
+                    "category": "skipped",
+                    "message": "citation verified",
+                },
+                {
+                    "kind": "abstract",
+                    "category": "unresolved",
+                    "message": "no acceptable abstract found",
+                },
+            ]
+        },
+        abstracts=True,
+    )
+
+    assert result is True
+    assert shown == [
+        {
+            "kind": "abstract",
+            "category": "unresolved",
+            "message": "no acceptable abstract found",
+        }
+    ]
+
+
+def test_enrichment_ui_does_not_show_non_issue_skips(monkeypatch) -> None:
+    from scholar_vault import gui
+
+    called = False
+
+    def fake_show_enrichment_results(*_args, **_kwargs) -> None:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(gui, "show_enrichment_results", fake_show_enrichment_results)
+
+    result = _show_enrichment_ui(
+        {
+            "details": [
+                {
+                    "kind": "abstract",
+                    "category": "skipped",
+                    "message": "abstract fingerprint unchanged",
+                }
+            ]
+        },
+        abstracts=True,
+    )
+
+    assert result is False
+    assert called is False
 
 
 def test_import_canceled_exits_cleanly(capsys) -> None:

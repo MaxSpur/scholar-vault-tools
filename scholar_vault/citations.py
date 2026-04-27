@@ -210,12 +210,14 @@ def should_skip_abstract_card(card: SourceCard, options: EnrichmentOptions) -> s
         options.only == "missing-abstract"
         and card.abstract
         and card.abstract_status in {"resolved", "verified"}
+        and not abstract_looks_truncated(card.abstract)
         and not requested_refresh
     ):
         return "abstract present"
     if (
         card.abstract_status in {"resolved", "verified"}
         and card.abstract
+        and not abstract_looks_truncated(card.abstract)
         and card.abstract_input_fingerprint == fingerprint
         and not requested_refresh
     ):
@@ -291,6 +293,21 @@ def clean_provider_abstract(value: str | None) -> str:
     return cleaned
 
 
+def abstract_looks_truncated(text: str | None) -> bool:
+    if not text:
+        return False
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if stripped.endswith("…"):
+        return True
+    if re.search(r"[A-Za-z0-9\)\]]\.\.\.\s*$", stripped):
+        return True
+    if re.search(r"[A-Za-z0-9]\.\.\.\s+[A-Z]", stripped):
+        return True
+    return False
+
+
 def reconstruct_openalex_abstract(inverted_index: dict[str, Any] | None) -> str:
     if not inverted_index:
         return ""
@@ -328,6 +345,8 @@ def extract_pdf_abstract(text: str | None) -> str:
     excerpt = remaining[: stop.start()] if stop else remaining
     cleaned = normalize_copied_abstract(excerpt)
     if len(cleaned.split()) < 20:
+        return ""
+    if abstract_looks_truncated(cleaned):
         return ""
     return cleaned
 
@@ -422,7 +441,9 @@ def _best_abstract_candidate(
     consistent = [
         candidate
         for candidate in candidates
-        if candidate.text and _abstract_metadata_consistent(card, candidate.metadata)
+        if candidate.text
+        and not abstract_looks_truncated(candidate.text)
+        and _abstract_metadata_consistent(card, candidate.metadata)
     ]
     if not consistent:
         return None, False
@@ -1214,6 +1235,8 @@ def _existing_abstract_blocks_candidate(
 ) -> bool:
     if not card.abstract:
         return False
+    if abstract_looks_truncated(card.abstract):
+        return False
     if _has_manual_abstract(card):
         return True
     existing_rank = _abstract_rank(card.abstract_source)
@@ -1257,6 +1280,11 @@ def enrich_abstract_card(
     )
 
     candidates: list[AbstractCandidate] = []
+    had_truncated_abstract = bool(
+        card.abstract
+        and abstract_looks_truncated(card.abstract)
+        and not _has_manual_abstract(card)
+    )
     if card.doi:
         cache_path = work_dir / "crossref.json"
         _attempt_detail(
@@ -1500,6 +1528,16 @@ def enrich_abstract_card(
         )
 
     _result_detail(progress_detail, "abstract selection", "no acceptable abstract candidate")
+    if had_truncated_abstract:
+        card.abstract = None
+        card.abstract_source = None
+        card.abstract_source_url = None
+        card.abstract_confidence = None
+        _result_detail(
+            progress_detail,
+            "abstract write",
+            "removed truncated abstract and queued manual follow-up",
+        )
     card.abstract_status = "unresolved"
     card.abstract_last_checked = checked_at
     card.abstract_input_fingerprint = abstract_fingerprint(card)
@@ -1507,7 +1545,7 @@ def enrich_abstract_card(
     return EnrichmentResult(
         card.citekey or card.slug,
         "unresolved",
-        "no acceptable abstract found",
+        "truncated abstract rejected" if had_truncated_abstract else "no acceptable abstract found",
         changed=True,
     )
 

@@ -396,7 +396,10 @@ The abstract is not the Scholar Labs summary. Scholar Labs summaries explain why
 
 Abstract provider order is local DOI detection, Crossref REST metadata, OpenAlex reconstructed abstracts, Europe PMC fallback, DataCite descriptions, then local PDF text extraction. Crossref abstracts may include JATS/XML markup, which the tool strips before writing the card. OpenAlex abstracts are reconstructed from `abstract_inverted_index`. The tool never uses LLM summarization or Scholar Labs summaries as abstracts.
 
+Abstract enrichment rejects ellipsis-truncated snippets such as `Movem...` or `…` as incomplete abstracts. Existing resolved/verified cards with truncated abstracts are retried instead of skipped; if no complete provider or PDF abstract can be found, the bad abstract is removed and the card is marked unresolved for manual follow-up.
+
 Abstract enrichment writes the `## Abstract` section plus these frontmatter fields: `abstract_status`, `abstract_source`, `abstract_source_url`, `abstract_confidence`, `abstract_last_checked`, `abstract_enriched_at`, `abstract_input_fingerprint`, and `abstract_lock`.
+The `--ui` follow-up window shows only actionable abstract/citation/keyword problems. Skipped rows such as `abstract fingerprint unchanged`, `abstract present`, or `citation verified` are normal non-actions and are not counted as issues.
 Paper keywords are written to `keywords` frontmatter and the `## Keywords` section when available. PDF keyword extraction recognizes both `Keywords` and `Index Terms` labels, and accepts common separators such as commas, semicolons, pipes, middle dots, and bullets. To retry attached PDFs that have no captured keywords, run:
 
 ```fish

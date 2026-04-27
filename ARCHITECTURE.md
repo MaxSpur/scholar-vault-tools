@@ -48,6 +48,7 @@
 - Prefer existing citekeys, primary summaries, notes, discovered runs, and paper keywords. Fill missing metadata from new imports.
 - Preserve every Scholar Labs run-specific summary in run records and run notes, and hydrate `summary_sources` in memory from those records so repeated appearances of the same paper do not overwrite earlier summaries.
 - Store recovered abstracts separately from Scholar Labs summaries. Abstract enrichment writes the prose to `## Abstract` and keeps only `abstract_*` status/provenance fields in frontmatter, without modifying Scholar Labs summary/rationale provenance.
+- Reject ellipsis-truncated abstract snippets from providers or PDF extraction. Existing generated truncated abstracts should be retried and, if no complete replacement is found, marked unresolved so manual follow-up can repair them.
 - Store paper-provided `keywords` separately from prompt-derived `topics`. Keywords come from BibTeX/provider metadata or local PDF keyword blocks and export as BibTeX/CSL keywords.
 - Track publication keyword extraction separately from general metadata. `publication_keywords_status: absent` means the source was manually confirmed to have no publication keywords or index terms, so later follow-up queues should not treat it as unresolved.
 

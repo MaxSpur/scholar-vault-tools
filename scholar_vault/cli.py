@@ -806,7 +806,7 @@ def _show_enrichment_ui(
     title: str | None = None,
     close_label: str | None = None,
 ) -> bool:
-    rows = _detail_rows(summary)
+    rows = _problem_rows(_detail_rows(summary))
     if not rows:
         return False
     try:
@@ -1600,7 +1600,14 @@ def enrich_citations_command(
         else False
     )
     if not shown_in_ui:
-        _print_enrichment_details(summary)
+        if ui:
+            problems = _problem_rows(_detail_rows(summary))
+            if problems:
+                _print_enrichment_details({"details": problems})
+            else:
+                console.print("No enrichment follow-up issues found.")
+        else:
+            _print_enrichment_details(summary)
 
 
 @app.command("reset")
