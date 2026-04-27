@@ -335,6 +335,38 @@ def test_rerun_can_keep_existing_pdfs(tmp_path, monkeypatch) -> None:
     assert calls[0]["upgrade_pdfs"] is False
 
 
+def test_match_staging_ui_launches_selected_rerun(tmp_path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    initialize_vault(vault)
+    launched = []
+
+    monkeypatch.setattr(
+        "scholar_vault.cli._choose_staging_match_run_id",
+        lambda *_args, **_kwargs: "2026-04-22_example-run",
+    )
+    monkeypatch.setattr(
+        "scholar_vault.cli._rerun_selected_match",
+        lambda selected_vault, run_id: launched.append((selected_vault, run_id)),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "match-staging",
+            "--vault",
+            str(vault),
+            "--staging",
+            str(staging),
+            "--ui",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert launched == [(vault.resolve(), "2026-04-22_example-run")]
+
+
 def test_import_labs_checks_for_pdf_upgrades_by_default(tmp_path, monkeypatch) -> None:
     calls = []
     vault = tmp_path / "vault"

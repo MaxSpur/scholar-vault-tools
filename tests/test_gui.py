@@ -343,6 +343,41 @@ def test_run_picker_model_sorts_and_counts_runs() -> None:
     assert model["rows"][1]["unmatched_files"] == 1
 
 
+def test_staging_match_model_formats_rows() -> None:
+    from scholar_vault.gui import _staging_match_model
+
+    model = _staging_match_model(
+        {
+            "runs": 3,
+            "staged_pdfs_scanned": 2,
+            "staged_pdf_cache_hits": 1,
+            "min_score": 70,
+            "matches": [
+                {
+                    "run_id": "2026-04-22_example",
+                    "run_title": "Example Run",
+                    "rank": 4,
+                    "score": 92,
+                    "result_title": "Origin-Destination Flow Data Smoothing and Mapping",
+                    "pdf_filename": "leftover.pdf",
+                    "pdf_title": "Origin-Destination Flow Data Smoothing and Mapping",
+                    "reason": "title",
+                    "decision": "auto",
+                    "status": "unmatched",
+                    "pdf_status": "missing",
+                }
+            ],
+        }
+    )
+
+    assert model["runs"] == 3
+    assert model["scanned"] == 2
+    assert model["cache_hits"] == 1
+    assert model["rows"][0]["score_color"] == "#45ffb0"
+    assert model["rows"][0]["run_id"] == "2026-04-22_example"
+    assert model["rows"][0]["state"] == "unmatched / missing"
+
+
 def test_missing_abstract_issue_is_resolvable() -> None:
     from scholar_vault.gui import _can_resolve_missing_abstract
 

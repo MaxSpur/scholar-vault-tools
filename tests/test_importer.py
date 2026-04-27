@@ -10,6 +10,7 @@ from scholar_vault.citations import EnrichmentResult
 from scholar_vault.importer import (
     PDF_SCAN_CACHE_FILENAME,
     cleanup_run_selected_only,
+    find_staged_run_matches,
     import_bibtex,
     import_pdf_dropins,
     import_scholar_labs_run,
@@ -942,6 +943,69 @@ def test_set_manual_abstract_normalizes_preview_pdf_copy(tmp_path: Path) -> None
         "Collaborative immersive analytics offers a promising frontier for domain "
         "experts. This research studies usability in XR."
     )
+
+
+def test_find_staged_run_matches_scores_leftover_pdf_against_previous_runs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    export = tmp_path / "run.json"
+    staging.mkdir()
+    _rewrite_export(
+        _write_export(export, 1, title="Residual PDF Search"),
+        result_updates={"title": "Collaborative Immersive Analytics in Virtual Reality"},
+    )
+    import_scholar_labs_run(vault, export, staging, commit=True)
+    pdf_path = staging / "leftover.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    def fake_build(path: Path) -> PdfCandidate:
+        return PdfCandidate(
+            path=str(path),
+            title="Collaborative Immersive Analytics in Virtual Reality",
+            text_excerpt="Collaborative Immersive Analytics in Virtual Reality",
+            sha256="sha-leftover",
+            size=path.stat().st_size,
+        )
+
+    monkeypatch.setattr("scholar_vault.importer.build_pdf_candidate", fake_build)
+
+    summary = find_staged_run_matches(vault, staging, min_score=90)
+
+    assert summary["runs"] == 1
+    assert summary["staged_pdfs_scanned"] == 1
+    assert summary["matches"][0]["pdf_filename"] == "leftover.pdf"
+    assert summary["matches"][0]["run_title"] == "Residual PDF Search"
+    assert summary["matches"][0]["result_title"] == (
+        "Collaborative Immersive Analytics in Virtual Reality"
+    )
+    assert summary["matches"][0]["score"] == 100
+
+
+def test_find_staged_run_matches_accepts_typed_title_query(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    export = tmp_path / "run.json"
+    staging.mkdir()
+    _rewrite_export(
+        _write_export(export, 1, title="Residual PDF Search"),
+        result_updates={"title": "Origin-Destination Flow Data Smoothing and Mapping"},
+    )
+    import_scholar_labs_run(vault, export, staging, commit=True)
+
+    summary = find_staged_run_matches(
+        vault,
+        staging,
+        title="Origin destination flow data smoothing mapping",
+        min_score=80,
+    )
+
+    assert summary["staged_pdfs_scanned"] == 0
+    assert summary["matches"][0]["reason"] == "typed-title"
+    assert summary["matches"][0]["run_id"].startswith("2026-04-22")
+    assert summary["matches"][0]["score"] >= 90
 
 
 def test_import_labs_archives_used_export_json_and_updates_run_metadata(

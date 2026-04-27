@@ -482,6 +482,24 @@ Rerun a specific run if needed:
 scholar-vault rerun --vault ~/Documents/Research/scholar-labs-vault --run 2026-04-22_example-prompt --commit
 ```
 
+If your staging folder has leftover PDFs and you are not sure which Scholar
+Labs run they came from, search all previous run results before choosing a run
+to rerun:
+
+```fish
+scholar-vault match-staging --vault ~/Documents/Research/scholar-labs-vault --staging ~/Downloads/scholar-labs-staging
+scholar-vault match-staging --title "Origin-destination flow data smoothing and mapping"
+scholar-vault match-staging --pdf ~/Downloads/scholar-labs-staging/example.pdf --unselected-only
+scholar-vault match-staging --ui
+```
+
+The terminal form is read-only. It shows the best run/result candidates and
+the `rerun --run ... --ui` command to use when you want the normal match-review
+workflow to import that PDF. With `--ui`, the staging matcher opens a desktop
+search window where you can scan all staged PDFs, choose a single PDF, or type
+a title; clicking `Rerun` starts the normal reviewed import workflow for that
+run.
+
 If a selected paper already has a PDF but you later download a better
 publisher/full-text version into staging, `import-labs`, `resume`, and `rerun`
 check staged PDFs against already attached cards by default. They open the

@@ -20,6 +20,7 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
         from PySide6.QtGui import QDesktopServices, QFont, QImage, QKeySequence, QPixmap, QShortcut
         from PySide6.QtWidgets import (
             QApplication,
+            QCheckBox,
             QComboBox,
             QDialog,
             QDialogButtonBox,
@@ -45,6 +46,7 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
 
     modules: dict[str, Any] = {
         "QApplication": QApplication,
+        "QCheckBox": QCheckBox,
         "QComboBox": QComboBox,
         "QDesktopServices": QDesktopServices,
         "QDialog": QDialog,
@@ -112,7 +114,7 @@ def _exec_modeless_dialog(qt: dict[str, Any], app: Any, dialog: Any) -> None:
 def _dark_dialog_stylesheet() -> str:
     return """
         QDialog, QMessageBox { background: #030504; }
-        QLabel, QRadioButton { color: #baffdc; }
+        QLabel, QRadioButton, QCheckBox { color: #baffdc; }
         QLineEdit, QTextEdit, QComboBox {
             background: #07100b;
             color: #f3fff7;
@@ -120,6 +122,14 @@ def _dark_dialog_stylesheet() -> str:
             padding: 6px;
             selection-background-color: #1d6f4b;
         }
+        QCheckBox { spacing: 8px; }
+        QCheckBox::indicator {
+            width: 14px;
+            height: 14px;
+            border: 1px solid #45ffb0;
+            background: #030504;
+        }
+        QCheckBox::indicator:checked { background: #45ffb0; }
         QScrollArea {
             background: #030504;
             border: 1px solid #26553b;
@@ -828,6 +838,365 @@ def choose_rerun(
     layout.addLayout(buttons)
 
     qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.reject)
+    result = dialog.exec()
+    app.processEvents()
+    if result == qt["QDialog"].DialogCode.Accepted:
+        return selected["run_id"]
+    return None
+
+
+def _clip_text(value: object, limit: int = 90) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "..."
+
+
+def _staging_match_color(score: int) -> str:
+    if score >= 90:
+        return "#45ffb0"
+    if score >= 75:
+        return "#ffb000"
+    return "#ff6b7a"
+
+
+def _staging_match_model(summary: dict[str, Any]) -> dict[str, Any]:
+    rows = []
+    for row in summary.get("matches") or []:
+        score = int(row.get("score") or 0)
+        pdf_label = row.get("pdf_filename") or row.get("query_title") or "(title query)"
+        pdf_title = row.get("pdf_title")
+        rows.append(
+            {
+                "run_id": str(row.get("run_id") or ""),
+                "run_title": _clip_text(row.get("run_title") or row.get("run_id"), 90),
+                "rank": row.get("rank") or "",
+                "score": score,
+                "score_color": _staging_match_color(score),
+                "result_title": _clip_text(row.get("result_title"), 120),
+                "pdf_label": _clip_text(pdf_label, 90),
+                "pdf_title": _clip_text(pdf_title, 120) if pdf_title else "",
+                "reason": str(row.get("reason") or ""),
+                "decision": str(row.get("decision") or ""),
+                "state": (
+                    f"{row.get('status') or '-'} / {row.get('pdf_status') or '-'}"
+                    f"{' / already attached' if row.get('attached') else ''}"
+                ),
+                "year": row.get("year") or "",
+            }
+        )
+    return {
+        "runs": int(summary.get("runs") or 0),
+        "scanned": int(summary.get("staged_pdfs_scanned") or 0),
+        "cache_hits": int(summary.get("staged_pdf_cache_hits") or 0),
+        "min_score": int(summary.get("min_score") or 0),
+        "rows": rows,
+    }
+
+
+def _build_staging_match_row(qt: dict[str, Any], row: dict[str, Any], choose: Any) -> Any:
+    panel = qt["QFrame"]()
+    panel.setStyleSheet(
+        "QFrame { background: #030504; border: none; border-bottom: 1px solid #26553b; }"
+    )
+    layout = qt["QHBoxLayout"](panel)
+    layout.setContentsMargins(14, 12, 14, 12)
+    layout.setSpacing(14)
+
+    score_box = qt["QVBoxLayout"]()
+    score = qt["QLabel"](str(row["score"]))
+    score.setFont(_summary_font(qt, 24, mono=True, bold=True))
+    score.setStyleSheet(f"color: {row['score_color']}; border: none;")
+    score_label = qt["QLabel"]("SCORE")
+    score_label.setFont(_summary_font(qt, 8, mono=True, bold=True))
+    score_label.setStyleSheet("color: #8ce7b8; border: none;")
+    score_box.addWidget(score)
+    score_box.addWidget(score_label)
+    score_box.addStretch(1)
+    layout.addLayout(score_box, 0)
+
+    detail = qt["QVBoxLayout"]()
+    title = qt["QLabel"](row["result_title"])
+    title.setWordWrap(True)
+    title.setFont(_summary_font(qt, 14, bold=True))
+    title.setStyleSheet("color: #f3fff7; border: none;")
+    detail.addWidget(title)
+    pdf = qt["QLabel"](f"PDF/query: {row['pdf_label']}")
+    pdf.setWordWrap(True)
+    pdf.setFont(_summary_font(qt, 10, mono=True))
+    pdf.setStyleSheet("color: #8ce7b8; border: none;")
+    detail.addWidget(pdf)
+    if row["pdf_title"]:
+        inferred = qt["QLabel"](f"PDF title: {row['pdf_title']}")
+        inferred.setWordWrap(True)
+        inferred.setFont(_summary_font(qt, 10))
+        inferred.setStyleSheet("color: #baffdc; border: none;")
+        detail.addWidget(inferred)
+    meta = qt["QLabel"](
+        f"run: {row['run_title']}  //  rank {row['rank']}  //  "
+        f"{row['state']}  //  {row['reason']} {row['decision']}"
+    )
+    meta.setWordWrap(True)
+    meta.setFont(_summary_font(qt, 9, mono=True))
+    meta.setStyleSheet("color: #68c792; border: none;")
+    detail.addWidget(meta)
+    run_id = qt["QLabel"](row["run_id"])
+    run_id.setFont(_summary_font(qt, 9, mono=True))
+    run_id.setStyleSheet("color: #68c792; border: none;")
+    run_id.setTextInteractionFlags(qt["Qt"].TextInteractionFlag.TextSelectableByMouse)
+    detail.addWidget(run_id)
+    layout.addLayout(detail, 1)
+
+    button = qt["QPushButton"]("Rerun")
+    button.setMinimumWidth(110)
+    button.setMinimumHeight(42)
+    _style_button(button, "primary" if row["score"] >= 90 else "neutral")
+    button.clicked.connect(lambda _checked=False, run_id=row["run_id"]: choose(run_id))
+    layout.addWidget(button, 0)
+    return panel
+
+
+def choose_staging_match(
+    vault: str,
+    staging: str,
+    search_callback: Any,
+    *,
+    title: str | None = None,
+    pdf: str | None = None,
+    min_score: int = 60,
+    limit: int = 50,
+    unselected_only: bool = False,
+) -> str | None:
+    qt = _load_qt_modules(require_fitz=False)
+    app = _application(qt)
+    selected: dict[str, str | None] = {"run_id": None}
+
+    dialog = qt["QDialog"]()
+    dialog.setWindowTitle("Scholar Vault Staging Matches")
+    dialog.resize(1180, 760)
+    dialog.setStyleSheet(_dark_dialog_stylesheet())
+
+    layout = qt["QVBoxLayout"](dialog)
+    layout.setContentsMargins(28, 24, 28, 20)
+    layout.setSpacing(14)
+
+    header = qt["QHBoxLayout"]()
+    heading_block = qt["QVBoxLayout"]()
+    kicker = qt["QLabel"]("SCHOLAR VAULT // STAGING")
+    kicker.setFont(_summary_font(qt, 12, mono=True, bold=True))
+    kicker.setStyleSheet("color: #69ffad;")
+    heading = qt["QLabel"]("MATCH LEFTOVER PDFS")
+    heading.setFont(_summary_font(qt, 30, bold=True))
+    heading.setStyleSheet("color: #f3fff7;")
+    subheading = qt["QLabel"](
+        "Search previous Scholar Labs runs by staged PDF text, one chosen PDF, or a "
+        "typed title. Rerun opens the normal reviewed import workflow."
+    )
+    subheading.setFont(_summary_font(qt, 12))
+    subheading.setStyleSheet("color: #8ce7b8;")
+    subheading.setWordWrap(True)
+    vault_label = qt["QLabel"](f"vault: {vault}\nstaging: {staging}")
+    vault_label.setFont(_summary_font(qt, 10, mono=True))
+    vault_label.setStyleSheet("color: #68c792;")
+    vault_label.setWordWrap(True)
+    heading_block.addWidget(kicker)
+    heading_block.addWidget(heading)
+    heading_block.addWidget(subheading)
+    heading_block.addWidget(vault_label)
+    header.addLayout(heading_block, 1)
+    count_panel = _summary_panel(qt, "#69ffad")
+    count_panel.setFixedWidth(180)
+    count_layout = qt["QVBoxLayout"](count_panel)
+    count_label = qt["QLabel"]("MATCHES")
+    count_label.setFont(_summary_font(qt, 11, mono=True, bold=True))
+    count_label.setStyleSheet("color: #8ce7b8; border: none;")
+    count_value = qt["QLabel"]("0")
+    count_value.setFont(_summary_font(qt, 34, mono=True, bold=True))
+    count_value.setStyleSheet("color: #69ffad; border: none;")
+    count_layout.addWidget(count_label)
+    count_layout.addWidget(count_value)
+    header.addWidget(count_panel)
+    layout.addLayout(header)
+
+    controls = qt["QFrame"]()
+    controls.setStyleSheet("QFrame { background: #030504; border: 1px solid #26553b; }")
+    controls_layout = qt["QVBoxLayout"](controls)
+    controls_layout.setContentsMargins(12, 12, 12, 12)
+    controls_layout.setSpacing(8)
+
+    title_field = qt["QLineEdit"]()
+    title_field.setText(title or "")
+    title_field.setPlaceholderText("Type a paper title to search previous run results")
+    controls_layout.addWidget(title_field)
+
+    pdf_row = qt["QHBoxLayout"]()
+    pdf_field = qt["QLineEdit"]()
+    pdf_field.setText(pdf or "")
+    pdf_field.setPlaceholderText("Optional single PDF path; leave empty to scan staging PDFs")
+    browse = qt["QPushButton"]("Choose PDF")
+    clear_pdf = qt["QPushButton"]("Clear")
+    _style_button(browse, "neutral")
+    _style_button(clear_pdf, "muted")
+    pdf_row.addWidget(pdf_field, 1)
+    pdf_row.addWidget(browse)
+    pdf_row.addWidget(clear_pdf)
+    controls_layout.addLayout(pdf_row)
+
+    option_row = qt["QHBoxLayout"]()
+    min_field = qt["QLineEdit"](str(min_score))
+    min_field.setMaximumWidth(80)
+    limit_field = qt["QLineEdit"](str(limit))
+    limit_field.setMaximumWidth(80)
+    unselected = qt["QCheckBox"]("hide already attached")
+    unselected.setChecked(unselected_only)
+    search = qt["QPushButton"]("Search")
+    scan_all = qt["QPushButton"]("Scan Staging")
+    _style_button(search, "primary")
+    _style_button(scan_all, "neutral")
+    option_row.addWidget(qt["QLabel"]("min score"))
+    option_row.addWidget(min_field)
+    option_row.addWidget(qt["QLabel"]("limit"))
+    option_row.addWidget(limit_field)
+    option_row.addWidget(unselected)
+    option_row.addStretch(1)
+    option_row.addWidget(scan_all)
+    option_row.addWidget(search)
+    controls_layout.addLayout(option_row)
+    layout.addWidget(controls)
+
+    status = qt["QLabel"]("Ready.")
+    status.setFont(_summary_font(qt, 10, mono=True))
+    status.setStyleSheet("color: #8ce7b8;")
+    layout.addWidget(status)
+
+    scroll = qt["QScrollArea"]()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(qt["QFrame"].Shape.NoFrame)
+    scroll.setStyleSheet(
+        "QScrollArea { background: #030504; border: 1px solid #26553b; }"
+        "QScrollArea > QWidget > QWidget { background: #030504; }"
+    )
+    container = qt["QWidget"]()
+    container.setStyleSheet("background: #030504;")
+    rows_layout = qt["QVBoxLayout"](container)
+    rows_layout.setContentsMargins(0, 0, 0, 0)
+    rows_layout.setSpacing(0)
+    scroll.setWidget(container)
+    layout.addWidget(scroll, 1)
+
+    def choose(run_id: str) -> None:
+        selected["run_id"] = run_id
+        dialog.accept()
+
+    def clear_rows() -> None:
+        while rows_layout.count():
+            item = rows_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def render(summary: dict[str, Any]) -> None:
+        model = _staging_match_model(summary)
+        count_value.setText(str(len(model["rows"])))
+        clear_rows()
+        if model["rows"]:
+            for row in model["rows"]:
+                rows_layout.addWidget(_build_staging_match_row(qt, row, choose))
+            rows_layout.addStretch(1)
+        else:
+            empty = qt["QLabel"]("No previous run result matched above the threshold.")
+            empty.setFont(_summary_font(qt, 14, bold=True))
+            empty.setStyleSheet("color: #ffccd4; border: none; padding: 20px;")
+            rows_layout.addWidget(empty)
+            rows_layout.addStretch(1)
+        status.setText(
+            f"{model['runs']} runs checked; {model['scanned']} PDF scan(s); "
+            f"{model['cache_hits']} cached; min score {model['min_score']}."
+        )
+        app.processEvents()
+
+    def progress(message: str, current: int | None = None, total: int | None = None) -> None:
+        prefix = f"{current}/{total} " if current is not None and total else ""
+        status.setText(f"{prefix}{message}")
+        app.processEvents()
+
+    def parsed_options() -> tuple[int, int] | None:
+        try:
+            parsed_min = int(min_field.text().strip() or "60")
+            parsed_limit = int(limit_field.text().strip() or "50")
+        except ValueError:
+            status.setText("Min score and limit must be integers.")
+            return None
+        if parsed_min < 0 or parsed_min > 100 or parsed_limit < 0:
+            status.setText("Min score must be 0-100 and limit must be 0 or greater.")
+            return None
+        return parsed_min, parsed_limit
+
+    def run_search(*, clear_query: bool = False) -> None:
+        options = parsed_options()
+        if options is None:
+            return
+        if clear_query:
+            title_field.clear()
+            pdf_field.clear()
+        search.setEnabled(False)
+        scan_all.setEnabled(False)
+        dialog.setCursor(qt["Qt"].CursorShape.WaitCursor)
+        try:
+            summary = search_callback(
+                title_field.text().strip() or None,
+                pdf_field.text().strip() or None,
+                options[0],
+                options[1],
+                unselected.isChecked(),
+                progress,
+            )
+        except Exception as exc:  # pragma: no cover - defensive UI error handling
+            box = qt["QMessageBox"](dialog)
+            box.setWindowTitle("Search Failed")
+            box.setIcon(qt["QMessageBox"].Icon.Warning)
+            box.setText(str(exc))
+            box.setStandardButtons(qt["QMessageBox"].StandardButton.Ok)
+            _style_message_box(qt, box)
+            box.exec()
+        else:
+            render(summary)
+        finally:
+            dialog.unsetCursor()
+            search.setEnabled(True)
+            scan_all.setEnabled(True)
+
+    def browse_pdf() -> None:
+        chosen, _filter = qt["QFileDialog"].getOpenFileName(
+            dialog,
+            "Choose Staged PDF",
+            str(Path(staging).expanduser()),
+            "PDF files (*.pdf)",
+        )
+        if chosen:
+            pdf_field.setText(chosen)
+            title_field.clear()
+
+    browse.clicked.connect(browse_pdf)
+    clear_pdf.clicked.connect(lambda _checked=False: pdf_field.clear())
+    search.clicked.connect(lambda _checked=False: run_search(clear_query=False))
+    scan_all.clicked.connect(lambda _checked=False: run_search(clear_query=True))
+    title_field.returnPressed.connect(lambda: run_search(clear_query=False))
+
+    buttons = qt["QHBoxLayout"]()
+    hint = qt["QLabel"]("Esc cancels. Rerun opens match review before changing files.")
+    hint.setFont(_summary_font(qt, 10))
+    hint.setStyleSheet("color: #68c792;")
+    buttons.addWidget(hint, 1)
+    cancel = qt["QPushButton"]("Close")
+    cancel.setMinimumWidth(110)
+    _style_button(cancel, "muted")
+    cancel.clicked.connect(dialog.reject)
+    buttons.addWidget(cancel)
+    layout.addLayout(buttons)
+
+    qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.reject)
+    qt["QTimer"].singleShot(0, lambda: run_search(clear_query=False))
     result = dialog.exec()
     app.processEvents()
     if result == qt["QDialog"].DialogCode.Accepted:

@@ -51,5 +51,7 @@
 - [x] Add `runs` / `list-runs` discovery plus shell completion for run IDs, citekeys, and constrained CLI option values.
 - [x] Add a `rerun --ui` run picker for choosing previous Scholar Labs runs with counts and provenance details.
 - [x] Cache staged PDF scan metadata in the staging folder so mixed-run staging folders do not repeat expensive PDF text extraction on every import.
+- [x] Add read-only cross-run matching for leftover staging PDFs and typed title searches.
+- [x] Add a desktop UI for cross-run staging PDF/title matching that can launch reviewed reruns.
 - [ ] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

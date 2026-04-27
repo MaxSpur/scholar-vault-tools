@@ -6,6 +6,7 @@ from typing import Annotated, Any
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
@@ -16,6 +17,7 @@ from .importer import (
     cleanup_run_selected_only,
     enrich_citations,
     export_bibtex,
+    find_staged_run_matches,
     import_bibtex,
     import_doi,
     import_pdf_dropins,
@@ -108,6 +110,10 @@ PdfArg = Annotated[
     Path,
     typer.Option(..., exists=True, file_okay=True, dir_okay=False, resolve_path=True),
 ]
+OptionalPdfArg = Annotated[
+    Path | None,
+    typer.Option("--pdf", exists=True, file_okay=True, dir_okay=False, resolve_path=True),
+]
 StagingArg = Annotated[
     Path | None,
     typer.Option("--staging", exists=True, file_okay=False, dir_okay=True, resolve_path=True),
@@ -146,6 +152,13 @@ OptionalRunIdArg = Annotated[
 TitleArg = Annotated[
     str | None,
     typer.Option("--title", help="Short run title used for Obsidian run-note names."),
+]
+MatchTitleArg = Annotated[
+    str | None,
+    typer.Option(
+        "--title",
+        help="Title text to search for across previous Scholar Labs run results.",
+    ),
 ]
 RequiredTitleArg = Annotated[
     str,
@@ -478,6 +491,80 @@ def _select_rerun_run_id(vault: Path, run: str | None, *, ui: bool) -> str:
     return selected
 
 
+def _choose_staging_match_run_id(
+    vault: Path,
+    staging: Path,
+    *,
+    title: str | None,
+    pdf: Path | None,
+    min_score: int,
+    limit: int,
+    unselected_only: bool,
+) -> str | None:
+    try:
+        from .gui import GuiUnavailable, choose_staging_match
+    except Exception as exc:  # pragma: no cover - defensive optional import path
+        console.print(f"Staging match UI unavailable ({exc}). Falling back to terminal output.")
+        return None
+
+    def search_callback(
+        query_title: str | None,
+        query_pdf: str | None,
+        query_min_score: int,
+        query_limit: int,
+        query_unselected_only: bool,
+        progress,
+    ) -> dict[str, Any]:
+        return find_staged_run_matches(
+            vault,
+            staging,
+            title=query_title,
+            pdf_path=Path(query_pdf).expanduser().resolve() if query_pdf else None,
+            min_score=query_min_score,
+            limit=query_limit,
+            unselected_only=query_unselected_only,
+            progress=progress,
+        )
+
+    try:
+        return choose_staging_match(
+            str(vault),
+            str(staging),
+            search_callback,
+            title=title,
+            pdf=str(pdf) if pdf else None,
+            min_score=min_score,
+            limit=limit,
+            unselected_only=unselected_only,
+        )
+    except GuiUnavailable as exc:
+        console.print(f"Staging match UI unavailable ({exc}). Falling back to terminal output.")
+        return None
+
+
+def _rerun_selected_match(vault: Path, run_id: str) -> None:
+    review_match = _match_reviewer(True)
+    confirm = _confirm_callback(True)
+    progress_ui = _make_gui_progress(True, "Scholar Vault Import")
+    summary = _with_progress(
+        f"Rerunning {run_id}",
+        lambda report: resume_run(
+            vault,
+            run_id,
+            dry_run=False,
+            commit=False,
+            auto_enrich=True,
+            upgrade_pdfs=True,
+            confirm=confirm,
+            review_match=review_match,
+            progress=report,
+        ),
+        interactive=True,
+        gui_progress=progress_ui,
+    )
+    _finish_import_workflow(summary, ui=True, progress_ui=progress_ui)
+
+
 def _configure_ui(config: dict[str, Any]) -> dict[str, Any] | None:
     try:
         from .gui import GuiUnavailable, edit_configuration
@@ -597,6 +684,48 @@ def _print_runs_table(vault: Path, *, limit: int | None = None) -> None:
         console.print(f"  exported: {_short_run_timestamp(run)}")
         console.print(f"  results: {total}  selected: {selected}")
         console.print(f"  follow_up: {_followup_issue_label(issue_summaries.get(run.slug))}")
+
+
+def _print_staged_match_table(summary: dict[str, Any]) -> None:
+    rows = list(summary.get("matches") or [])
+    scanned = int(summary.get("staged_pdfs_scanned") or 0)
+    cache_hits = int(summary.get("staged_pdf_cache_hits") or 0)
+    console.print(
+        f"Checked {summary.get('runs', 0)} previous runs; "
+        f"{scanned} PDF scan(s)"
+        f"{f' ({cache_hits} cached)' if cache_hits else ''}; "
+        f"{len(rows)} candidate match(es) shown."
+    )
+    if not rows:
+        console.print("No previous run result matched above the selected threshold.")
+        return
+
+    table = Table(title="Staging PDF Candidates Across Previous Runs", show_lines=False)
+    table.add_column("Score", justify="right", no_wrap=True)
+    table.add_column("PDF / Query", no_wrap=False)
+    table.add_column("Run", no_wrap=False)
+    table.add_column("Rank", justify="right", no_wrap=True)
+    table.add_column("State", no_wrap=True)
+    table.add_column("Scholar Labs Title", no_wrap=False)
+    table.add_column("Next", no_wrap=False)
+    for row in rows:
+        pdf_label = row.get("pdf_filename") or row.get("query_title") or "(title query)"
+        if row.get("pdf_title") and row.get("pdf_title") != pdf_label:
+            pdf_label = f"{pdf_label}\n{row['pdf_title']}"
+        state = f"{row.get('status')}/{row.get('pdf_status')}"
+        if row.get("attached"):
+            state += " attached"
+        run_id = str(row.get("run_id") or "")
+        table.add_row(
+            str(row.get("score") or 0),
+            escape(_shorten(pdf_label, 58)),
+            escape(_shorten(f"{row.get('run_title')}\n{run_id}", 54)),
+            str(row.get("rank") or ""),
+            escape(state),
+            escape(_shorten(row.get("result_title"), 70)),
+            escape(f"scholar-vault rerun --run {run_id} --ui"),
+        )
+    console.print(table)
 
 
 def _detail_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1631,6 +1760,68 @@ def unmatched_command(vault: VaultArg = None) -> None:
             f"{row['run_id']}: {row['original_path']} "
             f"(decision={row['decision']}, score={row['score']}, proposed={row['proposed_match']})"
         )
+
+
+@app.command("match-staging")
+@app.command("staging-matches")
+def match_staging_command(
+    vault: VaultArg = None,
+    staging: StagingArg = None,
+    title: MatchTitleArg = None,
+    pdf: OptionalPdfArg = None,
+    min_score: int = typer.Option(
+        60,
+        "--min-score",
+        min=0,
+        max=100,
+        help="Only show run results at or above this score.",
+    ),
+    limit: int = typer.Option(
+        50,
+        "--limit",
+        "-n",
+        min=0,
+        help="Maximum candidate rows to show; 0 shows all.",
+    ),
+    unselected_only: bool = typer.Option(
+        False,
+        "--unselected-only",
+        help="Hide run results that are already selected and have an attached PDF.",
+    ),
+    ui: UiArg = False,
+) -> None:
+    resolved_vault = _resolve_vault(vault)
+    resolved_staging = _resolve_staging(staging)
+    if ui:
+        run_id = _choose_staging_match_run_id(
+            resolved_vault,
+            resolved_staging,
+            title=title,
+            pdf=pdf,
+            min_score=min_score,
+            limit=limit,
+            unselected_only=unselected_only,
+        )
+        if run_id:
+            _rerun_selected_match(resolved_vault, run_id)
+            return
+        console.print("No staging match run selected.")
+        return
+
+    summary = _with_progress(
+        "Matching staged PDFs against previous runs",
+        lambda report: find_staged_run_matches(
+            resolved_vault,
+            resolved_staging,
+            title=title,
+            pdf_path=pdf,
+            min_score=min_score,
+            limit=limit,
+            unselected_only=unselected_only,
+            progress=report,
+        ),
+    )
+    _print_staged_match_table(summary)
 
 
 @app.command("clean-staging")

@@ -24,6 +24,7 @@ from .matcher import (
     best_pdf_match,
     build_pdf_candidate,
     match_candidate_to_cards,
+    score_title_match,
 )
 from .models import (
     ImportCanceled,
@@ -2187,6 +2188,145 @@ def list_unmatched(vault: Path | str) -> list[dict[str, str | int | None]]:
                     }
                 )
     return rows
+
+
+def _run_result_has_attached_pdf(
+    paths: VaultPaths,
+    cards_by_path: dict[str, SourceCard],
+    result: RunResultRecord,
+) -> bool:
+    if not result.paper_card:
+        return False
+    card = cards_by_path.get(result.paper_card)
+    return bool(card and _card_has_valid_pdf(paths, card))
+
+
+def find_staged_run_matches(
+    vault: Path | str,
+    staging_path: Path | str,
+    *,
+    title: str | None = None,
+    pdf_path: Path | str | None = None,
+    min_score: int = 60,
+    limit: int = 50,
+    unselected_only: bool = False,
+    progress: ProgressCallback | None = None,
+) -> dict[str, Any]:
+    paths = initialize_vault(vault)
+    staging_dir = Path(staging_path).expanduser().resolve()
+    query_title = clean_markdown_text(title)
+    query_pdf = Path(pdf_path).expanduser().resolve() if pdf_path else None
+    if min_score < 0 or min_score > 100:
+        raise ValueError("--min-score must be between 0 and 100.")
+    if limit < 0:
+        raise ValueError("--limit must be 0 or greater.")
+
+    runs = sorted(
+        load_run_records(paths),
+        key=lambda item: (_parse_datetime(item.exported_at), item.slug),
+        reverse=True,
+    )
+    cards_by_path = {f"papers/{card.slug}.md": card for card in load_source_cards(paths)}
+
+    candidates: list[PdfCandidate] = []
+    cache_hits = 0
+    if query_pdf is not None:
+        if progress:
+            progress(f"Scanning PDF {query_pdf.name}", 1, 1)
+        candidates = [build_pdf_candidate(query_pdf)]
+    elif not query_title:
+        staged_pdf_paths = sorted(staging_dir.glob("*.pdf"))
+        if progress:
+            progress(f"Scanning {len(staged_pdf_paths)} staged PDFs", 0, len(staged_pdf_paths))
+        candidates, cache_hits = _build_staged_pdf_candidates(
+            staging_dir,
+            staged_pdf_paths,
+            dry_run=True,
+            progress=progress,
+        )
+
+    rows: list[dict[str, Any]] = []
+    total_results = sum(len(run.results) for run in runs) or 1
+    seen_results = 0
+    for run in runs:
+        for result in run.results:
+            seen_results += 1
+            if progress:
+                progress(
+                    f"Scoring previous run result {result.title}",
+                    seen_results,
+                    total_results,
+                )
+            attached = _run_result_has_attached_pdf(paths, cards_by_path, result)
+            if unselected_only and result.status == "selected" and attached:
+                continue
+
+            row_base = {
+                "run_id": run.slug,
+                "run_title": run.title or infer_run_title(run.prompt),
+                "exported_at": run.exported_at,
+                "rank": result.rank,
+                "result_title": result.title,
+                "authors_preview": result.authors_preview,
+                "year": result.year,
+                "status": result.status,
+                "pdf_status": result.pdf_status,
+                "paper_card": result.paper_card,
+                "attached": attached,
+            }
+
+            if query_title:
+                score = score_title_match(query_title, result.title)
+                if score >= min_score:
+                    rows.append(
+                        {
+                            **row_base,
+                            "score": score,
+                            "decision": "query",
+                            "reason": "typed-title",
+                            "query_title": query_title,
+                            "pdf_path": str(query_pdf) if query_pdf else None,
+                            "pdf_filename": query_pdf.name if query_pdf else None,
+                            "pdf_title": None,
+                        }
+                    )
+
+            for candidate in candidates:
+                match = best_pdf_match(result.title, [candidate])
+                if match.score < min_score:
+                    continue
+                rows.append(
+                    {
+                        **row_base,
+                        "score": match.score,
+                        "decision": match.decision,
+                        "reason": match.reason,
+                        "query_title": query_title or None,
+                        "pdf_path": candidate.path,
+                        "pdf_filename": Path(candidate.path).name,
+                        "pdf_title": candidate.title,
+                    }
+                )
+
+    rows.sort(
+        key=lambda row: (
+            int(row["score"]),
+            str(row.get("exported_at") or ""),
+            -int(row.get("rank") or 0),
+        ),
+        reverse=True,
+    )
+    if limit:
+        rows = rows[:limit]
+    return {
+        "runs": len(runs),
+        "staged_pdfs_scanned": len(candidates),
+        "staged_pdf_cache_hits": cache_hits,
+        "query_title": query_title or None,
+        "query_pdf": str(query_pdf) if query_pdf else None,
+        "min_score": min_score,
+        "matches": rows,
+    }
 
 
 def clean_staging(vault: Path | str, staging_path: Path | str) -> dict[str, int]:
