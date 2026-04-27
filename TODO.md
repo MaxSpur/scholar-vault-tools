@@ -53,5 +53,6 @@
 - [x] Cache staged PDF scan metadata in the staging folder so mixed-run staging folders do not repeat expensive PDF text extraction on every import.
 - [x] Add read-only cross-run matching for leftover staging PDFs and typed title searches.
 - [x] Add a desktop UI for cross-run staging PDF/title matching that can launch reviewed reruns.
+- [x] Offer leftover staging PDF search from GUI import reports and sync newly attached PDFs to matching prior runs.
 - [ ] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

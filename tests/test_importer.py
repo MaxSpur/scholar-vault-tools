@@ -1008,6 +1008,64 @@ def test_find_staged_run_matches_accepts_typed_title_query(tmp_path: Path) -> No
     assert summary["matches"][0]["score"] >= 90
 
 
+def test_imported_pdf_syncs_matching_previous_runs(tmp_path: Path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    title = "Collaborative Immersive Analytics in Virtual Reality"
+    first_export = tmp_path / "first.json"
+    second_export = tmp_path / "second.json"
+    _rewrite_export(
+        _write_export(
+            first_export,
+            1,
+            title="First Run",
+            prompt="find collaborative immersive analytics papers",
+            exported_at="2026-04-22T16:00:00+02:00",
+        ),
+        result_updates={"title": title},
+    )
+    _rewrite_export(
+        _write_export(
+            second_export,
+            1,
+            title="Second Run",
+            prompt="find virtual reality collaboration papers",
+            exported_at="2026-04-23T16:00:00+02:00",
+        ),
+        result_updates={"title": title},
+    )
+    first = import_scholar_labs_run(vault, first_export, staging, commit=True)
+    pdf_path = staging / "leftover.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    def fake_build(path: Path) -> PdfCandidate:
+        return PdfCandidate(
+            path=str(path),
+            title=title,
+            text_excerpt=title,
+            sha256=None,
+            size=path.stat().st_size,
+        )
+
+    monkeypatch.setattr("scholar_vault.importer.build_pdf_candidate", fake_build)
+
+    second = import_scholar_labs_run(vault, second_export, staging, commit=True)
+    first_run = _run_yaml(vault, first["run"])
+    first_manifest = _manifest_yaml(vault, first["run"])
+    second_run = _run_yaml(vault, second["run"])
+    cards = load_source_cards(initialize_vault(vault))
+
+    assert second["decision_summary"]["other_runs_synced"] == 1
+    assert first_run["results"][0]["status"] == "selected"
+    assert first_run["results"][0]["pdf_status"] == "attached"
+    assert first_run["results"][0]["paper_card"] == second_run["results"][0]["paper_card"]
+    assert first_manifest["entries"][0]["decision"] == "accepted"
+    assert first_manifest["entries"][0]["paper_card"] == second_run["results"][0]["paper_card"]
+    assert any(f"runs/{first['run']}/" in ref for ref in cards[0].discovered_in)
+    assert any(f"runs/{second['run']}/" in ref for ref in cards[0].discovered_in)
+
+
 def test_import_labs_archives_used_export_json_and_updates_run_metadata(
     tmp_path: Path,
 ) -> None:

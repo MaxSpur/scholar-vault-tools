@@ -1233,6 +1233,7 @@ def import_scholar_labs_run(
         "pdf_upgrade_candidates": 0,
         "pdf_upgrades": 0,
         "pdf_upgrade_skipped": 0,
+        "other_runs_synced": 0,
     }
 
     sorted_results = sorted(export.results, key=lambda item: item.rank)
@@ -1384,6 +1385,11 @@ def import_scholar_labs_run(
                     archived_files.append(Path(archived_original_path).name)
                     note = f"Archived upgraded staging PDF to {archived_original_path}."
                 _save_card(paths, prior_card)
+                decision_summary["other_runs_synced"] += _sync_attached_card_to_matching_runs(
+                    paths,
+                    prior_card,
+                    exclude_run_id=run_slug,
+                )
                 paper_card = f"papers/{prior_card.slug}.md"
                 decision_summary["pdf_upgrades"] += 1
                 matched_files.append(Path(upgrade_proposal.candidate.path).name)
@@ -1677,6 +1683,11 @@ def import_scholar_labs_run(
                 archived_files.append(Path(archived_original_path).name)
                 note = f"Archived matched staging PDF to {archived_original_path}."
             _save_card(paths, card)
+            decision_summary["other_runs_synced"] += _sync_attached_card_to_matching_runs(
+                paths,
+                card,
+                exclude_run_id=run_slug,
+            )
             paper_card = f"papers/{card.slug}.md"
             run_status = "selected"
             pdf_status = "attached"
@@ -1715,6 +1726,11 @@ def import_scholar_labs_run(
                 note = "Linked existing paper card already in vault."
                 linked_existing_card = True
                 decision_summary["existing_cards_linked"] += 1
+                decision_summary["other_runs_synced"] += _sync_attached_card_to_matching_runs(
+                    paths,
+                    card,
+                    exclude_run_id=run_slug,
+                )
                 _report_match_progress(
                     progress,
                     result,
@@ -1970,6 +1986,9 @@ def import_scholar_labs_run(
         "abstract_details": abstract_details,
         "keyword_details": keyword_details,
         "run": run_slug,
+        "vault": str(paths.vault),
+        "staging_folder": str(staging_dir),
+        "staging_pdfs_remaining": len(sorted(staging_dir.glob("*.pdf"))),
     }
 
 
@@ -2128,6 +2147,78 @@ def undo_run(vault: Path | str, run_id: str) -> dict[str, int]:
     }
 
 
+def _run_result_matches_card(card: SourceCard, result: RunResultRecord) -> bool:
+    if card.scholar_cid and result.scholar_cid and result.scholar_cid == card.scholar_cid:
+        return True
+    return normalize_title(result.title) == normalize_title(card.title)
+
+
+def _manifest_entry_matches_card(card: SourceCard, entry: ImportManifestEntry) -> bool:
+    if card.scholar_cid and entry.scholar_cid and entry.scholar_cid == card.scholar_cid:
+        return True
+    return normalize_title(entry.result_title) == normalize_title(card.title)
+
+
+def _sync_attached_card_to_matching_runs(
+    paths: VaultPaths,
+    card: SourceCard,
+    *,
+    exclude_run_id: str | None = None,
+) -> int:
+    if not _card_has_valid_pdf(paths, card):
+        return 0
+
+    paper_card = f"papers/{card.slug}.md"
+    changed_runs: list[RunRecord] = []
+    updated_results = 0
+    for run in load_run_records(paths):
+        if exclude_run_id and run.slug == exclude_run_id:
+            continue
+        changed = False
+        for result in run.results:
+            if not _run_result_matches_card(card, result):
+                continue
+            if (
+                result.status != "selected"
+                or result.pdf_status != "attached"
+                or result.paper_card != paper_card
+            ):
+                result.status = "selected"
+                result.pdf_status = "attached"
+                result.paper_card = paper_card
+                updated_results += 1
+                changed = True
+        if changed:
+            run_ref = _run_ref(run)
+            if run_ref not in card.discovered_in:
+                card.discovered_in.append(run_ref)
+            changed_runs.append(run)
+
+    if not changed_runs:
+        return 0
+
+    _save_card(paths, card)
+    cards = load_source_cards(paths)
+    for run in changed_runs:
+        manifest = _load_manifest(paths, run.slug)
+        if manifest is not None:
+            manifest_changed = False
+            for entry in manifest.entries:
+                if not _manifest_entry_matches_card(card, entry):
+                    continue
+                entry.decision = "accepted"
+                entry.paper_card = paper_card
+                entry.destination_path = card.pdf
+                entry.card_preexisting = True
+                entry.verified = True
+                entry.note = "Linked to attached paper card from another run."
+                manifest_changed = True
+            if manifest_changed:
+                _write_manifest(paths, manifest)
+        _write_run(paths, run, cards)
+    return updated_results
+
+
 def attach_pdf(vault: Path | str, citekey: str, pdf_path: Path | str) -> dict[str, str | bool]:
     paths = initialize_vault(vault)
     cards = load_source_cards(paths)
@@ -2146,28 +2237,7 @@ def attach_pdf(vault: Path | str, citekey: str, pdf_path: Path | str) -> dict[st
     card.pdf_status = "attached"
     card.status = "active"
     _save_card(paths, card)
-
-    runs = load_run_records(paths)
-    run_ref = None
-    for run in runs:
-        changed = False
-        for result in run.results:
-            if result.scholar_cid and result.scholar_cid == card.scholar_cid:
-                result.status = "selected"
-                result.pdf_status = "attached"
-                result.paper_card = f"papers/{card.slug}.md"
-                changed = True
-            elif normalize_title(result.title) == normalize_title(card.title):
-                result.status = "selected"
-                result.pdf_status = "attached"
-                result.paper_card = f"papers/{card.slug}.md"
-                changed = True
-        if changed:
-            run_ref = _run_ref(run)
-            if run_ref not in card.discovered_in:
-                card.discovered_in.append(run_ref)
-            _write_run(paths, run, load_source_cards(paths))
-    _save_card(paths, card)
+    _sync_attached_card_to_matching_runs(paths, card)
     _rebuild_indexes(paths)
     return {"pdf": destination_path, "copied": copied, "verified": verified}
 

@@ -209,6 +209,42 @@ def test_import_finish_keeps_progress_until_followup(monkeypatch) -> None:
     assert events == ["summary", "report:True:True", "followup:True", "close-progress"]
 
 
+def test_import_finish_can_launch_leftover_staging_match(monkeypatch) -> None:
+    from scholar_vault import cli
+
+    events: list[str] = []
+
+    class Progress:
+        def close(self) -> None:
+            events.append("close-progress")
+
+    summary = {
+        "vault": "/tmp/vault",
+        "staging_folder": "/tmp/staging",
+        "staging_pdfs_remaining": 2,
+    }
+    monkeypatch.setattr(cli, "_print_run_summary", lambda _summary: events.append("summary"))
+    monkeypatch.setattr(
+        cli,
+        "_show_import_summary_ui",
+        lambda _summary, *, ui, followup_pending: events.append("report") or "leftovers",
+    )
+    monkeypatch.setattr(
+        cli,
+        "_show_import_enrichment_followup",
+        lambda _summary, *, ui: events.append("followup"),
+    )
+    monkeypatch.setattr(
+        cli,
+        "_run_staging_match_from_summary",
+        lambda _summary: events.append("staging-match"),
+    )
+
+    cli._finish_import_workflow(summary, ui=True, progress_ui=Progress())
+
+    assert events == ["summary", "report", "close-progress", "staging-match"]
+
+
 def test_runs_command_lists_previous_runs(tmp_path) -> None:
     vault = tmp_path / "vault"
     paths = initialize_vault(vault)

@@ -11,6 +11,7 @@
 - Rerun workflows need discoverability as much as idempotence. Keep previous run IDs listable from the CLI and shell-completable from the configured vault so users do not have to inspect `runs/*/index.yaml` manually.
 - Leftover staging PDFs need a read-only triage path before mutation. Cross-run matching should tell the user which prior run/result is likely responsible, then hand off to the normal reviewed `rerun` workflow for actual import.
 - A staging-match GUI should not directly attach files. It should make discovery faster, then delegate mutation to the existing reviewed rerun workflow so manifests, archives, and enrichment refresh stay consistent.
+- After a PDF is attached to a canonical card, previous runs that mention the same paper should be synchronized immediately. Otherwise the same source looks unresolved in one run and selected in another until each run is rerun by hand.
 - Preserve script defaults but make GUI defaults explicit. A terminal `rerun` can reuse the latest run, while `rerun --ui` should show a chooser before starting work.
 - GUI counters should name the underlying record concept. Do not label per-run newly accepted staged files as total PDFs, and do not call unselected Scholar results "left" when the workflow intentionally imports only downloaded/selected papers.
 - When moving user-facing input files for workflow hygiene, update all provenance paths that future commands use. Archiving a used JSON export is only useful if `resume` still points at the moved file.

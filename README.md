@@ -498,7 +498,10 @@ the `rerun --run ... --ui` command to use when you want the normal match-review
 workflow to import that PDF. With `--ui`, the staging matcher opens a desktop
 search window where you can scan all staged PDFs, choose a single PDF, or type
 a title; clicking `Rerun` starts the normal reviewed import workflow for that
-run.
+run. If a GUI import finishes with PDFs still in staging, the run report offers
+the same leftover-PDF search directly. Once a PDF is accepted for a paper card,
+other previous runs that mention the same Scholar CID or normalized title are
+updated to point at the attached card.
 
 If a selected paper already has a PDF but you later download a better
 publisher/full-text version into staging, `import-labs`, `resume`, and `rerun`

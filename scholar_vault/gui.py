@@ -1086,6 +1086,8 @@ def choose_staging_match(
 
     def choose(run_id: str) -> None:
         selected["run_id"] = run_id
+        status.setText(f"Starting reviewed rerun for {run_id}...")
+        app.processEvents()
         dialog.accept()
 
     def clear_rows() -> None:
@@ -2293,7 +2295,8 @@ def show_import_summary(
     *,
     title: str = "Scholar Vault Import Summary",
     followup_pending: bool = False,
-) -> None:
+    leftover_pending: bool = False,
+) -> str:
     qt = _load_qt_modules(require_fitz=False)
     app = _application(qt)
     model = _import_summary_model(summary, lines)
@@ -2353,7 +2356,7 @@ def show_import_summary(
     layout.addLayout(middle, 1)
 
     layout.addWidget(_summary_breakdown_panel(qt, model), 0)
-    layout.addWidget(_summary_next_step_panel(qt, model, followup_pending), 0)
+    layout.addWidget(_summary_next_step_panel(qt, model, followup_pending, leftover_pending), 0)
 
     log = qt["QLabel"]("\n".join(model["lines"]))
     log.setWordWrap(True)
@@ -2366,16 +2369,28 @@ def show_import_summary(
     layout.addWidget(log)
 
     buttons = qt["QDialogButtonBox"](qt["QDialogButtonBox"].StandardButton.Ok)
+    action = {"value": "ok"}
     ok_button = buttons.button(qt["QDialogButtonBox"].StandardButton.Ok)
     if ok_button is not None:
         ok_button.setText(
             "Open Follow-Up Issues" if followup_pending else "Close Report and Import Log"
         )
+    if leftover_pending:
+        leftover_button = qt["QPushButton"]("Find Leftover PDFs")
+        _style_button(leftover_button, "primary")
+        buttons.addButton(leftover_button, qt["QDialogButtonBox"].ButtonRole.ActionRole)
+
+        def find_leftovers() -> None:
+            action["value"] = "leftovers"
+            dialog.accept()
+
+        leftover_button.clicked.connect(find_leftovers)
     _style_dialog_buttons(buttons, "primary")
     buttons.accepted.connect(dialog.accept)
     layout.addWidget(buttons)
     qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.accept)
     _exec_modeless_dialog(qt, app, dialog)
+    return action["value"]
 
 
 def _summary_font(qt: dict[str, Any], size: int, *, mono: bool = False, bold: bool = False):
@@ -2488,6 +2503,10 @@ def _import_summary_model(summary: dict[str, Any], lines: list[str]) -> dict[str
     abstract_changed = _summary_int(abstracts.get("changed"))
     keyword_changed = _summary_int(keywords.get("changed"))
     pdf_upgrades = _summary_int(decisions.get("pdf_upgrades"))
+    other_runs_synced = _summary_int(decisions.get("other_runs_synced"))
+    staging_pdfs_remaining = _summary_int(summary.get("staging_pdfs_remaining")) or _summary_int(
+        summary.get("unmatched")
+    )
     followup_issues = _summary_followup_issue_count(
         citation_details,
         abstract_details,
@@ -2519,6 +2538,7 @@ def _import_summary_model(summary: dict[str, Any], lines: list[str]) -> dict[str
         "notice": _summary_notice(selected, reused, linked, review_prompts),
         "lines": lines,
         "followup_issues": followup_issues,
+        "staging_pdfs_remaining": staging_pdfs_remaining,
         "metrics": [
             {
                 "label": "EXPORT",
@@ -2574,6 +2594,16 @@ def _import_summary_model(summary: dict[str, Any], lines: list[str]) -> dict[str
             ("PDF scan cache", scan_cache_hits, "#45ffb0" if scan_cache_hits else "#426b58"),
             ("Rejected in review", review_rejected, "#ff3b4f" if review_rejected else "#426b58"),
             ("PDF upgrades", pdf_upgrades, "#45ffb0" if pdf_upgrades else "#426b58"),
+            (
+                "Other run links",
+                other_runs_synced,
+                "#45ffb0" if other_runs_synced else "#426b58",
+            ),
+            (
+                "Staging PDFs left",
+                staging_pdfs_remaining,
+                "#ffb000" if staging_pdfs_remaining else "#426b58",
+            ),
             ("Citation updates", citation_changed, "#45ffb0" if citation_changed else "#426b58"),
             ("Abstract updates", abstract_changed, "#45ffb0" if abstract_changed else "#426b58"),
             ("Keyword updates", keyword_changed, "#45ffb0" if keyword_changed else "#426b58"),
@@ -2748,17 +2778,26 @@ def _summary_next_step_panel(
     qt: dict[str, Any],
     model: dict[str, Any],
     followup_pending: bool,
+    leftover_pending: bool = False,
 ) -> Any:
     issues = _summary_int(model.get("followup_issues"))
     pending = followup_pending or bool(issues)
-    border = "#ff3b4f" if pending else "#45ffb0"
+    border = "#ff3b4f" if pending else "#ffb000" if leftover_pending else "#45ffb0"
     panel = _summary_panel(qt, border)
     layout = qt["QHBoxLayout"](panel)
     layout.setContentsMargins(14, 10, 14, 10)
     label = qt["QLabel"]("NEXT")
     label.setFont(_summary_font(qt, 11, mono=True, bold=True))
     label.setStyleSheet(f"color: {border}; border: none;")
-    if pending:
+    if pending and leftover_pending:
+        issue_text = (
+            f"{issues} enrichment issue" if issues == 1 else f"{issues} enrichment issues"
+        ) if issues else "Enrichment follow-up issues"
+        message = (
+            f"{issue_text} are queued, and staged PDFs remain. Use Find Leftover PDFs "
+            "to search prior runs, or continue to follow-up issues after this report."
+        )
+    elif pending:
         if issues:
             issue_text = (
                 f"{issues} enrichment issue" if issues == 1 else f"{issues} enrichment issues"
@@ -2768,6 +2807,11 @@ def _summary_next_step_panel(
         message = (
             f"{issue_text} will open in a follow-up window after this report. "
             "The import log stays available for review until the final window closes."
+        )
+    elif leftover_pending:
+        message = (
+            "Staged PDFs remain after this import. Use Find Leftover PDFs to search "
+            "previous Scholar Labs runs before closing the workflow."
         )
     else:
         message = (

@@ -543,9 +543,16 @@ def _choose_staging_match_run_id(
 
 
 def _rerun_selected_match(vault: Path, run_id: str) -> None:
-    review_match = _match_reviewer(True)
-    confirm = _confirm_callback(True)
     progress_ui = _make_gui_progress(True, "Scholar Vault Import")
+    if progress_ui is not None:
+        progress_ui(f"Starting reviewed rerun {run_id}", None, None)
+        progress_ui("Preparing match-review window", None, None)
+    review_match = _match_reviewer(True)
+    if progress_ui is not None:
+        progress_ui("Preparing confirmation window", None, None)
+    confirm = _confirm_callback(True)
+    if progress_ui is not None:
+        progress_ui("Loading run manifest and staged PDFs", None, None)
     summary = _with_progress(
         f"Rerunning {run_id}",
         lambda report: resume_run(
@@ -831,22 +838,24 @@ def _show_import_summary_ui(
     *,
     ui: bool,
     followup_pending: bool = False,
-) -> None:
+) -> str | None:
     if not ui:
-        return
+        return None
     try:
         from .gui import GuiUnavailable, show_import_summary
     except Exception as exc:  # pragma: no cover - defensive optional import path
         console.print(f"Summary UI unavailable ({exc}).")
-        return
+        return None
     try:
-        show_import_summary(
+        return show_import_summary(
             summary,
             _import_summary_lines(summary),
             followup_pending=followup_pending,
+            leftover_pending=_has_leftover_staging_pdfs(summary),
         )
     except GuiUnavailable as exc:
         console.print(f"Summary UI unavailable ({exc}).")
+    return None
 
 
 def _run_enrichment_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
@@ -901,6 +910,34 @@ def _has_import_followup(summary: dict[str, Any]) -> bool:
     return bool(_problem_rows(_run_enrichment_rows(summary)))
 
 
+def _has_leftover_staging_pdfs(summary: dict[str, Any]) -> bool:
+    remaining = int(summary.get("staging_pdfs_remaining") or summary.get("unmatched") or 0)
+    return remaining > 0 and bool(summary.get("staging_folder"))
+
+
+def _run_staging_match_from_summary(summary: dict[str, Any]) -> None:
+    vault_value = summary.get("vault")
+    staging_value = summary.get("staging_folder")
+    if not vault_value or not staging_value:
+        console.print("No staging folder was recorded for this import.")
+        return
+    vault = Path(str(vault_value)).expanduser().resolve()
+    staging = Path(str(staging_value)).expanduser().resolve()
+    run_id = _choose_staging_match_run_id(
+        vault,
+        staging,
+        title=None,
+        pdf=None,
+        min_score=60,
+        limit=50,
+        unselected_only=True,
+    )
+    if run_id:
+        _rerun_selected_match(vault, run_id)
+    else:
+        console.print("No staging match run selected.")
+
+
 def _finish_import_workflow(
     summary: dict[str, Any],
     *,
@@ -909,11 +946,16 @@ def _finish_import_workflow(
 ) -> None:
     try:
         _print_run_summary(summary)
-        _show_import_summary_ui(
+        action = _show_import_summary_ui(
             summary,
             ui=ui,
             followup_pending=_has_import_followup(summary),
         )
+        if action == "leftovers":
+            _close_gui_progress(progress_ui)
+            progress_ui = None
+            _run_staging_match_from_summary(summary)
+            return
         _show_import_enrichment_followup(summary, ui=ui)
     finally:
         _close_gui_progress(progress_ui)
@@ -1009,6 +1051,7 @@ def _import_summary_lines(summary: dict[str, Any]) -> list[str]:
     not_committed = int(decisions.get("proposed_not_committed") or 0)
     without_candidate = int(decisions.get("results_without_candidate") or 0)
     pdf_upgrades = int(decisions.get("pdf_upgrades") or 0)
+    other_runs_synced = int(decisions.get("other_runs_synced") or 0)
     scanned_pdfs = int(decisions.get("staged_pdfs_scanned") or 0)
     scan_cache_hits = int(decisions.get("staged_pdf_cache_hits") or 0)
     scan_cache_part = (
@@ -1069,6 +1112,11 @@ def _import_summary_lines(summary: dict[str, Any]) -> list[str]:
     if pdf_upgrades:
         lines.append(
             f"- PDF upgrades: {pdf_upgrades} existing attachment(s) replaced from staging."
+        )
+    if other_runs_synced:
+        lines.append(
+            f"- Cross-run links: {other_runs_synced} prior run result(s) now point to "
+            "attached paper cards."
         )
     if review_prompts == 0 and selected:
         if reused == selected:
