@@ -378,10 +378,11 @@ def test_match_staging_ui_launches_selected_rerun(tmp_path, monkeypatch) -> None
     initialize_vault(vault)
     launched = []
 
-    monkeypatch.setattr(
-        "scholar_vault.cli._choose_staging_match_run_id",
-        lambda *_args, **_kwargs: "2026-04-22_example-run",
-    )
+    def fake_choose(*_args, **kwargs):
+        kwargs["run_callback"]("2026-04-22_example-run")
+        return None
+
+    monkeypatch.setattr("scholar_vault.cli._choose_staging_match_run_id", fake_choose)
     monkeypatch.setattr(
         "scholar_vault.cli._rerun_selected_match",
         lambda selected_vault, run_id: launched.append((selected_vault, run_id)),

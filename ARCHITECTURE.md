@@ -23,7 +23,7 @@
 - `match-staging` / `staging-matches`: cross-run discovery for leftover staging PDFs. The terminal form is read-only and scores all staged PDFs, one `--pdf`, or a typed `--title` against stored Scholar Labs results. `--ui` opens a desktop picker with the same search modes and can hand a selected run to the normal reviewed `rerun` import flow. GUI import reports offer this picker when PDFs remain in staging.
 - `import-labs`: Scholar Labs convenience flow. It keeps all JSON results on the run record, creates canonical paper cards only for selected results by default, archives matched PDFs out of staging only after the verified vault copy exists, enriches selected paper cards by default, and moves used browser-export JSON unchanged into a sibling `used/` folder after successful non-dry-run imports. If `--export` is omitted, it imports the newest top-level `.json` file from the configured exports folder when that folder has one, otherwise from the staging folder.
 - Import summaries report decision provenance separately: prior selections reused from an existing manifest, existing vault cards linked, newly accepted staged PDFs, review prompts, unresolved results, staged-file cleanup, and enrichment processing.
-- When a PDF is accepted for a canonical paper card, matching previous run results with the same Scholar CID or normalized title are updated to `selected` / `attached` and pointed at the same card.
+- When a PDF is accepted for a canonical paper card, matching previous run results with the same Scholar CID or exact normalized title are updated to `selected` / `attached` and pointed at the same card.
 - `--upgrade-pdfs` on Scholar Labs import/resume/rerun commands makes staged PDFs eligible to replace already attached PDFs through the normal match-review path. Accepted upgrades repoint the canonical paper card, preserve the previous card state in the import manifest, and mark citation enrichment for refresh so DOI-bearing publisher PDFs can repair preprint metadata.
 - `import-run`: lower-level transactional Scholar Labs import. It uses the same matching and manifest logic but leaves staging untouched unless another command archives files later.
 - `import-pdf`, `import-bibtex`, and `import-doi`: non-Scholar-Labs ingestion paths that still converge on canonical `papers/*.md` cards.
@@ -49,9 +49,11 @@
 - Preserve every Scholar Labs run-specific summary in run records and run notes, and hydrate `summary_sources` in memory from those records so repeated appearances of the same paper do not overwrite earlier summaries.
 - Store recovered abstracts separately from Scholar Labs summaries. Abstract enrichment writes the prose to `## Abstract` and keeps only `abstract_*` status/provenance fields in frontmatter, without modifying Scholar Labs summary/rationale provenance.
 - Store paper-provided `keywords` separately from prompt-derived `topics`. Keywords come from BibTeX/provider metadata or local PDF keyword blocks and export as BibTeX/CSL keywords.
+- Track publication keyword extraction separately from general metadata. `publication_keywords_status: absent` means the source was manually confirmed to have no publication keywords or index terms, so later follow-up queues should not treat it as unresolved.
 
 ## Rebuild Strategy
 
 - Rebuild reads canonical paper cards plus run YAML files.
+- Rebuild repairs stale run results and import manifests that match an attached canonical card by Scholar CID or exact normalized title, then backfills the run reference onto the card.
 - Rebuild rerenders generated paper/run Markdown from current templates and regenerates indexes, topic pages, LLM summaries, and export files.
 - Rebuild intentionally does not require Obsidian, Zotero, or a database.

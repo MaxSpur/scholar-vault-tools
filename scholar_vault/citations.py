@@ -229,6 +229,8 @@ def should_skip_keyword_card(card: SourceCard, options: EnrichmentOptions) -> st
         return "citekey filter"
     if card.metadata_lock and not options.force:
         return "metadata_lock"
+    if card.publication_keywords_status == "absent" and not requested_refresh:
+        return "publication keywords confirmed absent"
     if card.keywords and not requested_refresh:
         return "keywords present"
     return None
@@ -1558,6 +1560,8 @@ def enrich_keyword_card(
         )
 
     card.keywords = merged_keywords
+    card.publication_keywords_status = "present"
+    card.publication_keywords_source = "pdf_extracted"
     card.enrichment_refresh = False
     _result_detail(
         progress_detail,

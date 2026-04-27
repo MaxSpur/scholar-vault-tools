@@ -397,6 +397,13 @@ def _merge_cards(existing: SourceCard, incoming: SourceCard) -> SourceCard:
     existing.discovered_in = _merge_unique(existing.discovered_in, incoming.discovered_in)
     existing.topics = _merge_unique(existing.topics, incoming.topics)
     existing.keywords = _merge_unique(existing.keywords, incoming.keywords)
+    if existing.keywords and existing.publication_keywords_status != "present":
+        existing.publication_keywords_status = "present"
+        existing.publication_keywords_source = (
+            existing.publication_keywords_source
+            or incoming.publication_keywords_source
+            or "imported"
+        )
     existing.links = _merge_links(existing.links, incoming.links)
     if not _prefer_existing(existing.summary) and incoming.summary:
         existing.summary = incoming.summary
@@ -611,6 +618,8 @@ def _rebuild_indexes(
     run_refs = {run.slug: _run_ref(run) for run in runs}
     _manual_save_step(progress, "Loading paper cards")
     cards = load_source_cards(paths)
+    _manual_save_step(progress, "Loading import manifests")
+    manifests = load_import_manifests(paths)
     cards_changed = False
     cards_normalized = 0
     pdf_filenames_normalized = 0
@@ -631,9 +640,21 @@ def _rebuild_indexes(
         if _normalize_attached_pdf_filename(paths, card):
             card_changed = True
             pdf_filenames_normalized += 1
+        if card.keywords and card.publication_keywords_status != "present":
+            card.publication_keywords_status = "present"
+            card.publication_keywords_source = card.publication_keywords_source or "imported"
+            card_changed = True
         if card_changed:
             cards_changed = True
             cards_normalized += 1
+    _manual_save_step(progress, "Repairing run links to attached PDFs")
+    cross_run_links_synced = _repair_run_links_to_attached_cards(
+        paths,
+        runs,
+        cards,
+        manifests,
+    )
+    cards_changed = cards_changed or bool(cross_run_links_synced)
     paper_cards_written = 0
     _manual_save_step(progress, "Rendering paper cards")
     for card in cards:
@@ -647,9 +668,6 @@ def _rebuild_indexes(
         if should_write:
             write_text(paper_path, rendered)
             paper_cards_written += 1
-
-    _manual_save_step(progress, "Loading import manifests")
-    manifests = load_import_manifests(paths)
     topic_cards = group_cards_by_topic(cards)
 
     _manual_save_step(progress, "Writing index pages")
@@ -681,6 +699,7 @@ def _rebuild_indexes(
         "paper_cards_written": paper_cards_written,
         "cards_normalized": cards_normalized,
         "pdf_filenames_normalized": pdf_filenames_normalized,
+        "cross_run_links_synced": cross_run_links_synced,
         "index_files_written": 6,
         "llm_files_written": 2,
         "export_files_written": 3,
@@ -957,7 +976,9 @@ def _enrichment_progress_message(
     title = " ".join((card.title or identifier).split())
     context: list[str] = []
     if keywords:
-        context.append(f"state={'present' if card.keywords else 'missing'}")
+        context.append(
+            f"state={card.publication_keywords_status if not card.keywords else 'present'}"
+        )
         context.append(f"count={len(card.keywords)}")
         context.append(f"pdf={'yes' if card.pdf else 'no'}")
     elif abstracts:
@@ -1375,6 +1396,9 @@ def import_scholar_labs_run(
                     prior_card.keywords,
                     extract_pdf_keywords(upgrade_proposal.candidate.text_excerpt),
                 )
+                if prior_card.keywords:
+                    prior_card.publication_keywords_status = "present"
+                    prior_card.publication_keywords_source = "pdf_extracted"
                 _record_pdf_metadata_from_candidate(prior_card, upgrade_proposal.candidate)
                 archived_original_path = None
                 moved = False
@@ -1674,6 +1698,9 @@ def import_scholar_labs_run(
                 card.keywords,
                 extract_pdf_keywords(proposal.candidate.text_excerpt),
             )
+            if card.keywords:
+                card.publication_keywords_status = "present"
+                card.publication_keywords_source = "pdf_extracted"
             if card.citation_status == "preview":
                 card.citation_status = "missing"
             source_pdf = Path(proposal.candidate.path)
@@ -2159,6 +2186,79 @@ def _manifest_entry_matches_card(card: SourceCard, entry: ImportManifestEntry) -
     return normalize_title(entry.result_title) == normalize_title(card.title)
 
 
+def _sync_manifest_entry_to_card(entry: ImportManifestEntry, card: SourceCard) -> bool:
+    paper_card = f"papers/{card.slug}.md"
+    changed = False
+    updates = {
+        "decision": "accepted",
+        "paper_card": paper_card,
+        "destination_path": card.pdf,
+        "card_preexisting": True,
+        "verified": True,
+        "note": "Linked to attached paper card from another run.",
+    }
+    for key, value in updates.items():
+        if getattr(entry, key) != value:
+            setattr(entry, key, value)
+            changed = True
+    return changed
+
+
+def _repair_run_links_to_attached_cards(
+    paths: VaultPaths,
+    runs: list[RunRecord],
+    cards: list[SourceCard],
+    manifests: list[ImportManifest],
+) -> int:
+    attached_cards = [card for card in cards if _card_has_valid_pdf(paths, card)]
+    manifests_by_run = {manifest.run_id: manifest for manifest in manifests}
+    synced = 0
+
+    for run in runs:
+        run_changed = False
+        run_ref = _run_ref(run)
+        for result in run.results:
+            card = next(
+                (item for item in attached_cards if _run_result_matches_card(item, result)),
+                None,
+            )
+            if card is None:
+                continue
+            paper_card = f"papers/{card.slug}.md"
+            if (
+                result.status != "selected"
+                or result.pdf_status != "attached"
+                or result.paper_card != paper_card
+            ):
+                result.status = "selected"
+                result.pdf_status = "attached"
+                result.paper_card = paper_card
+                synced += 1
+                run_changed = True
+            if run_ref not in card.discovered_in:
+                card.discovered_in.append(run_ref)
+                synced += 1
+        manifest = manifests_by_run.get(run.slug)
+        if manifest is not None:
+            manifest_changed = False
+            for entry in manifest.entries:
+                card = next(
+                    (
+                        item
+                        for item in attached_cards
+                        if _manifest_entry_matches_card(item, entry)
+                    ),
+                    None,
+                )
+                if card is not None:
+                    manifest_changed = _sync_manifest_entry_to_card(entry, card) or manifest_changed
+            if manifest_changed:
+                _write_manifest(paths, manifest)
+                if not run_changed:
+                    synced += 1
+    return synced
+
+
 def _sync_attached_card_to_matching_runs(
     paths: VaultPaths,
     card: SourceCard,
@@ -2206,13 +2306,7 @@ def _sync_attached_card_to_matching_runs(
             for entry in manifest.entries:
                 if not _manifest_entry_matches_card(card, entry):
                     continue
-                entry.decision = "accepted"
-                entry.paper_card = paper_card
-                entry.destination_path = card.pdf
-                entry.card_preexisting = True
-                entry.verified = True
-                entry.note = "Linked to attached paper card from another run."
-                manifest_changed = True
+                manifest_changed = _sync_manifest_entry_to_card(entry, card) or manifest_changed
             if manifest_changed:
                 _write_manifest(paths, manifest)
         _write_run(paths, run, cards)
@@ -2511,6 +2605,9 @@ def import_pdf_dropins(
                 citation_status="missing",
                 summary="No summary yet.",
             )
+            if card.keywords:
+                card.publication_keywords_status = "present"
+                card.publication_keywords_source = "pdf_extracted"
             cards.append(card)
 
         if candidate.doi and not card.doi:
@@ -2523,6 +2620,11 @@ def import_pdf_dropins(
         if not card.title and candidate.title:
             card.title = candidate.title
         card.keywords = _merge_unique(card.keywords, extract_pdf_keywords(candidate.text_excerpt))
+        if card.keywords:
+            card.publication_keywords_status = "present"
+            card.publication_keywords_source = (
+                card.publication_keywords_source or "pdf_extracted"
+            )
         if not card.pdf:
             card.pdf, _, _ = _copy_pdf_to_vault(
                 paths,
@@ -2673,7 +2775,11 @@ def _enrichment_detail(
         category = result.status
 
     if keywords:
-        source = result.source or ("pdf_extracted" if card.keywords else None)
+        source = (
+            result.source
+            or card.publication_keywords_source
+            or ("pdf_extracted" if card.keywords else None)
+        )
     else:
         source = card.abstract_source if abstracts else card.citation_source or card.doi_source
     return {
@@ -2766,7 +2872,12 @@ def set_manual_keywords(
 
     _manual_save_step(progress, "Updating keyword metadata")
     card.keywords = cleaned_keywords if replace else _merge_unique(card.keywords, cleaned_keywords)
+    card.publication_keywords_status = "present"
+    card.publication_keywords_source = "manual"
     card.enrichment_refresh = False
+    card.enrichment_missing = [
+        field for field in card.enrichment_missing if field != "keywords"
+    ]
     _manual_save_step(progress, "Writing paper card")
     _save_card(paths, card)
     _manual_save_step(progress, "Rebuilding derived files")
@@ -2777,6 +2888,42 @@ def set_manual_keywords(
         "paper": f"papers/{card.slug}.md",
         "count": len(card.keywords),
         "keywords": list(card.keywords),
+    }
+
+
+def confirm_no_publication_keywords(
+    vault: Path | str,
+    citekey: str,
+    *,
+    progress: ManualSaveProgress | None = None,
+) -> dict[str, str | int | list[str]]:
+    _manual_save_step(progress, "Opening vault")
+    paths = initialize_vault(vault)
+    _manual_save_step(progress, "Loading paper cards")
+    cards = load_source_cards(paths)
+    card = next((item for item in cards if item.citekey == citekey or item.slug == citekey), None)
+    if card is None:
+        raise ValueError(f"No paper card found for citekey or slug: {citekey}")
+
+    _manual_save_step(progress, "Confirming source keyword absence")
+    card.keywords = []
+    card.publication_keywords_status = "absent"
+    card.publication_keywords_source = "manual"
+    card.enrichment_refresh = False
+    card.enrichment_missing = [
+        field for field in card.enrichment_missing if field != "keywords"
+    ]
+    _manual_save_step(progress, "Writing paper card")
+    _save_card(paths, card)
+    _manual_save_step(progress, "Rebuilding derived files")
+    _rebuild_indexes(paths, progress=progress)
+    _manual_save_step(progress, "Manual save complete")
+    return {
+        "citekey": card.citekey or card.slug,
+        "paper": f"papers/{card.slug}.md",
+        "count": 0,
+        "keywords": [],
+        "status": card.publication_keywords_status,
     }
 
 

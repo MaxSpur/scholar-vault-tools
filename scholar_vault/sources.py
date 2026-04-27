@@ -544,11 +544,15 @@ def load_source_card(path: Path) -> SourceCard:
     if abstract_section and abstract_section != "No abstract yet.":
         frontmatter["abstract"] = abstract_section
     keywords_section = sections.get("Keywords", "").strip()
-    if keywords_section and not frontmatter.get("keywords"):
+    no_publication_keywords = "No publication keywords listed in the source."
+    if keywords_section == no_publication_keywords:
+        frontmatter.setdefault("publication_keywords_status", "absent")
+    elif keywords_section and not frontmatter.get("keywords"):
         frontmatter["keywords"] = normalize_keywords(
             line.removeprefix("- ").strip()
             for line in keywords_section.splitlines()
-            if line.strip() and line.strip() != "No keywords captured yet."
+            if line.strip()
+            and line.strip() not in {"No keywords captured yet.", no_publication_keywords}
         )
     summary_section = (
         sections.get("Scholar Labs summary", "")

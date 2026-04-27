@@ -22,6 +22,10 @@
 - {{ keyword }}
 {% endfor %}
 
+{% elif card.publication_keywords_status == "absent" %}
+## Keywords
+No publication keywords listed in the source.
+
 {% endif %}
 ## Abstract
 {{ card.abstract if card.abstract else "No abstract yet." }}

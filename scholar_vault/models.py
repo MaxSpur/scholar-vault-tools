@@ -138,6 +138,8 @@ class SourceCard(BaseModel):
     discovered_in: list[str] = Field(default_factory=list)
     topics: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
+    publication_keywords_status: str = "missing"
+    publication_keywords_source: str | None = None
     status: str = "active"
     pdf_status: str = "missing"
     doi_status: DoiStatus = "missing"
@@ -186,6 +188,8 @@ class SourceCard(BaseModel):
             "discovered_in": self.discovered_in,
             "topics": self.topics,
             "keywords": self.keywords,
+            "publication_keywords_status": self.publication_keywords_status,
+            "publication_keywords_source": self.publication_keywords_source,
             "status": self.status,
             "pdf_status": self.pdf_status,
             "doi_status": self.doi_status,

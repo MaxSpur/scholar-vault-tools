@@ -10,6 +10,7 @@ from scholar_vault.citations import EnrichmentResult
 from scholar_vault.importer import (
     PDF_SCAN_CACHE_FILENAME,
     cleanup_run_selected_only,
+    confirm_no_publication_keywords,
     find_staged_run_matches,
     import_bibtex,
     import_pdf_dropins,
@@ -33,7 +34,7 @@ from scholar_vault.models import (
     SourceCard,
 )
 from scholar_vault.render import render_paper_markdown
-from scholar_vault.sources import load_source_cards, run_note_path, write_yaml
+from scholar_vault.sources import VaultPaths, load_source_cards, run_note_path, write_yaml
 
 
 def _write_fixture_copy(name: str, target: Path) -> Path:
@@ -917,6 +918,43 @@ def test_set_manual_keywords_normalizes_and_rerenders_card(tmp_path: Path) -> No
     assert progress_steps[-1] == "Manual save complete"
 
 
+def test_confirm_no_publication_keywords_marks_keyword_step_done(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    pdf_path = paths.pdfs / "smith2024rag.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+    card = SourceCard(
+        slug="smith2024rag",
+        citekey="smith2024rag",
+        title="Evaluating Retrieval Augmented Generation Systems",
+        pdf="pdfs/smith2024rag.pdf",
+        pdf_status="attached",
+        enrichment_missing=["keywords"],
+    )
+    (paths.papers / "smith2024rag.md").write_text(
+        render_paper_markdown(card),
+        encoding="utf-8",
+    )
+
+    progress_steps: list[str] = []
+    summary = confirm_no_publication_keywords(
+        vault,
+        "smith2024rag",
+        progress=progress_steps.append,
+    )
+    saved = load_source_cards(initialize_vault(vault))[0]
+    rendered = (paths.papers / "smith2024rag.md").read_text(encoding="utf-8")
+
+    assert summary["status"] == "absent"
+    assert saved.publication_keywords_status == "absent"
+    assert saved.publication_keywords_source == "manual"
+    assert saved.keywords == []
+    assert "keywords" not in saved.enrichment_missing
+    assert "## Keywords\nNo publication keywords listed in the source." in rendered
+    assert "Confirming source keyword absence" in progress_steps
+    assert progress_steps[-1] == "Manual save complete"
+
+
 def test_set_manual_abstract_normalizes_preview_pdf_copy(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     paths = initialize_vault(vault)
@@ -1064,6 +1102,92 @@ def test_imported_pdf_syncs_matching_previous_runs(tmp_path: Path, monkeypatch) 
     assert first_manifest["entries"][0]["paper_card"] == second_run["results"][0]["paper_card"]
     assert any(f"runs/{first['run']}/" in ref for ref in cards[0].discovered_in)
     assert any(f"runs/{second['run']}/" in ref for ref in cards[0].discovered_in)
+
+
+def test_rebuild_repairs_missing_run_links_to_attached_cards(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    title = "Collaborative Immersive Analytics in Virtual Reality"
+    first_export = tmp_path / "first.json"
+    second_export = tmp_path / "second.json"
+    _rewrite_export(
+        _write_export(
+            first_export,
+            1,
+            title="First Run",
+            prompt="find collaborative immersive analytics papers",
+            exported_at="2026-04-22T16:00:00+02:00",
+        ),
+        result_updates={"title": title},
+    )
+    _rewrite_export(
+        _write_export(
+            second_export,
+            1,
+            title="Second Run",
+            prompt="find virtual reality collaboration papers",
+            exported_at="2026-04-23T16:00:00+02:00",
+        ),
+        result_updates={"title": title},
+    )
+    first = import_scholar_labs_run(vault, first_export, staging, commit=True)
+    pdf_path = staging / "leftover.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    def fake_build(path: Path) -> PdfCandidate:
+        return PdfCandidate(
+            path=str(path),
+            title=title,
+            text_excerpt=title,
+            sha256=None,
+            size=path.stat().st_size,
+        )
+
+    monkeypatch.setattr("scholar_vault.importer.build_pdf_candidate", fake_build)
+    second = import_scholar_labs_run(vault, second_export, staging, commit=True)
+
+    first_run_path = vault / "runs" / str(first["run"]) / "index.yaml"
+    first_run = _run_yaml(vault, first["run"])
+    first_run["results"][0]["status"] = "candidate"
+    first_run["results"][0]["pdf_status"] = "missing"
+    first_run["results"][0].pop("paper_card", None)
+    write_yaml(first_run_path, first_run)
+
+    first_manifest_path = vault / "runs" / str(first["run"]) / "import-manifest.yaml"
+    first_manifest = _manifest_yaml(vault, first["run"])
+    first_manifest["entries"][0]["decision"] = "unresolved"
+    first_manifest["entries"][0].pop("paper_card", None)
+    first_manifest["entries"][0].pop("destination_path", None)
+    first_manifest["entries"][0]["verified"] = False
+    write_yaml(first_manifest_path, first_manifest)
+
+    paths = VaultPaths.from_root(vault)
+    card = load_source_cards(paths)[0]
+    card.discovered_in = [
+        ref for ref in card.discovered_in if f"runs/{first['run']}/" not in ref
+    ]
+    (paths.papers / f"{card.slug}.md").write_text(
+        render_paper_markdown(card),
+        encoding="utf-8",
+    )
+
+    summary = rebuild_vault(vault)
+    repaired_run = _run_yaml(vault, first["run"])
+    repaired_manifest = _manifest_yaml(vault, first["run"])
+    repaired_card = load_source_cards(VaultPaths.from_root(vault))[0]
+    second_run = _run_yaml(vault, second["run"])
+
+    assert summary["cross_run_links_synced"] >= 1
+    assert repaired_run["results"][0]["status"] == "selected"
+    assert repaired_run["results"][0]["pdf_status"] == "attached"
+    assert repaired_run["results"][0]["paper_card"] == second_run["results"][0]["paper_card"]
+    assert repaired_manifest["entries"][0]["decision"] == "accepted"
+    assert repaired_manifest["entries"][0]["paper_card"] == second_run["results"][0]["paper_card"]
+    assert any(f"runs/{first['run']}/" in ref for ref in repaired_card.discovered_in)
 
 
 def test_import_labs_archives_used_export_json_and_updates_run_metadata(

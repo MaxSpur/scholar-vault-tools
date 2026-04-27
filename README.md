@@ -205,7 +205,8 @@ Default Scholar Labs behavior is now selected-only:
 - Candidate results stay on the run page unless you explicitly opt in with `--include-without-pdf`.
 - `import-labs` copies accepted PDFs into `pdfs/`, verifies them, and then archives the matched originals out of staging into `raw/imported/`, leaving only unmatched PDFs in staging.
 - After committed matches, `import-labs`, `import`, `resume`, and `rerun` run citation, abstract, and PDF keyword enrichment for selected paper cards by default. Use `--no-enrich` when you want a faster import that skips provider lookups.
-- Paper-provided keywords from BibTeX, provider metadata, and local PDF text are stored separately from prompt-derived `topics`.
+- Paper-provided keywords from BibTeX, provider metadata, and local PDF text are stored separately from prompt-derived `topics`. If a paper has no publication keywords or index terms, the follow-up UI can mark that absence explicitly so the card no longer looks unfinished.
+- When a PDF is attached to a canonical card, matching previous run results with the same Scholar CID or exact normalized title are linked to that same card. `rebuild` also repairs missing run/card/PDF links for older stale records.
 - After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder without renaming it, for example `~/Downloads/scholar-labs-staging/used/example.json`. The run metadata is updated so `resume` and `rerun` still know where the export went.
 - The final import summary separates reused prior selections, existing vault-card links, newly accepted staged PDFs, review prompts, unresolved results, staged-file cleanup, and enrichment changes, so rerunning an old JSON should make clear why no match-review prompts appeared.
 - `import-run` is the lower-level transactional variant. It copies accepted PDFs into `pdfs/` but leaves staging untouched unless you later run `clean-staging`.

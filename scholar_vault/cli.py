@@ -15,6 +15,7 @@ from .importer import (
     attach_pdf,
     clean_staging,
     cleanup_run_selected_only,
+    confirm_no_publication_keywords,
     enrich_citations,
     export_bibtex,
     find_staged_run_matches,
@@ -249,6 +250,13 @@ KeywordReplaceArg = Annotated[
     bool,
     typer.Option("--replace/--merge", help="Replace existing keywords instead of merging."),
 ]
+KeywordNoneArg = Annotated[
+    bool,
+    typer.Option(
+        "--none",
+        help="Confirm the source has no publication keywords or index terms.",
+    ),
+]
 OnlyArg = Annotated[
     str,
     typer.Option(
@@ -406,7 +414,11 @@ def _card_followup_kinds(card: SourceCard) -> list[str]:
         kinds.append("citation")
     if card.abstract_status in issue_states:
         kinds.append("abstract")
-    if card.pdf and not card.keywords:
+    if (
+        card.pdf
+        and not card.keywords
+        and card.publication_keywords_status != "absent"
+    ):
         kinds.append("keywords")
     if card.doi_status in {"ambiguous", "unresolved"}:
         kinds.append("doi")
@@ -500,6 +512,7 @@ def _choose_staging_match_run_id(
     min_score: int,
     limit: int,
     unselected_only: bool,
+    run_callback=None,
 ) -> str | None:
     try:
         from .gui import GuiUnavailable, choose_staging_match
@@ -536,6 +549,7 @@ def _choose_staging_match_run_id(
             min_score=min_score,
             limit=limit,
             unselected_only=unselected_only,
+            run_callback=run_callback,
         )
     except GuiUnavailable as exc:
         console.print(f"Staging match UI unavailable ({exc}). Falling back to terminal output.")
@@ -923,7 +937,7 @@ def _run_staging_match_from_summary(summary: dict[str, Any]) -> None:
         return
     vault = Path(str(vault_value)).expanduser().resolve()
     staging = Path(str(staging_value)).expanduser().resolve()
-    run_id = _choose_staging_match_run_id(
+    _choose_staging_match_run_id(
         vault,
         staging,
         title=None,
@@ -931,11 +945,8 @@ def _run_staging_match_from_summary(summary: dict[str, Any]) -> None:
         min_score=60,
         limit=50,
         unselected_only=True,
+        run_callback=lambda run_id: _rerun_selected_match(vault, run_id),
     )
-    if run_id:
-        _rerun_selected_match(vault, run_id)
-    else:
-        console.print("No staging match run selected.")
 
 
 def _finish_import_workflow(
@@ -1250,7 +1261,8 @@ def _enrichment_progress_message(
     title = " ".join((card.title or identifier).split())
     context: list[str] = []
     if keywords:
-        context.append(f"state={'present' if card.keywords else 'missing'}")
+        keyword_state = "present" if card.keywords else card.publication_keywords_status
+        context.append(f"state={keyword_state}")
         context.append(f"count={len(card.keywords)}")
         context.append(f"pdf={'yes' if card.pdf else 'no'}")
     elif abstracts:
@@ -1496,6 +1508,10 @@ def rebuild_command(vault: VaultArg = None) -> None:
         f"- Runs: {summary['runs']} run notes refreshed; "
         f"{summary['manifests']} import manifests read."
     )
+    if summary["cross_run_links_synced"]:
+        console.print(
+            f"- Repaired {summary['cross_run_links_synced']} run/card/PDF link(s)."
+        )
     console.print(
         f"- Derived outputs: {summary['index_files_written']} indexes, "
         f"{summary['topic_pages_written']} topic pages, "
@@ -1774,8 +1790,18 @@ def set_keywords_command(
     text: KeywordTextArg = None,
     keyword_file: KeywordFileArg = None,
     replace: KeywordReplaceArg = False,
+    none: KeywordNoneArg = False,
     vault: VaultArg = None,
 ) -> None:
+    if none and (text or keyword_file):
+        raise typer.BadParameter("Use --none without --text or --file.")
+    if none:
+        summary = confirm_no_publication_keywords(_resolve_vault(vault), citekey)
+        console.print(
+            f"Confirmed no publication keywords for {summary['citekey']}. "
+            f"Updated {summary['paper']}."
+        )
+        return
     if text and keyword_file:
         raise typer.BadParameter("Use either --text or --file, not both.")
     if keyword_file:
@@ -1849,11 +1875,13 @@ def match_staging_command(
             min_score=min_score,
             limit=limit,
             unselected_only=unselected_only,
+            run_callback=lambda selected_run: _rerun_selected_match(
+                resolved_vault,
+                selected_run,
+            ),
         )
         if run_id:
             _rerun_selected_match(resolved_vault, run_id)
-            return
-        console.print("No staging match run selected.")
         return
 
     summary = _with_progress(

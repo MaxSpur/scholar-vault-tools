@@ -966,6 +966,7 @@ def choose_staging_match(
     min_score: int = 60,
     limit: int = 50,
     unselected_only: bool = False,
+    run_callback: Any | None = None,
 ) -> str | None:
     qt = _load_qt_modules(require_fitz=False)
     app = _application(qt)
@@ -1088,7 +1089,40 @@ def choose_staging_match(
         selected["run_id"] = run_id
         status.setText(f"Starting reviewed rerun for {run_id}...")
         app.processEvents()
-        dialog.accept()
+        if run_callback is None:
+            dialog.accept()
+            return
+
+        search.setEnabled(False)
+        scan_all.setEnabled(False)
+        browse.setEnabled(False)
+        clear_pdf.setEnabled(False)
+        scroll.setEnabled(False)
+        cancel.setEnabled(False)
+        dialog.setCursor(qt["Qt"].CursorShape.WaitCursor)
+        try:
+            run_callback(run_id)
+        except Exception as exc:  # pragma: no cover - defensive UI error handling
+            box = qt["QMessageBox"](dialog)
+            box.setWindowTitle("Reviewed Rerun Failed")
+            box.setIcon(qt["QMessageBox"].Icon.Warning)
+            box.setText(str(exc))
+            box.setStandardButtons(qt["QMessageBox"].StandardButton.Ok)
+            _style_message_box(qt, box)
+            box.exec()
+        finally:
+            dialog.unsetCursor()
+            search.setEnabled(True)
+            scan_all.setEnabled(True)
+            browse.setEnabled(True)
+            clear_pdf.setEnabled(True)
+            scroll.setEnabled(True)
+            cancel.setEnabled(True)
+            if pdf_field.text().strip() and not Path(pdf_field.text().strip()).exists():
+                pdf_field.clear()
+            status.setText("Reviewed rerun finished; refreshing leftover matches...")
+            app.processEvents()
+            run_search(clear_query=False)
 
     def clear_rows() -> None:
         while rows_layout.count():
@@ -1186,7 +1220,9 @@ def choose_staging_match(
     title_field.returnPressed.connect(lambda: run_search(clear_query=False))
 
     buttons = qt["QHBoxLayout"]()
-    hint = qt["QLabel"]("Esc cancels. Rerun opens match review before changing files.")
+    hint = qt["QLabel"](
+        "Esc closes. Rerun opens match review, then returns here for the next leftover PDF."
+    )
     hint.setFont(_summary_font(qt, 10))
     hint.setStyleSheet("color: #68c792;")
     buttons.addWidget(hint, 1)
@@ -3353,7 +3389,7 @@ def _resolve_missing_keywords(
 
     prompt = qt["QLabel"](
         "Enter paper keywords or index terms copied from the PDF. Commas, semicolons, "
-        "bullets, and line breaks will be normalized before saving."
+        "pipes, bullets, and line breaks will be normalized before saving."
     )
     prompt.setWordWrap(True)
     prompt.setFont(_summary_font(qt, 12))
@@ -3382,6 +3418,11 @@ def _resolve_missing_keywords(
         qt["QDialogButtonBox"].StandardButton.Cancel,
         "muted",
     )
+    no_keywords = buttons.addButton(
+        "No Publication Keywords",
+        qt["QDialogButtonBox"].ButtonRole.ActionRole,
+    )
+    _style_button(no_keywords, "neutral")
     layout.addWidget(buttons)
 
     def save() -> None:
@@ -3426,8 +3467,50 @@ def _resolve_missing_keywords(
         dialog.unsetCursor()
         dialog.accept()
 
+    def confirm_absent() -> None:
+        app = _application(qt)
+        progress = _manual_save_progress_callback(qt, app, progress_widgets)
+        editor.setReadOnly(True)
+        buttons.setEnabled(False)
+        dialog.setCursor(qt["Qt"].CursorShape.WaitCursor)
+        progress("Starting confirmation")
+        try:
+            from .importer import confirm_no_publication_keywords
+
+            result = confirm_no_publication_keywords(
+                _vault_from_detail(detail),
+                str(detail.get("citekey")),
+                progress=progress,
+            )
+        except Exception as exc:  # pragma: no cover - defensive UI error handling
+            progress("Save failed")
+            dialog.unsetCursor()
+            buttons.setEnabled(True)
+            editor.setReadOnly(False)
+            box = qt["QMessageBox"](dialog)
+            box.setWindowTitle("Keyword Status Not Saved")
+            box.setIcon(qt["QMessageBox"].Icon.Warning)
+            box.setText(str(exc))
+            box.setStandardButtons(qt["QMessageBox"].StandardButton.Ok)
+            _style_message_box(qt, box)
+            box.exec()
+            return
+        detail["category"] = "resolved"
+        detail["status"] = result.get("status") or "absent"
+        detail["source"] = "manual"
+        detail["message"] = "confirmed no publication keywords"
+        detail["keywords"] = []
+        detail["missing_fields"] = []
+        detail["paper_path"] = result.get("paper") or detail.get("paper_path")
+        progress("Refreshing follow-up list")
+        refresh()
+        progress("Done")
+        dialog.unsetCursor()
+        dialog.accept()
+
     buttons.accepted.connect(save)
     buttons.rejected.connect(dialog.reject)
+    no_keywords.clicked.connect(confirm_absent)
     dialog.show()
     dialog.raise_()
     dialog.activateWindow()
