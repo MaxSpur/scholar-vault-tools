@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scholar Vault Research Loop"
+  short_description: "Run PDF-grounded vault improvement cycles"
+  default_prompt: "Use $scholar-vault-research-loop to read selected PDFs, refine touched cards, and create concept/synthesis metacards for this research question."

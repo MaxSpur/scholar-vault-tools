@@ -37,13 +37,15 @@
 
 ## Canonical Data Model
 
-- Canonical source record: `papers/<slug>.md`
+- Canonical evidence artifact: linked `pdfs/*.pdf`
+- Canonical card/index record: `papers/<slug>.md`
 - Scholar Labs provenance record: `runs/<run_id>/<Short Title.md>` for Obsidian plus `index.yaml` for machine-readable state.
 - Run IDs remain stable and prompt-derived for idempotence. Run note filenames use `note_file` when present, otherwise the `title` field from the Scholar Labs JSON, a `--title` override, an import-time prompt for older untitled JSON, `rename-run`, or an Obsidian filename rename.
 - Raw inputs: `raw/`
 - Staging scan cache: `.scholar-vault-pdf-scan-cache` beside staged PDFs, keyed by filename plus size/mtime and ignored by JSON export discovery.
 - Raw citation cache: `raw/metadata/<citekey>/`
 - Derived indexes and exports: `_indexes/`, `_exports/`, `llms.txt`, `llms-full.txt`
+- Optional agent-written metacards: `concepts/`, `syntheses/`, and `tasks/`
 
 ## Merge Strategy
 

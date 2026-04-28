@@ -811,6 +811,9 @@ Available skills:
   active staging, metadata, import, and synthesis actions.
 - `$scholar-vault-read-pdf`: read linked PDFs as the primary evidence and add
   evidence-grounded notes, topics, metadata fixes, syntheses, or metacards.
+- `$scholar-vault-research-loop`: run a focused post-import research cycle:
+  read PDFs, refine touched cards, create concept/synthesis metacards, and
+  rebuild generated views.
 
 Example prompts:
 
@@ -821,6 +824,7 @@ Use $scholar-vault-synthesize to write a synthesis on OD-flow visualization.
 Use $scholar-vault-curate-topics to propose a cleanup of noisy topics.
 Use $scholar-vault-pdf-triage to inspect current staging PDFs and historical unmatched records.
 Use $scholar-vault-read-pdf to read selected PDFs and refine their cards.
+Use $scholar-vault-research-loop to work through this question: <question>.
 ```
 
 The skills do not require subagents and do not launch them by themselves. That
@@ -831,10 +835,39 @@ independent verification when the active Codex environment and user instructions
 allow them, but final synthesis and file edits should stay coordinated in the
 main thread.
 
+### Post-Import Research Loop
+
+After `import-labs`, `enrich --ui`, and any obvious metadata follow-up, the
+normal research workflow is:
+
+1. Use `$scholar-vault-research-loop` with a focused question, concept, method,
+   dataset, or paper cluster.
+2. Let Codex orient from `status --json`, `llms.txt`, cards, topics, runs, and
+   existing `syntheses/`, `concepts/`, and `tasks/`.
+3. Read the linked PDFs as primary evidence. Text extraction should cover the
+   full paper for serious reading; page ranges are only for targeted revisits.
+4. Use Codex's PDF reading/rendering capabilities for figures, tables, maps,
+   visualizations, equations, scanned pages, and appendix material. Do not rely
+   on text extraction alone for visual evidence.
+5. Update only touched paper cards with concise `## Notes` that capture claims,
+   methods, datasets, evaluation setup, limitations, visual encodings, and
+   links to related paper cards.
+6. Create `concepts/<slug>.md` for reusable concepts, methods, datasets,
+   evaluation protocols, or visual encodings that connect multiple papers.
+7. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers,
+   tensions, and literature-review prose.
+8. Create `tasks/<date>-research-gaps.md` for unclear evidence, follow-up
+   reading, or next Scholar Labs prompts.
+9. Run `scholar-vault rebuild` so generated indexes, exports, topics, and
+   `llms*.txt` include the new durable notes and connections.
+
 ## Generated Records
 
 - `pdfs/*.pdf`: canonical evidence artifacts for selected sources.
 - `papers/*.md`: canonical source cards for selected papers by default; these store metadata, provenance, links, abstracts, keywords, and notes over the linked PDFs.
+- `concepts/*.md`: optional agent-written concept/metacards that connect papers by method, dataset, visual encoding, evaluation protocol, or terminology.
+- `syntheses/*.md`: optional agent-written cross-paper syntheses grounded in PDFs.
+- `tasks/*.md`: optional agent-written follow-up tasks and research gaps.
 - `papers/*.md` body sections: human-readable keywords, abstract, and primary Scholar Labs summary. Long prose is not duplicated in frontmatter.
 - `runs/<run_id>/<Short Title.md>`: Obsidian-friendly per-run provenance pages that keep all Scholar Labs candidate results.
 - `runs/*/index.yaml`: machine-readable run records used by `resume`, `rerun`, and rebuilds.
