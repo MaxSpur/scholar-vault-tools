@@ -887,6 +887,10 @@ def _update_enrichment_completeness(card: SourceCard) -> None:
         card.enrichment_status = "missing"
 
 
+def refresh_metadata_completeness(card: SourceCard) -> None:
+    _update_enrichment_completeness(card)
+
+
 def _candidate_is_consistent(card: SourceCard, candidate: CitationCandidate) -> bool:
     if not candidate.title:
         return False

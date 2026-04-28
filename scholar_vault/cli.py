@@ -35,6 +35,7 @@ from .importer import (
     resume_run,
     set_manual_abstract,
     set_manual_keywords,
+    set_manual_metadata,
     undo_run,
 )
 from .models import (
@@ -295,6 +296,26 @@ KeywordNoneArg = Annotated[
         "--none",
         help="Confirm the source has no publication keywords or index terms.",
     ),
+]
+MetadataDoiArg = Annotated[
+    str | None,
+    typer.Option("--doi", help="Manual DOI, for example 10.xxxx/example."),
+]
+MetadataAuthorsArg = Annotated[
+    str | None,
+    typer.Option("--authors", help="Manual authors. Use semicolons or new lines between names."),
+]
+MetadataYearArg = Annotated[
+    str | None,
+    typer.Option("--year", help="Manual publication year."),
+]
+MetadataVenueArg = Annotated[
+    str | None,
+    typer.Option("--venue", help="Manual publication venue."),
+]
+MetadataUrlArg = Annotated[
+    str | None,
+    typer.Option("--url", help="Manual primary URL."),
 ]
 OnlyArg = Annotated[
     str,
@@ -1912,6 +1933,37 @@ def attach_pdf_command(
     console.print(
         f"Attached {summary['pdf']} to {citekey} "
         f"(copied={summary['copied']}, verified={summary['verified']})."
+    )
+
+
+@app.command("set-metadata")
+def set_metadata_command(
+    citekey: CitekeyArg,
+    doi: MetadataDoiArg = None,
+    authors: MetadataAuthorsArg = None,
+    year: MetadataYearArg = None,
+    venue: MetadataVenueArg = None,
+    url: MetadataUrlArg = None,
+    vault: VaultArg = None,
+) -> None:
+    if not any([doi, authors, year, venue, url]):
+        raise typer.BadParameter(
+            "Provide at least one of --doi, --authors, --year, --venue, or --url."
+        )
+    summary = set_manual_metadata(
+        _resolve_vault(vault),
+        citekey,
+        doi=doi,
+        authors=authors,
+        year=year,
+        venue=venue,
+        url=url,
+    )
+    missing = ", ".join(summary.get("missing_fields") or []) or "none"
+    console.print(
+        f"Set manual metadata for {summary['citekey']} "
+        f"(metadata={summary['enrichment_status']}, missing={missing}). "
+        f"Updated {summary['paper']}."
     )
 
 

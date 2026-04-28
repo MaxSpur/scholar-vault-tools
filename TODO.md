@@ -62,5 +62,5 @@
 - [x] Let manual keyword follow-up confirm that a source has no publication keywords or index terms.
 - [x] Reject truncated abstract snippets and re-queue existing bad abstracts for manual follow-up when no complete source is found.
 - [x] Let staging-match reruns hide the parent picker so import reports and follow-up windows remain interactive.
-- [ ] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
+- [x] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

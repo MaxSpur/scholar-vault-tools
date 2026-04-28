@@ -239,8 +239,8 @@ scholar-vault rerun --ui
 scholar-vault enrich --ui
 ```
 
-Use `set-abstract` or `set-keywords` when a manual correction is clearer than
-another provider lookup.
+Use `set-metadata`, `set-abstract`, or `set-keywords` when a manual correction
+is clearer than another provider lookup.
 
 7. Rebuild after manual paper-card edits:
 
@@ -467,6 +467,15 @@ Interpretation:
 - `incomplete`: citation metadata was generated, but canonical fields such as `venue`, `authors`, `year`, or `doi` are still missing or still look like Scholar preview strings.
 
 Set `metadata_lock: true` in a paper card to prevent automatic metadata overwrites. Use `--refresh` to reprocess generated or verified records, `--retry-failed` to retry unresolved records past the retry limit, and `--force` only when you intentionally want to process locked metadata. To mark one card for another normal enrichment attempt from Obsidian, set `enrichment_refresh: true` in that paper card and run `scholar-vault enrich`; the flag is cleared after processing.
+
+Ambiguous citation rows in the GUI can be resolved with **Resolve Metadata**.
+The workflow saves manually checked DOI, authors, year, venue, and URL values,
+then rebuilds the generated card, indexes, exports, topics, and run notes. You
+can also do the same from the CLI:
+
+```fish
+scholar-vault set-metadata --citekey smith2024rag --doi 10.1145/example --authors "Jane Smith; John Doe" --year 2024 --venue "Proceedings of Example Research"
+```
 
 To focus only on abstract enrichment, use `--only missing-abstract`:
 

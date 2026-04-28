@@ -21,6 +21,7 @@
 - A parent queue window must not remain modal/frontmost while it launches child workflows. Hide or make it modeless during reviewed reruns so import reports and follow-up windows can receive focus.
 - Ellipsis-ended abstracts are snippets, not complete abstracts. Reject them from providers/PDF extraction and clear old generated snippets when enrichment cannot find a complete replacement.
 - A GUI titled "Issues to Resolve" must only receive actionable problem rows. Normal skips such as verified citations or unchanged abstracts belong in logs/tables, not issue counts.
+- Follow-up counters should count currently pending problem rows, not the original row list. When a manual resolver changes a row to resolved, the visible count must be recomputed from row state.
 - Preserve script defaults but make GUI defaults explicit. A terminal `rerun` can reuse the latest run, while `rerun --ui` should show a chooser before starting work.
 - GUI counters should name the underlying record concept. Do not label per-run newly accepted staged files as total PDFs, and do not call unselected Scholar results "left" when the workflow intentionally imports only downloaded/selected papers.
 - When moving user-facing input files for workflow hygiene, update all provenance paths that future commands use. Archiving a used JSON export is only useful if `resume` still points at the moved file.

@@ -411,3 +411,43 @@ def test_missing_abstract_issue_is_resolvable() -> None:
             "citekey": "example2024paper",
         }
     )
+
+
+def test_manual_metadata_issue_is_resolvable() -> None:
+    from scholar_vault.gui import _can_resolve_manual_metadata
+
+    assert _can_resolve_manual_metadata(
+        {
+            "kind": "citation",
+            "category": "ambiguous",
+            "missing_fields": ["doi", "authors", "venue"],
+            "paper_file": "/tmp/vault/papers/example.md",
+            "citekey": "example2024paper",
+        }
+    )
+
+
+def test_pending_issue_count_drops_when_row_resolves() -> None:
+    from scholar_vault.gui import _pending_issue_count
+
+    details = [
+        {
+            "kind": "citation",
+            "category": "ambiguous",
+            "message": "ambiguous crossref candidate score=82",
+        },
+        {
+            "kind": "keywords",
+            "category": "unresolved",
+            "message": "no keywords found in attached PDF",
+        },
+        {
+            "kind": "keywords",
+            "category": "resolved",
+            "message": "manual keywords saved",
+        },
+    ]
+
+    assert _pending_issue_count(details) == 2
+    details[0]["category"] = "resolved"
+    assert _pending_issue_count(details) == 1

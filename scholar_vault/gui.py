@@ -9,6 +9,12 @@ from typing import Any
 from .models import MatchReviewAbort, MatchReviewRequest
 
 _ABORT_DIALOG_CODE = 2
+_PENDING_ISSUE_CATEGORIES = {"incomplete", "ambiguous", "unresolved"}
+_PENDING_SKIP_MESSAGES = {
+    "retry limit reached",
+    "abstract previously failed",
+    "metadata_lock",
+}
 
 
 class GuiUnavailable(RuntimeError):
@@ -3024,6 +3030,18 @@ def _summary_breakdown_panel(qt: dict[str, Any], model: dict[str, Any]) -> Any:
     return panel
 
 
+def _is_pending_issue(detail: dict[str, Any]) -> bool:
+    category = str(detail.get("category") or "")
+    message = str(detail.get("message") or "")
+    return category in _PENDING_ISSUE_CATEGORIES or (
+        category == "skipped" and message in _PENDING_SKIP_MESSAGES
+    )
+
+
+def _pending_issue_count(details: list[dict[str, Any]]) -> int:
+    return sum(1 for detail in details if _is_pending_issue(detail))
+
+
 def show_enrichment_results(
     details: list[dict[str, Any]],
     *,
@@ -3060,16 +3078,17 @@ def show_enrichment_results(
     title_block.addWidget(heading)
     title_block.addWidget(subheading)
     header.addLayout(title_block, 1)
-    count_panel = _summary_panel(qt, "#ff3b4f" if details else "#45ffb0")
+    initial_pending = _pending_issue_count(details)
+    count_panel = _summary_panel(qt, "#ff3b4f" if initial_pending else "#45ffb0")
     count_panel.setFixedWidth(180)
     count_layout = qt["QVBoxLayout"](count_panel)
     count_label = qt["QLabel"]("ISSUES")
     count_label.setFont(_summary_font(qt, 11, mono=True, bold=True))
     count_label.setStyleSheet("color: #8ce7b8; border: none;")
-    count_value = qt["QLabel"](str(len(details)))
+    count_value = qt["QLabel"](str(initial_pending))
     count_value.setFont(_summary_font(qt, 34, mono=True, bold=True))
     count_value.setStyleSheet(
-        f"color: {'#ff3b4f' if details else '#45ffb0'}; border: none;"
+        f"color: {'#ff3b4f' if initial_pending else '#45ffb0'}; border: none;"
     )
     count_layout.addWidget(count_label)
     count_layout.addWidget(count_value)
@@ -3125,7 +3144,17 @@ def show_enrichment_results(
             if widget is not None:
                 widget.deleteLater()
 
+    def refresh_count() -> None:
+        pending = _pending_issue_count(details)
+        color = "#ff3b4f" if pending else "#45ffb0"
+        count_value.setText(str(pending))
+        count_value.setStyleSheet(f"color: {color}; border: none;")
+        count_panel.setStyleSheet(
+            f"QFrame {{ background: #07100b; border: 1px solid {color}; }}"
+        )
+
     def refresh_list() -> None:
+        refresh_count()
         selected_category = categories[category_filter.currentIndex()]
         visible.clear()
         visible.extend(
@@ -3209,7 +3238,11 @@ def _issue_row(
     layout.addLayout(top)
 
     message_text = str(detail.get("message") or detail.get("status") or "Follow-up needed")
-    if _can_resolve_missing_abstract(detail) or _can_resolve_missing_keywords(detail):
+    if (
+        _can_resolve_missing_abstract(detail)
+        or _can_resolve_missing_keywords(detail)
+        or _can_resolve_manual_metadata(detail)
+    ):
         message = qt["QPushButton"](message_text)
         message.clicked.connect(lambda: _resolve_issue(qt, detail, refresh, parent))
         message.setStyleSheet(
@@ -3251,6 +3284,11 @@ def _issue_row(
         resolve = qt["QPushButton"]("Resolve Keywords")
         _style_button(resolve, "danger")
         resolve.clicked.connect(lambda: _resolve_missing_keywords(qt, detail, refresh, parent))
+        actions.addWidget(resolve)
+    if _can_resolve_manual_metadata(detail):
+        resolve = qt["QPushButton"]("Resolve Metadata")
+        _style_button(resolve, "danger")
+        resolve.clicked.connect(lambda: _resolve_manual_metadata(qt, detail, refresh, parent))
         actions.addWidget(resolve)
     open_card = qt["QPushButton"]("Open Card")
     open_pdf = qt["QPushButton"]("Open PDF")
@@ -3299,13 +3337,29 @@ def _can_resolve_missing_keywords(detail: dict[str, Any]) -> bool:
     )
 
 
+def _can_resolve_manual_metadata(detail: dict[str, Any]) -> bool:
+    missing_fields = {str(field) for field in (detail.get("missing_fields") or [])}
+    metadata_fields = {"doi", "authors", "year", "venue"}
+    return (
+        detail.get("kind") == "citation"
+        and bool(detail.get("paper_file"))
+        and bool(detail.get("citekey"))
+        and (
+            str(detail.get("category") or "") == "ambiguous"
+            or bool(missing_fields & metadata_fields)
+        )
+    )
+
+
 def _resolve_issue(
     qt: dict[str, Any],
     detail: dict[str, Any],
     refresh,
     parent: Any | None = None,
 ) -> None:
-    if _can_resolve_missing_keywords(detail):
+    if _can_resolve_manual_metadata(detail):
+        _resolve_manual_metadata(qt, detail, refresh, parent)
+    elif _can_resolve_missing_keywords(detail):
         _resolve_missing_keywords(qt, detail, refresh, parent)
     elif _can_resolve_missing_abstract(detail):
         _resolve_missing_abstract(qt, detail, refresh, parent)
@@ -3390,6 +3444,154 @@ def _manual_save_progress_callback(
         app.processEvents()
 
     return progress
+
+
+def _resolve_manual_metadata(
+    qt: dict[str, Any],
+    detail: dict[str, Any],
+    refresh,
+    parent: Any | None = None,
+) -> None:
+    dialog = qt["QDialog"](parent)
+    if parent is not None:
+        dialog.setWindowModality(qt["Qt"].WindowModality.WindowModal)
+    dialog.setWindowTitle("Resolve Publication Metadata")
+    dialog.resize(820, 620)
+    dialog.setStyleSheet(_dark_dialog_stylesheet())
+    layout = qt["QVBoxLayout"](dialog)
+    layout.setContentsMargins(24, 22, 24, 18)
+    layout.setSpacing(12)
+
+    title = qt["QLabel"](str(detail.get("title") or "Untitled paper"))
+    title.setWordWrap(True)
+    title.setFont(_summary_font(qt, 20, bold=True))
+    title.setStyleSheet("color: #f3fff7;")
+    layout.addWidget(title)
+
+    missing = ", ".join(detail.get("missing_fields") or []) or "ambiguous metadata"
+    prompt = qt["QLabel"](
+        f"Fill the publication metadata to resolve this row. Missing: {missing}."
+    )
+    prompt.setWordWrap(True)
+    prompt.setFont(_summary_font(qt, 12))
+    layout.addWidget(prompt)
+
+    form = qt["QGridLayout"]()
+    form.setHorizontalSpacing(12)
+    form.setVerticalSpacing(10)
+
+    def add_label(text: str, row: int) -> None:
+        label = qt["QLabel"](text)
+        label.setFont(_summary_font(qt, 11, mono=True, bold=True))
+        label.setStyleSheet("color: #8ce7b8;")
+        form.addWidget(label, row, 0)
+
+    doi_input = qt["QLineEdit"](str(detail.get("doi") or ""))
+    doi_input.setPlaceholderText("10.xxxx/example")
+    authors_input = qt["QTextEdit"]()
+    authors_input.setAcceptRichText(False)
+    authors_input.setMaximumHeight(88)
+    authors = detail.get("authors") or []
+    if isinstance(authors, list) and authors:
+        authors_input.setPlainText("\n".join(str(author) for author in authors))
+    elif detail.get("authors_preview"):
+        authors_input.setPlainText(str(detail.get("authors_preview")))
+    year_input = qt["QLineEdit"](str(detail.get("year") or ""))
+    year_input.setPlaceholderText("2024")
+    venue_input = qt["QLineEdit"](str(detail.get("venue") or ""))
+    venue_input.setPlaceholderText("Journal or proceedings title")
+    url_input = qt["QLineEdit"](str(detail.get("url") or ""))
+    url_input.setPlaceholderText("https://...")
+
+    add_label("DOI", 0)
+    form.addWidget(doi_input, 0, 1)
+    add_label("AUTHORS", 1)
+    form.addWidget(authors_input, 1, 1)
+    add_label("YEAR", 2)
+    form.addWidget(year_input, 2, 1)
+    add_label("VENUE", 3)
+    form.addWidget(venue_input, 3, 1)
+    add_label("URL", 4)
+    form.addWidget(url_input, 4, 1)
+    layout.addLayout(form)
+
+    progress_widgets = _add_manual_save_progress_panel(qt, layout)
+
+    buttons = qt["QDialogButtonBox"](
+        qt["QDialogButtonBox"].StandardButton.Save
+        | qt["QDialogButtonBox"].StandardButton.Cancel
+    )
+    _style_dialog_buttons(buttons, "primary")
+    _style_standard_dialog_button(
+        buttons,
+        qt["QDialogButtonBox"].StandardButton.Cancel,
+        "muted",
+    )
+    layout.addWidget(buttons)
+
+    def save() -> None:
+        app = _application(qt)
+        progress = _manual_save_progress_callback(qt, app, progress_widgets)
+        for widget in (doi_input, authors_input, year_input, venue_input, url_input):
+            widget.setEnabled(False)
+        buttons.setEnabled(False)
+        dialog.setCursor(qt["Qt"].CursorShape.WaitCursor)
+        progress("Starting save")
+        try:
+            from .importer import set_manual_metadata
+
+            result = set_manual_metadata(
+                _vault_from_detail(detail),
+                str(detail.get("citekey")),
+                doi=doi_input.text(),
+                authors=authors_input.toPlainText(),
+                year=year_input.text(),
+                venue=venue_input.text(),
+                url=url_input.text(),
+                progress=progress,
+            )
+        except Exception as exc:  # pragma: no cover - defensive UI error handling
+            progress("Save failed")
+            dialog.unsetCursor()
+            buttons.setEnabled(True)
+            for widget in (doi_input, authors_input, year_input, venue_input, url_input):
+                widget.setEnabled(True)
+            box = qt["QMessageBox"](dialog)
+            box.setWindowTitle("Metadata Not Saved")
+            box.setIcon(qt["QMessageBox"].Icon.Warning)
+            box.setText(str(exc))
+            box.setStandardButtons(qt["QMessageBox"].StandardButton.Ok)
+            _style_message_box(qt, box)
+            box.exec()
+            return
+        missing_fields = list(result.get("missing_fields") or [])
+        detail["category"] = "resolved" if not missing_fields else "incomplete"
+        detail["status"] = result.get("citation_status") or detail.get("status")
+        detail["source"] = "manual"
+        detail["message"] = (
+            "manual metadata saved"
+            if not missing_fields
+            else f"manual metadata saved; still missing {', '.join(missing_fields)}"
+        )
+        detail["doi"] = result.get("doi")
+        detail["authors"] = result.get("authors") or []
+        detail["year"] = result.get("year")
+        detail["venue"] = result.get("venue")
+        detail["url"] = result.get("url")
+        detail["missing_fields"] = missing_fields
+        detail["paper_path"] = result.get("paper") or detail.get("paper_path")
+        progress("Refreshing follow-up list")
+        refresh()
+        progress("Done")
+        dialog.unsetCursor()
+        dialog.accept()
+
+    buttons.accepted.connect(save)
+    buttons.rejected.connect(dialog.reject)
+    dialog.show()
+    dialog.raise_()
+    dialog.activateWindow()
+    dialog.exec()
 
 
 def _resolve_missing_abstract(

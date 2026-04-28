@@ -17,8 +17,10 @@ from .citations import (
     EnrichmentProgress,
     EnrichmentResult,
     abstract_fingerprint,
+    card_fingerprint,
     enrich_cards,
     extract_pdf_keywords,
+    refresh_metadata_completeness,
 )
 from .matcher import (
     best_pdf_match,
@@ -69,6 +71,7 @@ from .sources import (
     ensure_relative,
     infer_run_title,
     infer_topics,
+    infer_year,
     load_import_manifests,
     load_run_records,
     load_source_cards,
@@ -2793,12 +2796,132 @@ def _enrichment_detail(
         "pdf": card.pdf,
         "pdf_file": str(paths.vault / card.pdf) if card.pdf else None,
         "doi": card.doi,
+        "authors": list(card.authors),
+        "authors_preview": card.authors_preview,
+        "year": card.year,
+        "venue": card.venue,
+        "url": card.url,
         "source": source,
         "missing_fields": list(result.missing_fields or card.enrichment_missing),
         "keywords": list(card.keywords),
         "message": result.message,
         "changed": result.changed,
         "skipped": result.skipped,
+    }
+
+
+def _clean_manual_field(value: str | int | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = clean_markdown_text(str(value))
+    return cleaned or None
+
+
+def _parse_manual_authors(authors: str | Iterable[str] | None) -> list[str] | None:
+    if authors is None:
+        return None
+    if isinstance(authors, str):
+        text = authors.replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not text:
+            return None
+        parts = re.split(r"\n+|;|\s+and\s+|\s*&\s*", text)
+    else:
+        parts = list(authors)
+    cleaned = [clean_markdown_text(str(part)) for part in parts]
+    return [author for author in cleaned if author]
+
+
+def set_manual_metadata(
+    vault: Path | str,
+    citekey: str,
+    *,
+    doi: str | None = None,
+    authors: str | Iterable[str] | None = None,
+    year: str | int | None = None,
+    venue: str | None = None,
+    url: str | None = None,
+    progress: ManualSaveProgress | None = None,
+) -> dict[str, Any]:
+    _manual_save_step(progress, "Opening vault")
+    paths = initialize_vault(vault)
+    _manual_save_step(progress, "Normalizing metadata fields")
+    cleaned_doi = _clean_manual_field(doi)
+    normalized_doi = normalize_doi(cleaned_doi) if cleaned_doi else None
+    if normalized_doi and not normalized_doi.startswith("10."):
+        raise ValueError("Manual DOI must look like a DOI, for example 10.xxxx/example.")
+    cleaned_authors = _parse_manual_authors(authors)
+    cleaned_year = infer_year(year)
+    cleaned_venue = _clean_manual_field(venue)
+    cleaned_url = _clean_manual_field(url)
+    if not any([normalized_doi, cleaned_authors, cleaned_year, cleaned_venue, cleaned_url]):
+        raise ValueError("Provide at least one metadata field to save.")
+
+    _manual_save_step(progress, "Loading paper cards")
+    cards = load_source_cards(paths)
+    card = next((item for item in cards if item.citekey == citekey or item.slug == citekey), None)
+    if card is None:
+        raise ValueError(f"No paper card found for citekey or slug: {citekey}")
+
+    _manual_save_step(progress, "Updating citation metadata")
+    if normalized_doi:
+        card.doi = normalized_doi
+        card.doi_status = "verified"
+        card.doi_source = "manual"
+        card.doi_confidence = 1.0
+    elif card.doi and card.doi_status == "ambiguous":
+        card.doi = normalize_doi(card.doi)
+        card.doi_status = "verified"
+        card.doi_source = card.doi_source or "manual"
+        card.doi_confidence = card.doi_confidence or 1.0
+    elif not card.doi and card.doi_status == "ambiguous":
+        card.doi_status = "missing"
+        card.doi_source = None
+        card.doi_confidence = None
+    if cleaned_authors is not None:
+        card.authors = cleaned_authors
+        card.authors_preview = ", ".join(cleaned_authors)
+    if cleaned_year:
+        card.year = cleaned_year
+    if cleaned_venue:
+        card.venue = cleaned_venue
+    if cleaned_url:
+        card.url = cleaned_url
+
+    checked_at = _now_iso()
+    card.citation_status = "verified"
+    card.citation_source = "manual"
+    card.citation_last_checked = checked_at
+    card.citation_enriched_at = checked_at
+    card.citation_retries = 0
+    card.citation_input_fingerprint = card_fingerprint(card)
+    card.enrichment_refresh = False
+    refresh_metadata_completeness(card)
+    if card.enrichment_missing:
+        card.citation_status = "generated"
+        refresh_metadata_completeness(card)
+        card.citation_skip_reason = (
+            f"manual metadata incomplete: {', '.join(card.enrichment_missing)}"
+        )
+    else:
+        card.citation_skip_reason = None
+
+    _manual_save_step(progress, "Writing paper card")
+    _save_card(paths, card)
+    _manual_save_step(progress, "Rebuilding derived files")
+    _rebuild_indexes(paths, progress=progress)
+    _manual_save_step(progress, "Manual save complete")
+    return {
+        "citekey": card.citekey or card.slug,
+        "paper": f"papers/{card.slug}.md",
+        "doi": card.doi,
+        "authors": list(card.authors),
+        "year": card.year,
+        "venue": card.venue,
+        "url": card.url,
+        "citation_status": card.citation_status,
+        "doi_status": card.doi_status,
+        "enrichment_status": card.enrichment_status,
+        "missing_fields": list(card.enrichment_missing),
     }
 
 

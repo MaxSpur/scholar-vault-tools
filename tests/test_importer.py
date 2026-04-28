@@ -24,6 +24,7 @@ from scholar_vault.importer import (
     resume_run,
     set_manual_abstract,
     set_manual_keywords,
+    set_manual_metadata,
     undo_run,
 )
 from scholar_vault.models import (
@@ -986,6 +987,59 @@ def test_set_manual_keywords_normalizes_and_rerenders_card(tmp_path: Path) -> No
     assert "## Keywords\n- Retrieval\n- Benchmarking\n- Collaborative analysis" in rendered
     assert "Normalizing keyword separators" in progress_steps
     assert "Writing topic pages" in progress_steps
+    assert progress_steps[-1] == "Manual save complete"
+
+
+def test_set_manual_metadata_resolves_ambiguous_card(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    card = SourceCard(
+        slug="smith2024rag",
+        citekey="smith2024rag",
+        title="Evaluating Retrieval Augmented Generation Systems",
+        doi_status="ambiguous",
+        citation_status="ambiguous",
+        citation_skip_reason="ambiguous crossref candidate score=82",
+        enrichment_status="ambiguous",
+        enrichment_missing=["doi", "authors", "year", "venue"],
+    )
+    (paths.papers / "smith2024rag.md").write_text(
+        render_paper_markdown(card),
+        encoding="utf-8",
+    )
+
+    progress_steps: list[str] = []
+    summary = set_manual_metadata(
+        vault,
+        "smith2024rag",
+        doi="https://doi.org/10.1145/example",
+        authors="Jane Smith; John Doe",
+        year="2024",
+        venue="Proceedings of Example Research",
+        url="https://example.com/paper",
+        progress=progress_steps.append,
+    )
+    saved = load_source_cards(initialize_vault(vault))[0]
+    rendered = (paths.papers / "smith2024rag.md").read_text(encoding="utf-8")
+
+    assert summary["missing_fields"] == []
+    assert saved.doi == "10.1145/example"
+    assert saved.authors == ["Jane Smith", "John Doe"]
+    assert saved.year == 2024
+    assert saved.venue == "Proceedings of Example Research"
+    assert saved.url == "https://example.com/paper"
+    assert saved.doi_status == "verified"
+    assert saved.doi_source == "manual"
+    assert saved.citation_status == "verified"
+    assert saved.citation_source == "manual"
+    assert saved.enrichment_status == "complete"
+    assert saved.enrichment_missing == []
+    assert saved.metadata_lock is False
+    assert saved.citation_skip_reason is None
+    assert "- DOI: [10.1145/example](https://doi.org/10.1145/example)" in rendered
+    assert "- Metadata: `complete`" in rendered
+    assert "Normalizing metadata fields" in progress_steps
+    assert "Writing index pages" in progress_steps
     assert progress_steps[-1] == "Manual save complete"
 
 
