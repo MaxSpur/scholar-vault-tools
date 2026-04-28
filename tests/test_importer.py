@@ -983,9 +983,9 @@ def test_proposal_sprint_scaffold_creates_and_updates_workspace(tmp_path: Path) 
     assert "Original User Notes - Verbatim" in (
         proposal / "raw-idea.md"
     ).read_text(encoding="utf-8")
-    assert "[Source matrix](source-matrix.md)" in (
-        proposal / "outline.md"
-    ).read_text(encoding="utf-8")
+    outline_text = (proposal / "outline.md").read_text(encoding="utf-8")
+    assert "evidence_matrix: source-matrix.md" in outline_text
+    assert "[Source matrix](source-matrix.md)" in outline_text
 
     (proposal / "outline.md").write_text("# Custom Outline\n", encoding="utf-8")
     updated = proposal_sprint_scaffold(vault, "proposals/pepr-mobidec")
@@ -1043,6 +1043,82 @@ def test_proposal_audit_reports_evidence_gaps(tmp_path: Path) -> None:
     assert summary["issue_counts"]["draft_claims_using_scholar_labs_summaries"] == 1
     assert summary["issues"]["outline_citations_without_pdf_reading_notes"][0]["paper"] == (
         "papers/unread-paper.md"
+    )
+
+
+def test_proposal_audit_follows_outline_evidence_matrix_field(tmp_path: Path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="read-paper",
+            citekey="readpaper",
+            title="Read Paper",
+            notes="### PDF reading notes - 2026-04-28\nEvidence from the PDF.",
+        ),
+    )
+    proposal = paths.proposals / "pepr-mobidec"
+    proposal.mkdir(parents=True)
+    (proposal / "proposal-outline.md").write_text(
+        "---\n"
+        "type: proposal_outline\n"
+        "evidence_matrix: syntheses/pepr-evidence-matrix.md\n"
+        "---\n\n"
+        "# Proposal Outline\n\n"
+        "- Claim from [Read Paper](../../papers/read-paper.md).\n",
+        encoding="utf-8",
+    )
+    (proposal / "raw-idea.md").write_text(
+        "# Raw Idea\n\n## Original User Notes - Verbatim\n\nUser note.",
+        encoding="utf-8",
+    )
+    (paths.syntheses / "pepr-evidence-matrix.md").write_text(
+        "# Evidence Matrix\n\n"
+        "| Source | Proposal role |\n"
+        "| --- | --- |\n"
+        "| [Read Paper](../papers/read-paper.md) | Proposal role: Core |\n"
+        "| [Broken](../papers/missing-paper.md) | Proposal role: Supporting |\n",
+        encoding="utf-8",
+    )
+
+    summary = proposal_audit(vault, "proposals/pepr-mobidec")
+
+    assert summary["counts"]["source_matrix_files"] == 1
+    assert "syntheses/pepr-evidence-matrix.md" in summary["files"]
+    assert summary["issue_counts"]["read_papers_without_proposal_role"] == 0
+    assert summary["issue_counts"]["broken_source_matrix_links"] == 1
+    assert summary["issues"]["broken_source_matrix_links"][0]["file"] == (
+        "syntheses/pepr-evidence-matrix.md"
+    )
+
+
+def test_proposal_audit_reports_missing_evidence_matrix_target(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    proposal = paths.proposals / "pepr-mobidec"
+    proposal.mkdir(parents=True)
+    (proposal / "proposal-outline.md").write_text(
+        "---\n"
+        "type: proposal_outline\n"
+        "evidence_matrix: syntheses/missing-evidence-matrix.md\n"
+        "---\n\n"
+        "# Proposal Outline\n",
+        encoding="utf-8",
+    )
+    (proposal / "raw-idea.md").write_text(
+        "# Raw Idea\n\n## Original User Notes - Verbatim\n\nUser note.",
+        encoding="utf-8",
+    )
+
+    summary = proposal_audit(vault, "proposals/pepr-mobidec")
+
+    assert summary["counts"]["source_matrix_files"] == 0
+    assert summary["issue_counts"]["broken_source_matrix_links"] == 1
+    assert summary["issues"]["broken_source_matrix_links"][0]["message"] == (
+        "evidence_matrix link does not resolve"
     )
 
 

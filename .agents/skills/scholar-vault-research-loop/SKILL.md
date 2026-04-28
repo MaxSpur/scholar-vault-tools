@@ -37,7 +37,7 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
    - `tasks/<date>-research-gaps.md` for follow-up reading, missing evidence, or next Scholar Labs prompts.
 7. Improve retrieval labels through `topics` only when the PDF evidence supports the label. Use `$scholar-vault-curate-topics` for broad cleanup.
 8. Run `scholar-vault concept-index` after concept-only edits, or `scholar-vault rebuild` after broader edits, then re-run `scholar-vault status --json` to confirm generated views are refreshed.
-9. For proposal workspaces, start with `scholar-vault proposal-sprint scaffold <slug>`, then run `scholar-vault proposal-audit proposals/<slug>` and fix structural evidence gaps before treating the draft as ready.
+9. For proposal workspaces, start with `scholar-vault proposal-sprint scaffold <slug>`, point outline frontmatter `evidence_matrix` at any shared source matrix such as `syntheses/<matrix>.md`, then run `scholar-vault proposal-audit proposals/<slug>` and fix structural evidence gaps before treating the draft as ready.
 
 ## Durable Note Shapes
 

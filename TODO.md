@@ -75,4 +75,5 @@
 - [x] Add `proposal-audit` for proposal evidence layer checks.
 - [x] Initialize new vaults with the full vault-specific `AGENTS.md` operating guide.
 - [x] Add `notes-missing`, `concept-index`, and `proposal-sprint scaffold` helper commands for PDF-reading and proposal sprint workflows.
+- [x] Make `proposal-audit` follow `evidence_matrix` outline frontmatter so shared source matrices under `syntheses/` are audited.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

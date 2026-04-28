@@ -467,14 +467,19 @@ metacards without a full rebuild.
 
 `proposal-sprint scaffold <slug>` creates or updates
 `proposals/<slug>/index.md`, `outline.md`, `source-matrix.md`,
-`reading-log.md`, and `raw-idea.md`. It appends missing required sections but
-does not replace existing proposal prose, then rebuilds derived navigation.
+`reading-log.md`, and `raw-idea.md`. New outlines include
+`evidence_matrix: source-matrix.md`; you can point that field at a shared matrix
+such as `syntheses/<matrix>.md`. The scaffold appends missing required sections
+but does not replace existing proposal prose, then rebuilds derived navigation.
 
 `proposal-audit` is read-only. It checks a proposal workspace for cited papers
 without `### PDF reading notes`, read papers without `Proposal role: Core`,
 `Proposal role: Supporting`, or `Proposal role: Discarded`, broken source-matrix
 links, missing `Original User Notes - Verbatim` in the raw idea card, and draft
 claims that still cite Scholar Labs summaries instead of PDF-grounded evidence.
+In addition to `*matrix*.md` files inside the proposal folder, it follows
+`evidence_matrix` / `evidence_matrices` frontmatter on outline files, so a
+proposal can audit a shared source matrix under `syntheses/`.
 
 Enrich canonical paper cards with citation metadata, abstracts, and publication keywords:
 

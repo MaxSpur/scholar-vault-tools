@@ -110,6 +110,13 @@ Start or refresh a workspace with:
 scholar-vault proposal-sprint scaffold <slug>
 ```
 
+Set `evidence_matrix` in an outline's frontmatter when the proposal should
+audit a shared source matrix, for example:
+
+```yaml
+evidence_matrix: syntheses/<matrix>.md
+```
+
 Before treating proposal evidence as ready, run:
 
 ```fish
@@ -120,7 +127,7 @@ The audit should pass or be consciously addressed. It checks for:
 
 - cited papers without `### PDF reading notes`;
 - read papers without `Proposal role: Core`, `Proposal role: Supporting`, or `Proposal role: Discarded`;
-- broken source-matrix links;
+- broken source-matrix links, including matrices referenced by `evidence_matrix`;
 - raw idea cards missing `Original User Notes - Verbatim`;
 - draft claims that still cite Scholar Labs summaries instead of PDF-grounded evidence.
 

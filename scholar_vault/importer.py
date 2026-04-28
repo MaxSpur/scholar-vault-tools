@@ -3652,6 +3652,7 @@ def apply_topic_map(
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\((<?[^)>\n]+(?:\.md|/)?>?)\)")
 PAPER_PATH_RE = re.compile(r"papers/[^)\]>\s]+\.md")
 PDF_READING_NOTES_RE = re.compile(r"^###\s+PDF reading notes\b", re.IGNORECASE | re.MULTILINE)
+VAULT_NOTE_ROOTS = {"concepts", "papers", "proposals", "runs", "syntheses", "tasks"}
 PROPOSAL_ROLE_RE = re.compile(
     r"Proposal role\s*:\s*(Core|Supporting|Discarded)\b",
     re.IGNORECASE,
@@ -3749,7 +3750,42 @@ def _resolve_markdown_target(paths: VaultPaths, source: Path, target: str) -> Pa
     target_path = Path(target)
     if target_path.is_absolute():
         return target_path.resolve()
+    if target_path.parts and target_path.parts[0] in VAULT_NOTE_ROOTS:
+        return (paths.vault / target_path).resolve()
     return (source.parent / target_path).resolve()
+
+
+def _evidence_matrix_targets(path: Path) -> list[str]:
+    frontmatter, _ = read_frontmatter_markdown(path)
+    targets = _as_string_list(frontmatter.get("evidence_matrix"))
+    targets.extend(_as_string_list(frontmatter.get("evidence_matrices")))
+    return targets
+
+
+def _collect_declared_evidence_matrices(
+    paths: VaultPaths,
+    outline_files: list[Path],
+) -> tuple[list[Path], list[dict[str, Any]]]:
+    matrices: list[Path] = []
+    issues: list[dict[str, Any]] = []
+    seen: set[Path] = set()
+    for outline_file in outline_files:
+        for target in _evidence_matrix_targets(outline_file):
+            resolved = _resolve_markdown_target(paths, outline_file, target)
+            if resolved.exists() and resolved.suffix.casefold() == ".md":
+                if resolved not in seen:
+                    matrices.append(resolved)
+                    seen.add(resolved)
+                continue
+            issues.append(
+                _proposal_issue(
+                    outline_file,
+                    paths.vault,
+                    "evidence_matrix link does not resolve",
+                    target=target,
+                )
+            )
+    return matrices, issues
 
 
 def _line_for_ref(text: str, ref: str) -> str:
@@ -3832,6 +3868,7 @@ def _proposal_scaffold_texts(slug: str, title: str) -> dict[str, str]:
             type: proposal_outline
             title: {json.dumps(f"{title} Outline")}
             proposal: {proposal_yaml}
+            evidence_matrix: source-matrix.md
             created: {today}
             ---
 
@@ -4018,9 +4055,21 @@ def proposal_audit(
         f"papers/{card.slug}.md": (paths.papers / f"{card.slug}.md").read_text(encoding="utf-8")
         for card in load_source_cards(paths)
     }
-    file_texts = {path: path.read_text(encoding="utf-8") for path in files}
     outline_files = [path for path in files if "outline" in path.name.casefold()]
-    source_matrix_files = [path for path in files if "matrix" in path.name.casefold()]
+    local_source_matrix_files = [path for path in files if "matrix" in path.name.casefold()]
+    declared_source_matrix_files, broken_matrix_links = _collect_declared_evidence_matrices(
+        paths,
+        outline_files,
+    )
+    source_matrix_files = sorted(
+        {*local_source_matrix_files, *declared_source_matrix_files},
+        key=lambda path: _display_path(path, paths.vault),
+    )
+    files = sorted(
+        {*files, *declared_source_matrix_files},
+        key=lambda path: _display_path(path, paths.vault),
+    )
+    file_texts = {path: path.read_text(encoding="utf-8") for path in files}
     raw_idea_files = [
         path
         for path in files
@@ -4065,7 +4114,6 @@ def proposal_audit(
         if not role_lookup.get(ref)
     ]
 
-    broken_matrix_links = []
     for file in source_matrix_files:
         for target in _extract_markdown_targets(file_texts[file]):
             resolved = _resolve_markdown_target(paths, file, target)

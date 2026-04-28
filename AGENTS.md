@@ -47,6 +47,6 @@
 - Use `resolve-citation` / `set-metadata`, `set-abstract`, `set-keywords`, `topic-map --apply`, `attach-pdf`, `rerun`, and `clean-staging` instead of hand-editing tool-managed metadata, topic batches, or PDF state.
 - Any workflow that refines factual claims, methods, findings, limitations, or source connections should read the linked PDF, not rely only on Scholar Labs summaries or existing card prose.
 - For PDF-grounded research work, durable agent-written metacards may live in `concepts/`, `syntheses/`, and `tasks/`. These folders are not generated; keep them concise, linked, and evidence-grounded. Use `concept-index` for concept-only refreshes and `rebuild` after broader edits.
-- For proposal workspaces under `proposals/`, use `proposal-sprint scaffold <slug>` to create/update the outline, source matrix, reading log, and raw idea card, then use `proposal-audit` before treating outlines or draft claims as evidence-ready.
+- For proposal workspaces under `proposals/`, use `proposal-sprint scaffold <slug>` to create/update the outline, source matrix, reading log, and raw idea card, set outline `evidence_matrix` when the source matrix lives elsewhere such as `syntheses/`, then use `proposal-audit` before treating outlines or draft claims as evidence-ready.
 - Rebuild should rerender existing generated paper cards from the current template, not only indexes. Template-only improvements such as `## Quick access` must apply to existing cards.
 - Maintain idempotence for import commands and rebuilds.
