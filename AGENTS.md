@@ -10,8 +10,11 @@
 ## Working Rules
 
 - Before running any `scholar-vault ...` CLI command, make sure the `scholar-vault` Conda environment is active in that shell (`conda activate scholar-vault`). If the shell cannot resolve the command, use `/Users/MadMax/miniforge3/condabin/conda run -n scholar-vault scholar-vault ...` instead of retrying plain `scholar-vault`.
+- Prefer `scholar-vault status --json`, `scholar-vault pdf-doctor --json`, and dry-run `scholar-vault topic-map --mapping ...` for agent orientation before manually scanning many generated files.
 - Keep `papers/` cards as the canonical archive object. Treat runs, indexes, and exports as derived views.
 - For Scholar Labs imports, keep all candidate results on the run record and create canonical `papers/*.md` cards only for selected results by default.
+- In the selected-only Scholar Labs workflow, candidate results without paper cards are discovery context, not maintenance defects. Do not treat `_indexes/missing-pdfs.md` as an action queue unless the user explicitly wants to revisit candidates or there are real, non-duplicate PDFs left in staging.
+- Historical unmatched manifest entries are audit records from prior imports. They are actionable only when the referenced PDF still exists in staging and is not already a duplicate of a vault PDF.
 - Preserve raw inputs where practical. Scholar Labs exports copied into vault storage should stay immutable.
 - Keep `browser/scholar_labs_json_exporter.js` Scholar-specific. It depends on Google Scholar `gs_*` selectors and should not be generalized without testing on a real Scholar Labs results page.
 - Keep raw failed Scholar Labs exports for debugging, but do not import them into runs or paper cards.
@@ -34,10 +37,12 @@
 - Citation enrichment should preserve Scholar Labs summaries, rationale, provenance, and topics. Respect `metadata_lock: true`, `citation_status: verified`, fingerprints, and retry limits unless the user passes the explicit override flags.
 - Treat `enrichment_refresh: true` on a paper card as a user-requested one-card retry. It should bypass normal citation/abstract skip logic, refresh provider caches for that card, and clear after processing.
 - Mark generated but incomplete metadata with `enrichment_status: incomplete` and list missing fields in `enrichment_missing`, especially when `venue` is still a Scholar preview string.
+- `enrichment_status: missing` is not itself a follow-up issue. It means citation metadata has not been completed/generated for that card, or the field was stale before rebuild. Use `status` issue counts, `enrich --dry-run`, and actionable UI rows rather than treating every `missing` status as a defect.
 - When a DOI points to a preprint/repository record with incomplete venue metadata, enrichment may promote a strong published-version match if title/author/year checks are strong enough.
 - Abstract enrichment is part of `enrich`; `--only missing-abstract` focuses on that queue. Treat abstracts as separate metadata from Scholar Labs summaries.
 - Preserve non-empty manual abstracts and `abstract_lock: true` records unless the user explicitly passes `--force`. Use `--refresh-abstracts` for deliberate provider upgrades such as replacing `pdf_extracted` with Crossref.
 - Keep raw citation provider responses under `raw/metadata/<citekey>/` and use cached responses before making repeated remote requests.
 - Keep generated Markdown Obsidian-safe: YAML frontmatter, plain links, no plugin-only syntax.
+- Use `resolve-citation` / `set-metadata`, `set-abstract`, `set-keywords`, `topic-map --apply`, `attach-pdf`, `rerun`, and `clean-staging` instead of hand-editing tool-managed metadata, topic batches, or PDF state.
 - Rebuild should rerender existing generated paper cards from the current template, not only indexes. Template-only improvements such as `## Quick access` must apply to existing cards.
 - Maintain idempotence for import commands and rebuilds.

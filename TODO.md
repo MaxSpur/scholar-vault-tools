@@ -63,4 +63,9 @@
 - [x] Reject truncated abstract snippets and re-queue existing bad abstracts for manual follow-up when no complete source is found.
 - [x] Let staging-match reruns hide the parent picker so import reports and follow-up windows remain interactive.
 - [x] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
+- [x] Add read-only `status` / `doctor` diagnostics with JSON output for agent orientation.
+- [x] Add `pdf-doctor` for orphan, duplicate, missing, staged, and repeated-unmatched PDF triage.
+- [x] Add `topic-map` for dry-run/apply cleanup of noisy topic frontmatter.
+- [x] Add `resolve-citation` as a safe citation metadata correction alias with optional metadata locking.
+- [x] Add a `scholar-vault-pdf-triage` Codex skill for staging/PDF repair workflows.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

@@ -26,9 +26,9 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 
 ## Workflow
 
-1. Orient from `AGENTS.md`, `llms.txt`, `llms-full.txt`, and `_indexes/`.
-2. Read `_indexes/missing-pdfs.md` for Scholar Labs candidates without canonical PDFs.
-3. Read `_indexes/unmatched.md` for staged PDFs that did not match run results.
+1. Orient from `AGENTS.md`, `llms.txt`, `llms-full.txt`, `scholar-vault status --json`, and `_indexes/`.
+2. Treat `_indexes/missing-pdfs.md` as optional Scholar Labs candidate discovery context, not a maintenance defect list.
+3. Treat `_indexes/unmatched.md` as historical staging-manifest audit data. Check `scholar-vault pdf-doctor --json` before calling it actionable.
 4. Search `papers/*.md` for `enrichment_status: incomplete`, `citation_status: ambiguous`, `citation_status: unresolved`, `abstract_status: missing`, `abstract_status: ambiguous`, `publication_keywords_status: missing`, and `pdf_status: missing`.
 5. Read relevant `runs/**/index.yaml` or run notes to understand candidate rank, prompt context, and rationale.
 6. Check existing `syntheses/` and `tasks/` if present to avoid duplicating active work.
@@ -38,14 +38,14 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 
 Prioritize gaps that materially improve the vault as an LLM-readable wiki:
 
-- Missing PDFs for high-rank or strongly relevant Scholar Labs candidates.
-- Unmatched staged PDFs with plausible run associations.
+- Active non-duplicate PDFs still in staging after import runs.
+- User-requested next-import candidates from Scholar Labs run results.
 - Canonical cards with attached PDFs but incomplete/ambiguous citation metadata.
 - Cards with missing abstracts, missing publication keywords, or no useful notes.
 - Topic noise that blocks retrieval or synthesis.
 - Areas where syntheses show thin evidence, conflicting claims, or outdated coverage.
 
-Separate canonical paper issues from candidate-result issues. A run candidate without a `paper_card` is not yet a canonical source.
+Separate canonical paper issues from candidate-result issues. A run candidate without a `paper_card` is not yet a canonical source, and is only worth tasking when the user wants another import/search pass. Historical unmatched rows are only worth tasking when the staged file still exists and is not a vault duplicate.
 
 ## CLI Helpers
 
@@ -53,6 +53,8 @@ Use these when useful:
 
 ```fish
 conda activate scholar-vault
+scholar-vault status --json
+scholar-vault pdf-doctor --json
 scholar-vault runs
 scholar-vault match-staging
 scholar-vault enrich --dry-run
@@ -78,7 +80,10 @@ created: "<YYYY-MM-DD>"
 - <Action> | Evidence: <links> | Suggested command or search.
 
 ## PDF triage
-- <candidate or staged PDF issue>
+- <active non-duplicate staged PDF issue, or "none">
+
+## Optional candidate discovery
+- <Scholar Labs candidate to revisit only if the user wants more imports>
 
 ## Metadata and card follow-up
 - <card link> - <missing/ambiguous state> - <next command>

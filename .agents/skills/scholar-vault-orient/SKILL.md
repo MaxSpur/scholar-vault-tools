@@ -1,6 +1,6 @@
 ---
 name: scholar-vault-orient
-description: Orient an agent inside a Scholar Vault research vault. Use when Codex needs to inspect the vault structure, find relevant papers, runs, topics, missing PDFs, unmatched PDFs, metadata issues, or prepare for later synthesis/refinement work without editing files.
+description: Orient an agent inside a Scholar Vault research vault. Use when Codex needs to inspect the vault structure, find relevant canonical papers, Scholar Labs runs, topics, active staging/PDF issues, optional candidate discovery context, metadata issues, or prepare for later synthesis/refinement work without editing files.
 ---
 
 # Scholar Vault Orient
@@ -42,6 +42,9 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 - `_indexes/`, `_exports/`, `topics/`, `llms.txt`, and `llms-full.txt` are generated or derived views.
 - `topics` on paper cards are prompt/navigation labels, not publication keywords. `keywords` are publication/provider/PDF keywords.
 - `## Abstract` is provider/PDF/manual metadata. `## Scholar Labs summary` explains why Scholar Labs surfaced the source. Keep those concepts separate.
+- Candidate results without paper cards are optional discovery context in the selected-only workflow. They are not canonical source defects unless the user wants to revisit those Scholar Labs suggestions.
+- Historical unmatched manifest entries are actionable only when matching non-duplicate PDFs still exist in staging.
+- `enrichment_status: missing` is a diagnostic/stale-or-not-yet-complete state, not automatically a follow-up issue. Prefer `status --json` issue counts and `enrich --ui` actionable rows.
 
 ## CLI Context
 
@@ -49,6 +52,7 @@ Prefer the configured CLI when it answers the question faster than manual parsin
 
 ```fish
 conda activate scholar-vault
+scholar-vault status --json
 scholar-vault configure
 scholar-vault runs
 scholar-vault enrich --dry-run
@@ -64,8 +68,8 @@ When orienting, include:
 - Vault root and relevant indexes read.
 - Relevant runs, with run note links and the user-facing run titles.
 - Relevant canonical papers, with paper-card links, PDF status, enrichment status, abstract status, and topics.
-- Candidate or missing-PDF results when they matter, clearly labeled as not canonical papers.
-- Unmatched or staged PDF issues when present.
+- Candidate results only when the user is deciding what to import next, clearly labeled as optional non-canonical discovery context.
+- Unmatched/staged PDF issues only when active, non-duplicate PDFs remain in staging.
 - Recommended next files or commands for the user's goal.
 
 Keep the report factual. Mark uncertainty instead of filling gaps from memory.

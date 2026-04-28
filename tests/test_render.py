@@ -1,4 +1,6 @@
 from scholar_vault.models import (
+    ImportManifest,
+    ImportManifestEntry,
     Link,
     RationalePoint,
     RunRecord,
@@ -6,7 +8,12 @@ from scholar_vault.models import (
     SourceCard,
     SummarySource,
 )
-from scholar_vault.render import render_paper_markdown, render_run_markdown
+from scholar_vault.render import (
+    render_missing_pdfs,
+    render_paper_markdown,
+    render_run_markdown,
+    render_unmatched_index,
+)
 
 
 def test_render_paper_markdown_contains_required_sections() -> None:
@@ -124,3 +131,47 @@ def test_render_run_markdown_separates_selected_and_candidate_results() -> None:
     assert "Metadata: `incomplete` (missing venue)" in rendered
     assert "[pdfs/smith2024rag.pdf](../../pdfs/smith2024rag.pdf)" in rendered
     assert "Grounded Generation from Local Knowledge Stores" in rendered
+
+
+def test_generated_maintenance_indexes_label_optional_and_historical_queues() -> None:
+    run = RunRecord(
+        slug="2026-04-22_rag",
+        date="2026-04-22",
+        prompt="retrieval augmented generation",
+        exported_at="2026-04-22T10:00:00+02:00",
+        export_file="/tmp/export.json",
+        raw_export_file="raw/scholar-labs/run.json",
+        staging_folder="/tmp/staging",
+        result_count=1,
+        results=[
+            RunResultRecord(
+                rank=1,
+                title="Grounded Generation from Local Knowledge Stores",
+                authors_preview="Omar Lee",
+                status="candidate",
+                pdf_status="missing",
+            )
+        ],
+    )
+    manifest = ImportManifest(
+        run_id="2026-04-22_rag",
+        export_file="/tmp/export.json",
+        staging_folder="/tmp/staging",
+        created_at="2026-04-22T10:00:00+02:00",
+        entries=[
+            ImportManifestEntry(
+                original_path="/tmp/staging/example.pdf",
+                proposed_match="Grounded Generation from Local Knowledge Stores",
+                score=0,
+                decision="rejected",
+            )
+        ],
+    )
+
+    missing = render_missing_pdfs([run])
+    unmatched = render_unmatched_index([manifest])
+
+    assert "# Candidate Results Without Cards" in missing
+    assert "optional discovery context" in missing
+    assert "# Historical Unmatched Staging PDFs" in unmatched
+    assert "historical audit records" in unmatched

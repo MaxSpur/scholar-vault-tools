@@ -35,10 +35,11 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 
 1. Read `AGENTS.md`, `_indexes/topics.md`, `_indexes/papers.md`, and relevant paper cards.
 2. Identify generic labels, near-duplicates, plural/case variants, overly narrow one-off labels, and labels that mix method, task, domain, and evidence type.
-3. Propose a compact mapping before broad edits when the change affects many cards.
-4. Apply agreed or obvious cleanup only to `topics` frontmatter in `papers/*.md`.
-5. Preserve paper order and other frontmatter fields as much as practical.
-6. Run `scholar-vault rebuild` after edits so `topics/`, `_indexes/`, `_exports/`, and `llms*.txt` reflect the new taxonomy.
+3. Prefer `scholar-vault topic-map` for counts and `scholar-vault topic-map --mapping <yaml>` for broad dry-runs.
+4. Propose a compact mapping before broad edits when the change affects many cards.
+5. Apply agreed or obvious cleanup with `scholar-vault topic-map --mapping <yaml> --apply` when possible. For one-off edits, edit only `topics` frontmatter in `papers/*.md`.
+6. Preserve paper order and other frontmatter fields as much as practical.
+7. Run `scholar-vault rebuild` after manual edits so `topics/`, `_indexes/`, `_exports/`, and `llms*.txt` reflect the new taxonomy.
 
 ## Safe Defaults
 
@@ -57,6 +58,9 @@ Use:
 
 ```fish
 conda activate scholar-vault
+scholar-vault topic-map
+scholar-vault topic-map --mapping <topic-map.yaml>
+scholar-vault topic-map --mapping <topic-map.yaml> --apply
 scholar-vault rebuild
 ```
 

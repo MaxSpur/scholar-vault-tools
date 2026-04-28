@@ -107,9 +107,17 @@ def render_missing_pdfs(runs: list[RunRecord]) -> str:
     missing = [
         (run, result) for run in runs for result in run.results if result.pdf_status != "attached"
     ]
-    lines = ["# Missing PDFs", ""]
+    lines = [
+        "# Candidate Results Without Cards",
+        "",
+        "These are Scholar Labs results that were not selected/imported into canonical paper "
+        "cards. In the selected-only workflow this is expected: download PDFs only for sources "
+        "you want to keep, then import those staged PDFs. Treat this page as optional discovery "
+        "context, not a maintenance defect, unless you intentionally want to revisit a candidate.",
+        "",
+    ]
     if not missing:
-        lines.append("No candidate results are currently missing PDFs.")
+        lines.append("No candidate results are currently outside the canonical paper set.")
         lines.append("")
         return "\n".join(lines)
     for run, result in missing:
@@ -128,7 +136,15 @@ def render_missing_pdfs(runs: list[RunRecord]) -> str:
 
 
 def render_unmatched_index(manifests: list[ImportManifest]) -> str:
-    lines = ["# Unmatched PDFs", ""]
+    lines = [
+        "# Historical Unmatched Staging PDFs",
+        "",
+        "These rows come from import manifests where a staged PDF was not accepted for that "
+        "specific run. They are historical audit records and may repeat across runs. They are "
+        "actionable only when the referenced file is still present in staging and is not already "
+        "a duplicate of a vault PDF.",
+        "",
+    ]
     rows = [
         (manifest.run_id, entry)
         for manifest in manifests
@@ -145,7 +161,7 @@ def render_unmatched_index(manifests: list[ImportManifest]) -> str:
                 f"`proposed={proposed}`)"
             )
     else:
-        lines.append("No PDFs currently need a match.")
+        lines.append("No historical unmatched staged PDFs are recorded.")
     lines.append("")
     return "\n".join(lines)
 
@@ -163,6 +179,10 @@ def render_vault_agents() -> str:
     return (
         "# Vault maintenance notes\n\n"
         "- Treat `papers/*.md` as canonical source cards.\n"
+        "- Treat Scholar Labs candidates without paper cards as optional discovery context, "
+        "not missing canonical sources.\n"
+        "- Treat unmatched manifest rows as historical audit records unless non-duplicate PDFs "
+        "still exist in staging.\n"
         "- Keep raw inputs under `raw/` immutable where practical.\n"
         "- Update topic pages and indexes through `scholar-vault rebuild` after manual edits.\n"
         "- Preserve provenance in `discovered_in` and run pages instead of burying it in notes.\n"
@@ -188,8 +208,8 @@ def render_llms_txt() -> str:
         "scholar-vault navigation\n"
         "- Canonical sources: papers/\n"
         "- Scholar Labs provenance: runs/\n"
-        "- Candidate results missing PDFs: _indexes/missing-pdfs.md\n"
-        "- Unmatched PDFs: _indexes/unmatched.md\n"
+        "- Optional candidate discovery backlog: _indexes/missing-pdfs.md\n"
+        "- Historical unmatched staging records: _indexes/unmatched.md\n"
         "- Topics: topics/\n"
         "- Derived indexes: _indexes/\n"
         "- Exports: _exports/\n"
@@ -236,7 +256,7 @@ def render_llms_full(
         )
         lines.append(f"  summary: {summary}")
     lines.append("")
-    lines.append("Candidate Results:")
+    lines.append("Candidate Results Without Canonical Cards:")
     for run in runs:
         for result in run.results:
             if result.status == "selected":
@@ -246,7 +266,7 @@ def render_llms_full(
                 f"status={result.status} | pdf_status={result.pdf_status}"
             )
     lines.append("")
-    lines.append("Unmatched PDFs:")
+    lines.append("Historical Unmatched Staging PDFs:")
     for manifest in manifests:
         for entry in manifest.entries:
             if entry.original_path and entry.decision != "accepted":

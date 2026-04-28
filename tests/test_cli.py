@@ -262,6 +262,94 @@ def test_enrich_command_runs_all_passes_by_default(monkeypatch, tmp_path) -> Non
     assert "Keywords: processed=2, changed=1" in result.output
 
 
+def test_doctor_command_outputs_json(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(paths, SourceCard(slug="source", citekey="source", title="Source"))
+
+    result = CliRunner().invoke(app, ["doctor", "--vault", str(vault), "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["counts"]["paper_cards"] == 1
+    assert payload["status_counts"]["enrichment_status"]["incomplete"] == 1
+    assert payload["issue_counts"]["incomplete_enrichment"] == 1
+
+
+def test_pdf_doctor_command_outputs_summary(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    (paths.pdfs / "orphan.pdf").write_bytes(b"%PDF-1.4 orphan\n")
+
+    result = CliRunner().invoke(app, ["pdf-doctor", "--vault", str(vault)])
+
+    assert result.exit_code == 0
+    assert "Orphan PDFs" in result.output
+    assert "pdfs/orphan.pdf" in result.output
+
+
+def test_topic_map_command_dry_runs_mapping(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(slug="source", citekey="source", title="Source", topics=["Find"]),
+    )
+    mapping = tmp_path / "topics.yaml"
+    mapping.write_text("Find: null\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        app,
+        ["topic-map", "--vault", str(vault), "--mapping", str(mapping)],
+    )
+
+    assert result.exit_code == 0
+    assert "Dry-run topic map: 1 card(s) would change" in result.output
+    assert "papers/source.md" in result.output
+
+
+def test_resolve_citation_alias_can_lock_metadata(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+    from scholar_vault.sources import load_source_cards  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(paths, SourceCard(slug="source", citekey="source", title="Source"))
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "resolve-citation",
+            "--vault",
+            str(vault),
+            "--citekey",
+            "source",
+            "--doi",
+            "10.1145/example",
+            "--authors",
+            "Jane Smith",
+            "--year",
+            "2024",
+            "--venue",
+            "Example Venue",
+            "--lock",
+        ],
+    )
+
+    assert result.exit_code == 0
+    saved = load_source_cards(paths)[0]
+    assert saved.metadata_lock is True
+    assert saved.citation_status == "verified"
+    assert "locked" in result.output
+
+
 def test_import_canceled_exits_cleanly(capsys) -> None:
     def action(_report):
         raise ImportCanceled("Run example already exists. Import canceled.")

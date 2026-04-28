@@ -57,6 +57,7 @@ Use the CLI for tool-managed changes:
 
 ```fish
 conda activate scholar-vault
+scholar-vault resolve-citation --citekey <citekey> --doi <doi> --authors "Author A; Author B" --year <year> --venue "<venue>"
 scholar-vault set-abstract --citekey <citekey> --file <text-file> --source-url <url>
 scholar-vault set-keywords --citekey <citekey> --text "Keyword A; Keyword B"
 scholar-vault enrich --citekey <citekey>

@@ -133,6 +133,7 @@ With defaults configured, commands can be shorter:
 scholar-vault import-labs --commit
 scholar-vault import-pdf
 scholar-vault rerun --commit
+scholar-vault status
 scholar-vault rebuild
 scholar-vault enrich --ui
 ```
@@ -226,6 +227,10 @@ verified PDFs into `pdfs/`, archives matched staging PDFs, moves the used JSON
 export into `used/`, and runs citation, abstract, and keyword enrichment unless
 you pass `--no-enrich`.
 
+Candidate results that you did not download as PDFs remain in the run record as
+discovery context. They are not missing canonical sources and do not need action
+unless you later decide to fetch those papers.
+
 5. If PDFs remain in staging, triage them against previous runs:
 
 ```fish
@@ -290,6 +295,8 @@ Default Scholar Labs behavior is now selected-only:
 - If a later Scholar Labs run returns a paper that already has a canonical card and attached PDF, the run links to the existing card and adds that run's summary to the card instead of creating a duplicate.
 - Candidate results stay on the run page unless you explicitly opt in with `--include-without-pdf`.
 - `import-labs` copies accepted PDFs into `pdfs/`, verifies them, and then archives the matched originals out of staging into `raw/imported/`, leaving only unmatched PDFs in staging.
+- `_indexes/missing-pdfs.md` is an optional candidate discovery backlog, not a maintenance defect list. In the normal workflow it mostly means "Scholar Labs suggested these, but you did not download/import them."
+- `_indexes/unmatched.md` is a historical manifest audit of staged PDFs that were not accepted during specific imports. Rows may repeat across runs and are actionable only when the file still exists in staging and is not already a duplicate of a vault PDF.
 - After committed matches, `import-labs`, `import`, `resume`, and `rerun` run citation, abstract, and PDF keyword enrichment for selected paper cards by default. Use `--no-enrich` when you want a faster import that skips provider lookups.
 - Paper-provided keywords from BibTeX, provider metadata, and local PDF text are stored separately from prompt-derived `topics`. If a paper has no publication keywords or index terms, the follow-up UI can mark that absence explicitly so the card no longer looks unfinished.
 - When a PDF is attached to a canonical card, matching previous run results with the same Scholar CID or exact normalized title are linked to that same card. `rebuild` also repairs missing run/card/PDF links for older stale records.
@@ -418,6 +425,22 @@ Regenerate BibTeX only:
 scholar-vault bibtex --vault ~/Documents/Research/scholar-labs-vault
 ```
 
+Inspect vault health for an agent or for manual triage:
+
+```fish
+scholar-vault status --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault status --vault ~/Documents/Research/scholar-labs-vault --json
+scholar-vault doctor --vault ~/Documents/Research/scholar-labs-vault
+```
+
+`status` and `doctor` are aliases. They are read-only and report card counts,
+run counts, actionable metadata/citation/abstract/keyword issues, optional
+candidate discovery counts, historical unmatched manifest entries, active
+staging counts, topic noise, orphan PDFs, duplicate PDF hashes, and
+duplicate-style filenames. `enrichment_status: missing` is a diagnostic state,
+not necessarily a UI follow-up issue; `scholar-vault enrich --ui` shows only
+actionable rows such as ambiguous metadata or missing keywords.
+
 Enrich canonical paper cards with citation metadata, abstracts, and publication keywords:
 
 ```fish
@@ -455,9 +478,24 @@ scholar-vault enrich --ui
 
 The command writes these frontmatter fields: `doi_status`, `doi_source`, `doi_confidence`, `citation_status`, `citation_source`, `citation_last_checked`, `citation_enriched_at`, `citation_input_fingerprint`, `citation_retries`, `citation_skip_reason`, `metadata_lock`, `enrichment_status`, `enrichment_missing`, and `enrichment_refresh`.
 
+For a known manual citation fix, use the safe command path instead of
+hand-editing enrichment frontmatter:
+
+```fish
+scholar-vault resolve-citation --citekey smith2024rag --doi 10.1145/example --authors "Jane Smith; John Doe" --year 2024 --venue "Example Venue"
+scholar-vault resolve-citation --citekey smith2024rag --venue "Example Venue" --lock
+```
+
+`resolve-citation` is an alias of `set-metadata`. It updates DOI/citation
+status, metadata completeness, fingerprints, and derived files through the same
+rebuild path as the GUI manual resolver.
+
 Interpretation:
 
-- `missing`: no DOI or generated citation has been found yet.
+- `missing`: no DOI or generated citation has been found yet, or an older card
+  still carries a stale completeness field before `rebuild` normalizes it. For
+  `enrichment_status`, treat this as diagnostic rather than a manual issue by
+  itself.
 - `detected`: DOI was found locally in frontmatter, URLs, PDF metadata, or PDF text.
 - `resolved`: a remote provider or DOI lookup accepted the DOI.
 - `generated`: BibTeX/CSL metadata was generated but has not been manually verified.
@@ -587,21 +625,29 @@ Labs run they came from, search all previous run results before choosing a run
 to rerun:
 
 ```fish
+scholar-vault pdf-doctor --vault ~/Documents/Research/scholar-labs-vault --staging ~/Downloads/scholar-labs-staging
+scholar-vault pdf-doctor --vault ~/Documents/Research/scholar-labs-vault --staging ~/Downloads/scholar-labs-staging --json
 scholar-vault match-staging --vault ~/Documents/Research/scholar-labs-vault --staging ~/Downloads/scholar-labs-staging
 scholar-vault match-staging --title "Origin-destination flow data smoothing and mapping"
 scholar-vault match-staging --pdf ~/Downloads/scholar-labs-staging/example.pdf --unselected-only
 scholar-vault match-staging --ui
 ```
 
-The terminal form is read-only. It shows the best run/result candidates and
-the `rerun --run ... --ui` command to use when you want the normal match-review
-workflow to import that PDF. With `--ui`, the staging matcher opens a desktop
-search window where you can scan all staged PDFs, choose a single PDF, or type
-a title; clicking `Rerun` starts the normal reviewed import workflow for that
-run. If a GUI import finishes with PDFs still in staging, the run report offers
-the same leftover-PDF search directly. Once a PDF is accepted for a paper card,
-other previous runs that mention the same Scholar CID or normalized title are
-updated to point at the attached card.
+`pdf-doctor` is read-only. It reports orphan vault PDFs, missing card PDF files,
+duplicate PDF hashes, duplicate-style names such as `-2.pdf`, repeated
+unmatched files in import manifests, and staged files already present in the
+vault by hash. If staging is empty, or every staged PDF is already a vault
+duplicate, the historical unmatched entries do not require more matching work.
+The `match-staging` terminal form is also read-only. It shows the best
+run/result candidates and the `rerun --run ... --ui` command to use when you
+want the normal match-review workflow to import a remaining non-duplicate
+staged PDF. With `--ui`, the staging matcher opens a desktop search window
+where you can scan all staged PDFs, choose a single PDF, or type a title;
+clicking `Rerun` starts the normal reviewed import workflow for that run. If a
+GUI import finishes with PDFs still in staging, the run report offers the same
+leftover-PDF search directly. Once a PDF is accepted for a paper card, other
+previous runs that mention the same Scholar CID or normalized title are updated
+to point at the attached card.
 
 If a selected paper already has a PDF but you later download a better
 publisher/full-text version into staging, `import-labs`, `resume`, and `rerun`
@@ -655,6 +701,28 @@ Clean up an old run that accidentally created paper cards for every candidate re
 
 ```fish
 scholar-vault cleanup-run --vault ~/Documents/Research/scholar-labs-vault --run 2026-04-22_example-prompt --selected-only
+```
+
+Inspect or batch-clean topic labels:
+
+```fish
+scholar-vault topic-map --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault topic-map --vault ~/Documents/Research/scholar-labs-vault --json
+scholar-vault topic-map --vault ~/Documents/Research/scholar-labs-vault --mapping ~/Downloads/topic-map.yaml
+scholar-vault topic-map --vault ~/Documents/Research/scholar-labs-vault --mapping ~/Downloads/topic-map.yaml --apply
+```
+
+The mapping file is YAML. Values can be a replacement string, a list of
+replacement labels, or `null` to remove a noisy label:
+
+```yaml
+Find: null
+Papers: null
+That: null
+OD Flows: Origin-Destination Flows
+Mobility:
+  - Urban Mobility
+  - Transport Analytics
 ```
 
 Reset the vault to the same clean state produced by `init`:
@@ -722,8 +790,9 @@ session so `.agents/skills/` is scanned.
 
 Available skills:
 
-- `$scholar-vault-orient`: map relevant papers, runs, topics, missing PDFs,
-  unmatched PDFs, and metadata issues before doing deeper work.
+- `$scholar-vault-orient`: map relevant canonical papers, runs, topics,
+  active staging/PDF issues, optional candidate context, and metadata issues
+  before doing deeper work.
 - `$scholar-vault-synthesize`: write evidence-linked synthesis notes under
   `syntheses/` from canonical paper cards and run provenance.
 - `$scholar-vault-refine-card`: safely improve `papers/*.md` notes and safe
@@ -731,8 +800,10 @@ Available skills:
   provenance.
 - `$scholar-vault-curate-topics`: clean noisy prompt-derived `topics`
   frontmatter, then rebuild derived topic pages and indexes.
+- `$scholar-vault-pdf-triage`: inspect orphan, duplicate, unmatched, and
+  staged PDFs, then choose safe CLI repair workflows.
 - `$scholar-vault-gap-scout`: write `tasks/<date>-research-gaps.md` with next
-  PDF, metadata, import, and synthesis actions.
+  active staging, metadata, import, and synthesis actions.
 
 Example prompts:
 
@@ -741,6 +812,7 @@ Use $scholar-vault-orient to map the current vault state.
 Use $scholar-vault-gap-scout to identify the next import and metadata gaps.
 Use $scholar-vault-synthesize to write a synthesis on OD-flow visualization.
 Use $scholar-vault-curate-topics to propose a cleanup of noisy topics.
+Use $scholar-vault-pdf-triage to inspect current staging PDFs and historical unmatched records.
 ```
 
 The skills do not require subagents and do not launch them by themselves. That

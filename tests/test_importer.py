@@ -9,8 +9,10 @@ from pypdf import PdfWriter
 from scholar_vault.citations import EnrichmentResult
 from scholar_vault.importer import (
     PDF_SCAN_CACHE_FILENAME,
+    apply_topic_map,
     cleanup_run_selected_only,
     confirm_no_publication_keywords,
+    doctor_vault,
     enrich_vault,
     find_staged_run_matches,
     import_bibtex,
@@ -18,6 +20,7 @@ from scholar_vault.importer import (
     import_scholar_labs_run,
     initialize_vault,
     latest_run_id,
+    pdf_doctor,
     rebuild_vault,
     rename_run,
     reset_vault,
@@ -25,6 +28,7 @@ from scholar_vault.importer import (
     set_manual_abstract,
     set_manual_keywords,
     set_manual_metadata,
+    topic_map_report,
     undo_run,
 )
 from scholar_vault.models import (
@@ -121,6 +125,158 @@ def test_enrich_vault_only_filters_to_keyword_queue(tmp_path, monkeypatch) -> No
     assert summary["citation_enrichment"]["processed"] == 0
     assert summary["abstract_enrichment"]["processed"] == 0
     assert summary["keyword_enrichment"]["unresolved"] == 1
+
+
+def test_doctor_vault_reports_metadata_topic_and_pdf_issues(tmp_path: Path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    attached_pdf = paths.pdfs / "attached.pdf"
+    attached_pdf.write_bytes(b"%PDF-1.4 attached\n")
+    duplicate_pdf = paths.pdfs / "attached-2.pdf"
+    duplicate_pdf.write_bytes(b"%PDF-1.4 attached\n")
+    _save_card(
+        paths,
+        SourceCard(
+            slug="ambiguous",
+            citekey="ambiguous",
+            title="Ambiguous Paper",
+            pdf="pdfs/attached.pdf",
+            pdf_status="attached",
+            topics=["Find", "Mobility"],
+            citation_status="ambiguous",
+            doi_status="ambiguous",
+            enrichment_status="ambiguous",
+            publication_keywords_status="missing",
+        ),
+    )
+    _save_card(
+        paths,
+        SourceCard(
+            slug="incomplete",
+            citekey="incomplete",
+            title="Incomplete Paper",
+            topics=["Papers"],
+            enrichment_status="incomplete",
+            enrichment_missing=["venue"],
+        ),
+    )
+
+    summary = doctor_vault(vault)
+
+    assert summary["counts"]["paper_cards"] == 2
+    assert summary["issue_counts"]["ambiguous_citations"] == 1
+    assert summary["issue_counts"]["incomplete_enrichment"] == 1
+    assert summary["issue_counts"]["missing_keywords"] == 1
+    assert summary["topics"]["noisy"][0]["topic"] == "Find"
+    assert summary["pdfs"]["duplicate_style_filenames"] == ["pdfs/attached-2.pdf"]
+    assert summary["pdfs"]["orphan_pdfs"] == ["pdfs/attached-2.pdf"]
+
+
+def test_rebuild_refreshes_stale_enrichment_completeness(tmp_path: Path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="verified",
+            citekey="verified",
+            title="Verified Paper",
+            doi="10.1145/example",
+            authors=["Jane Smith"],
+            year=2024,
+            venue="Example Venue",
+            citation_status="verified",
+            enrichment_status="missing",
+        ),
+    )
+
+    summary = doctor_vault(vault)
+    rebuild_vault(vault)
+    saved = load_source_cards(paths)[0]
+
+    assert summary["status_counts"]["enrichment_status"]["complete"] == 1
+    assert saved.enrichment_status == "complete"
+    assert saved.enrichment_missing == []
+
+
+def test_pdf_doctor_reports_staging_duplicates_and_repeated_unmatched(
+    tmp_path: Path,
+) -> None:
+    from scholar_vault.importer import _write_manifest  # noqa: PLC0415
+    from scholar_vault.models import ImportManifest, ImportManifestEntry  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    paths = initialize_vault(vault)
+    vault_pdf = paths.pdfs / "source.pdf"
+    vault_pdf.write_bytes(b"%PDF-1.4 source\n")
+    staged_pdf = staging / "source-copy.pdf"
+    staged_pdf.write_bytes(b"%PDF-1.4 source\n")
+    for run_id in ["run-a", "run-b"]:
+        _write_manifest(
+            paths,
+            ImportManifest(
+                run_id=run_id,
+                export_file="/tmp/export.json",
+                staging_folder=str(staging),
+                created_at="2026-04-28T10:00:00+02:00",
+                entries=[
+                    ImportManifestEntry(
+                        original_path=str(staging / "repeat.pdf"),
+                        decision="unresolved",
+                        score=72,
+                    )
+                ],
+            ),
+        )
+
+    summary = pdf_doctor(vault, staging_path=staging)
+
+    assert summary["staging"]["pdf_count"] == 1
+    assert summary["staging"]["duplicates_in_vault"][0]["staging_pdf"] == str(staged_pdf)
+    assert summary["repeated_unmatched_files"][0]["filename"] == "repeat.pdf"
+    assert summary["repeated_unmatched_files"][0]["count"] == 2
+
+
+def test_topic_map_dry_run_and_apply(tmp_path: Path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source",
+            topics=["Find", "OD Flows", "Papers"],
+        ),
+    )
+
+    report = topic_map_report(vault)
+    dry_run = apply_topic_map(
+        vault,
+        {"Find": None, "Papers": None, "OD Flows": "Origin-Destination Flows"},
+    )
+    unchanged = load_source_cards(initialize_vault(vault))[0]
+    applied = apply_topic_map(
+        vault,
+        {"Find": None, "Papers": None, "OD Flows": "Origin-Destination Flows"},
+        apply=True,
+    )
+    changed = load_source_cards(initialize_vault(vault))[0]
+
+    assert any(row["topic"] == "Find" for row in report["noisy"])
+    assert dry_run["applied"] is False
+    assert dry_run["changed_cards"] == 1
+    assert unchanged.topics == ["Find", "OD Flows", "Papers"]
+    assert applied["applied"] is True
+    assert changed.topics == ["Origin-Destination Flows"]
 
 
 def _write_export(

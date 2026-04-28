@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import os
 from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any
 
 import typer
+import yaml
 from rich.console import Console
 from rich.markup import escape
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
@@ -14,10 +16,12 @@ from typer.completion import get_completion_script
 
 from .config import configured_path, latest_export_json, load_user_config, save_user_config
 from .importer import (
+    apply_topic_map,
     attach_pdf,
     clean_staging,
     cleanup_run_selected_only,
     confirm_no_publication_keywords,
+    doctor_vault,
     enrich_citations,
     enrich_vault,
     export_bibtex,
@@ -29,6 +33,7 @@ from .importer import (
     initialize_vault,
     latest_run_id,
     list_unmatched,
+    pdf_doctor,
     rebuild_vault,
     rename_run,
     reset_vault,
@@ -36,6 +41,7 @@ from .importer import (
     set_manual_abstract,
     set_manual_keywords,
     set_manual_metadata,
+    topic_map_report,
     undo_run,
 )
 from .models import (
@@ -316,6 +322,32 @@ MetadataVenueArg = Annotated[
 MetadataUrlArg = Annotated[
     str | None,
     typer.Option("--url", help="Manual primary URL."),
+]
+MetadataLockArg = Annotated[
+    bool,
+    typer.Option(
+        "--lock/--no-lock",
+        help="Set metadata_lock after applying manual citation metadata.",
+    ),
+]
+JsonOutputArg = Annotated[
+    bool,
+    typer.Option("--json", help="Print machine-readable JSON."),
+]
+TopicMappingArg = Annotated[
+    Path | None,
+    typer.Option(
+        "--mapping",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        resolve_path=True,
+        help="YAML mapping of old topic labels to new labels, lists, or null to remove.",
+    ),
+]
+ApplyArg = Annotated[
+    bool,
+    typer.Option("--apply", help="Apply the planned changes. Default is dry-run."),
 ]
 OnlyArg = Annotated[
     str,
@@ -905,6 +937,177 @@ def _print_enrich_summary(summary: dict[str, Any]) -> None:
     _print_enrich_pass_summary("Citations", summary.get("citation_enrichment") or {})
     _print_enrich_pass_summary("Abstracts", summary.get("abstract_enrichment") or {})
     _print_enrich_pass_summary("Keywords", summary.get("keyword_enrichment") or {})
+
+
+def _optional_staging_path(staging: Path | None) -> Path | None:
+    if staging is not None:
+        return _resolve_staging(staging)
+    configured = configured_path("staging")
+    return configured.expanduser().resolve() if configured else None
+
+
+def _print_json(data: dict[str, Any]) -> None:
+    typer.echo(json.dumps(data, ensure_ascii=False, indent=2))
+
+
+def _print_issue_counts(title: str, counts: dict[str, Any]) -> None:
+    table = Table(title=title, show_lines=False)
+    table.add_column("Issue")
+    table.add_column("Count", justify="right")
+    for key, value in counts.items():
+        table.add_row(str(key).replace("_", " "), str(value))
+    console.print(table)
+
+
+def _print_doctor_summary(summary: dict[str, Any]) -> None:
+    counts = summary.get("counts") or {}
+    console.print(f"Vault: {summary.get('vault')}")
+    console.print(
+        "Cards={paper_cards}, PDFs={pdf_files}, attached={attached_pdf_cards}, "
+        "missing-card-pdfs={missing_pdf_cards}, runs={runs}, topics={topic_pages}".format(
+            **counts
+        )
+    )
+    console.print(
+        (
+            "Candidate results without cards={candidate_results_without_cards}; "
+            "historical unmatched manifest entries={historical_unmatched_entries}."
+        ).format(**counts)
+    )
+    if counts.get("active_staging_pdfs") is not None:
+        console.print(
+            (
+                "Active staging PDFs={active_staging_pdfs}; "
+                "duplicates already in vault={active_staging_duplicates}; "
+                "actionable staging PDFs={active_staging_actionable_pdfs}."
+            ).format(**counts)
+        )
+    _print_issue_counts("Issue Counts", summary.get("issue_counts") or {})
+    diagnostic_counts = summary.get("diagnostic_counts") or {}
+    if diagnostic_counts:
+        _print_issue_counts("Diagnostic Counts", diagnostic_counts)
+
+    status_table = Table(title="Status Counts", show_lines=False)
+    status_table.add_column("Field")
+    status_table.add_column("Counts")
+    for field, values in (summary.get("status_counts") or {}).items():
+        rendered = ", ".join(f"{key}={value}" for key, value in values.items())
+        status_table.add_row(str(field), rendered or "-")
+    console.print(status_table)
+
+    topic_noisy = (summary.get("topics") or {}).get("noisy") or []
+    if topic_noisy:
+        table = Table(title="Noisy Topics", show_lines=False)
+        table.add_column("Topic")
+        table.add_column("Count", justify="right")
+        for row in topic_noisy[:20]:
+            table.add_row(str(row["topic"]), str(row["count"]))
+        console.print(table)
+
+    pdfs = summary.get("pdfs") or {}
+    console.print(
+        "PDF doctor: orphan={orphan}, duplicate-hash-groups={dupes}, "
+        "duplicate-style-names={styled}, repeated-unmatched={repeated}.".format(
+            orphan=len(pdfs.get("orphan_pdfs") or []),
+            dupes=len(pdfs.get("duplicate_hashes") or []),
+            styled=len(pdfs.get("duplicate_style_filenames") or []),
+            repeated=len(pdfs.get("repeated_unmatched_files") or []),
+        )
+    )
+
+
+def _print_pdf_doctor_summary(summary: dict[str, Any]) -> None:
+    console.print(f"Vault: {summary.get('vault')}")
+    console.print(
+        f"PDF files={summary.get('pdf_files')}; cards={summary.get('cards')}; "
+        f"cards with pdf={summary.get('cards_with_pdf')}."
+    )
+    for key, label in [
+        ("missing_card_pdfs", "Cards With Missing PDF Files"),
+        ("cards_without_pdf", "Cards Without PDF"),
+        ("orphan_pdfs", "Orphan PDFs"),
+        ("duplicate_style_filenames", "Duplicate-Style Filenames"),
+        ("repeated_unmatched_files", "Repeated Unmatched Staging Files"),
+    ]:
+        rows = summary.get(key) or []
+        if not rows:
+            continue
+        table = Table(title=f"{label} ({len(rows)})", show_lines=False)
+        table.add_column("Item")
+        table.add_column("Detail")
+        for row in rows[:50]:
+            if isinstance(row, dict):
+                item = str(row.get("paper") or row.get("filename") or row.get("citekey") or "")
+                detail = str(row.get("title") or row.get("count") or row.get("pdf") or "")
+            else:
+                item = str(row)
+                detail = ""
+            table.add_row(item, detail)
+        console.print(table)
+    duplicates = summary.get("duplicate_hashes") or []
+    if duplicates:
+        table = Table(title=f"Duplicate PDF Hashes ({len(duplicates)})", show_lines=False)
+        table.add_column("SHA256")
+        table.add_column("Files")
+        for row in duplicates[:50]:
+            table.add_row(str(row["sha256"])[:16], ", ".join(row["files"]))
+        console.print(table)
+    staging = summary.get("staging")
+    if staging:
+        console.print(
+            f"Staging: {staging['path']} has {staging['pdf_count']} PDFs; "
+            f"{staging['duplicate_count']} duplicate vault copies; "
+            f"{staging['actionable_pdf_count']} actionable PDFs."
+        )
+
+
+def _print_topic_report(summary: dict[str, Any]) -> None:
+    console.print(f"Vault: {summary.get('vault')}")
+    console.print(f"Topic count: {summary.get('topic_count')}")
+    table = Table(title="Top Topics", show_lines=False)
+    table.add_column("Topic")
+    table.add_column("Count", justify="right")
+    for row in summary.get("top") or []:
+        table.add_row(str(row["topic"]), str(row["count"]))
+    console.print(table)
+    noisy = summary.get("noisy") or []
+    if noisy:
+        noise_table = Table(title="Likely Prompt Noise", show_lines=False)
+        noise_table.add_column("Topic")
+        noise_table.add_column("Count", justify="right")
+        for row in noisy:
+            noise_table.add_row(str(row["topic"]), str(row["count"]))
+        console.print(noise_table)
+
+
+def _print_topic_map_summary(summary: dict[str, Any]) -> None:
+    mode = "Applied" if summary.get("applied") else "Dry-run"
+    console.print(f"{mode} topic map: {summary['changed_cards']} card(s) would change.")
+    if summary.get("removed_topics"):
+        console.print(
+            "Removed/replaced: "
+            + ", ".join(
+                f"{topic}={count}" for topic, count in summary["removed_topics"].items()
+            )
+        )
+    if summary.get("added_topics"):
+        console.print(
+            "Added: "
+            + ", ".join(f"{topic}={count}" for topic, count in summary["added_topics"].items())
+        )
+    changes = summary.get("changes") or []
+    if changes:
+        table = Table(title="Changed Cards", show_lines=False)
+        table.add_column("Paper")
+        table.add_column("Before")
+        table.add_column("After")
+        for row in changes[:50]:
+            table.add_row(
+                str(row["paper"]),
+                ", ".join(row["before"]),
+                ", ".join(row["after"]),
+            )
+        console.print(table)
 
 
 def _show_enrichment_ui(
@@ -1652,6 +1855,65 @@ def bibtex_command(vault: VaultArg = None) -> None:
     console.print(f"Wrote {output}")
 
 
+@app.command("doctor")
+@app.command("status")
+def doctor_command(
+    vault: VaultArg = None,
+    staging: StagingArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = doctor_vault(
+        _resolve_vault(vault),
+        staging_path=_optional_staging_path(staging),
+    )
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_doctor_summary(summary)
+
+
+@app.command("pdf-doctor")
+def pdf_doctor_command(
+    vault: VaultArg = None,
+    staging: StagingArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = pdf_doctor(
+        _resolve_vault(vault),
+        staging_path=_optional_staging_path(staging),
+    )
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_pdf_doctor_summary(summary)
+
+
+@app.command("topic-map")
+def topic_map_command(
+    vault: VaultArg = None,
+    mapping: TopicMappingArg = None,
+    apply: ApplyArg = False,
+    limit: int = typer.Option(30, "--limit", "-n", min=1, help="Topics to show."),
+    json_output: JsonOutputArg = False,
+) -> None:
+    if mapping is None:
+        summary = topic_map_report(_resolve_vault(vault), limit=limit)
+        if json_output:
+            _print_json(summary)
+        else:
+            _print_topic_report(summary)
+        return
+
+    raw_mapping = yaml.safe_load(mapping.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw_mapping, dict):
+        raise typer.BadParameter("--mapping must contain a YAML mapping.")
+    summary = apply_topic_map(_resolve_vault(vault), raw_mapping, apply=apply)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_topic_map_summary(summary)
+
+
 @app.command("enrich")
 def enrich_command(
     vault: VaultArg = None,
@@ -1936,6 +2198,7 @@ def attach_pdf_command(
     )
 
 
+@app.command("resolve-citation")
 @app.command("set-metadata")
 def set_metadata_command(
     citekey: CitekeyArg,
@@ -1944,6 +2207,7 @@ def set_metadata_command(
     year: MetadataYearArg = None,
     venue: MetadataVenueArg = None,
     url: MetadataUrlArg = None,
+    lock: MetadataLockArg = False,
     vault: VaultArg = None,
 ) -> None:
     if not any([doi, authors, year, venue, url]):
@@ -1958,11 +2222,13 @@ def set_metadata_command(
         year=year,
         venue=venue,
         url=url,
+        lock=lock,
     )
     missing = ", ".join(summary.get("missing_fields") or []) or "none"
+    lock_note = ", locked" if summary.get("metadata_lock") else ""
     console.print(
         f"Set manual metadata for {summary['citekey']} "
-        f"(metadata={summary['enrichment_status']}, missing={missing}). "
+        f"(metadata={summary['enrichment_status']}, missing={missing}{lock_note}). "
         f"Updated {summary['paper']}."
     )
 

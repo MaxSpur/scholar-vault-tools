@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scholar Vault PDF Triage"
+  short_description: "Resolve vault PDF and staging issues"
+  default_prompt: "Use $scholar-vault-pdf-triage to inspect duplicate, orphan, active staged, and historical unmatched PDF records safely."
