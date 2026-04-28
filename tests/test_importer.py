@@ -1199,6 +1199,50 @@ def test_set_manual_metadata_resolves_ambiguous_card(tmp_path: Path) -> None:
     assert progress_steps[-1] == "Manual save complete"
 
 
+def test_set_manual_metadata_lock_accepts_thesis_without_doi_or_venue(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    card = SourceCard(
+        slug="smith2024thesis",
+        citekey="smith2024thesis",
+        title="Evaluating Retrieval Augmented Generation Systems",
+        doi_status="ambiguous",
+        citation_status="ambiguous",
+        citation_skip_reason="ambiguous crossref candidate score=42",
+        enrichment_status="ambiguous",
+        enrichment_missing=["doi", "venue"],
+    )
+    (paths.papers / "smith2024thesis.md").write_text(
+        render_paper_markdown(card),
+        encoding="utf-8",
+    )
+
+    summary = set_manual_metadata(
+        vault,
+        "smith2024thesis",
+        authors="Jane Smith",
+        year="2024",
+        url="https://example.edu/thesis.pdf",
+        lock=True,
+    )
+    saved = load_source_cards(initialize_vault(vault))[0]
+    status = doctor_vault(vault)
+
+    assert summary["metadata_lock"] is True
+    assert summary["enrichment_status"] == "manual_lock"
+    assert summary["missing_fields"] == ["doi", "venue"]
+    assert saved.citation_status == "verified"
+    assert saved.doi_status == "missing"
+    assert saved.metadata_lock is True
+    assert saved.citation_skip_reason == (
+        "manual metadata locked; missing fields accepted: doi, venue"
+    )
+    assert status["issue_counts"]["ambiguous_citations"] == 0
+    assert status["issue_counts"]["incomplete_enrichment"] == 0
+
+
 def test_confirm_no_publication_keywords_marks_keyword_step_done(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     paths = initialize_vault(vault)

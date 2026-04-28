@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scholar Vault Read PDF"
+  short_description: "Read PDFs to refine vault cards"
+  default_prompt: "Use $scholar-vault-read-pdf to read linked PDFs and add evidence-grounded notes, metadata, topics, or synthesis links to this vault."

@@ -5,7 +5,7 @@ description: Curate Scholar Vault navigation topics. Use when Codex is asked to 
 
 # Scholar Vault Curate Topics
 
-Use this skill to improve the vault's navigation taxonomy while preserving canonical source records.
+Use this skill to improve the vault's navigation taxonomy while preserving paper-card records and linked PDF evidence.
 
 ## CLI Environment
 

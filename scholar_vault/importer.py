@@ -2914,7 +2914,12 @@ def set_manual_metadata(
         card.metadata_lock = True
     card.enrichment_refresh = False
     refresh_metadata_completeness(card)
-    if card.enrichment_missing:
+    if card.enrichment_missing and card.metadata_lock:
+        card.citation_skip_reason = (
+            "manual metadata locked; missing fields accepted: "
+            + ", ".join(card.enrichment_missing)
+        )
+    elif card.enrichment_missing:
         card.citation_status = "generated"
         refresh_metadata_completeness(card)
         card.citation_skip_reason = (

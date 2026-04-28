@@ -1,4 +1,4 @@
 interface:
   display_name: "Scholar Vault Refine Card"
-  short_description: "Safely improve canonical paper cards"
-  default_prompt: "Use $scholar-vault-refine-card to safely improve this paper card while preserving generated Scholar Vault state."
+  short_description: "Safely improve PDF-linked paper cards"
+  default_prompt: "Use $scholar-vault-refine-card to safely improve this paper card from linked PDF evidence while preserving generated Scholar Vault state."

@@ -1,4 +1,4 @@
 interface:
   display_name: "Scholar Vault Synthesize"
   short_description: "Write evidence-linked literature notes"
-  default_prompt: "Use $scholar-vault-synthesize to write a grounded synthesis note from this vault."
+  default_prompt: "Use $scholar-vault-synthesize to write a grounded synthesis note from linked PDFs, paper cards, and run provenance in this vault."

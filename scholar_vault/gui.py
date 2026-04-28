@@ -3470,7 +3470,9 @@ def _resolve_manual_metadata(
 
     missing = ", ".join(detail.get("missing_fields") or []) or "ambiguous metadata"
     prompt = qt["QLabel"](
-        f"Fill the publication metadata to resolve this row. Missing: {missing}."
+        "Fill the publication metadata to resolve this row. "
+        "For theses, reports, and other non-article documents, leave DOI or venue blank "
+        f"when the PDF genuinely lacks them, then enable the lock below. Missing: {missing}."
     )
     prompt.setWordWrap(True)
     prompt.setFont(_summary_font(qt, 12))
@@ -3499,7 +3501,7 @@ def _resolve_manual_metadata(
     year_input = qt["QLineEdit"](str(detail.get("year") or ""))
     year_input.setPlaceholderText("2024")
     venue_input = qt["QLineEdit"](str(detail.get("venue") or ""))
-    venue_input.setPlaceholderText("Journal or proceedings title")
+    venue_input.setPlaceholderText("Journal, proceedings, thesis institution, or report publisher")
     url_input = qt["QLineEdit"](str(detail.get("url") or ""))
     url_input.setPlaceholderText("https://...")
 
@@ -3514,6 +3516,22 @@ def _resolve_manual_metadata(
     add_label("URL", 4)
     form.addWidget(url_input, 4, 1)
     layout.addLayout(form)
+
+    lock_input = qt["QCheckBox"](
+        "Accept as thesis/report/non-article metadata and lock against automatic "
+        "citation overwrites"
+    )
+    lock_input.setFont(_summary_font(qt, 12))
+    lock_input.setStyleSheet("color: #baffdc; border: none;")
+    lock_help = qt["QLabel"](
+        "Use this when the linked PDF is the authority and it has no DOI or "
+        "journal/conference venue."
+    )
+    lock_help.setWordWrap(True)
+    lock_help.setFont(_summary_font(qt, 11))
+    lock_help.setStyleSheet("color: #8ce7b8; border: none;")
+    layout.addWidget(lock_input)
+    layout.addWidget(lock_help)
 
     progress_widgets = _add_manual_save_progress_panel(qt, layout)
 
@@ -3532,7 +3550,7 @@ def _resolve_manual_metadata(
     def save() -> None:
         app = _application(qt)
         progress = _manual_save_progress_callback(qt, app, progress_widgets)
-        for widget in (doi_input, authors_input, year_input, venue_input, url_input):
+        for widget in (doi_input, authors_input, year_input, venue_input, url_input, lock_input):
             widget.setEnabled(False)
         buttons.setEnabled(False)
         dialog.setCursor(qt["Qt"].CursorShape.WaitCursor)
@@ -3548,13 +3566,21 @@ def _resolve_manual_metadata(
                 year=year_input.text(),
                 venue=venue_input.text(),
                 url=url_input.text(),
+                lock=lock_input.isChecked(),
                 progress=progress,
             )
         except Exception as exc:  # pragma: no cover - defensive UI error handling
             progress("Save failed")
             dialog.unsetCursor()
             buttons.setEnabled(True)
-            for widget in (doi_input, authors_input, year_input, venue_input, url_input):
+            for widget in (
+                doi_input,
+                authors_input,
+                year_input,
+                venue_input,
+                url_input,
+                lock_input,
+            ):
                 widget.setEnabled(True)
             box = qt["QMessageBox"](dialog)
             box.setWindowTitle("Metadata Not Saved")
@@ -3565,11 +3591,14 @@ def _resolve_manual_metadata(
             box.exec()
             return
         missing_fields = list(result.get("missing_fields") or [])
-        detail["category"] = "resolved" if not missing_fields else "incomplete"
+        locked = bool(result.get("metadata_lock"))
+        detail["category"] = "resolved" if locked or not missing_fields else "incomplete"
         detail["status"] = result.get("citation_status") or detail.get("status")
         detail["source"] = "manual"
         detail["message"] = (
-            "manual metadata saved"
+            "manual metadata saved and locked"
+            if locked
+            else "manual metadata saved"
             if not missing_fields
             else f"manual metadata saved; still missing {', '.join(missing_fields)}"
         )
@@ -3579,6 +3608,7 @@ def _resolve_manual_metadata(
         detail["venue"] = result.get("venue")
         detail["url"] = result.get("url")
         detail["missing_fields"] = missing_fields
+        detail["metadata_lock"] = locked
         detail["paper_path"] = result.get("paper") or detail.get("paper_path")
         progress("Refreshing follow-up list")
         refresh()

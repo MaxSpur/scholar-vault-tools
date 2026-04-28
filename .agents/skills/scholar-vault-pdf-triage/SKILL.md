@@ -39,10 +39,11 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 2. If `staging.actionable_pdf_count` is `0`, report that no remaining staging match work is needed even if historical unmatched entries exist.
 3. If active non-duplicate staged PDFs remain, read `_indexes/unmatched.md`, `_indexes/missing-pdfs.md`, and the relevant run note or run YAML.
 4. Use `scholar-vault match-staging` or `scholar-vault match-staging --ui` to score leftover staged PDFs against prior Scholar Labs results.
-5. For a known one-off match, use `scholar-vault attach-pdf --citekey <citekey> --pdf <path>` so the vault copies and verifies the PDF, syncs related runs, and rebuilds derived files.
-6. For run-level batches, use `scholar-vault rerun --run <run-id> --ui`; keep `--keep-existing-pdfs` only when you do not want attached PDFs considered for replacement.
-7. Use `scholar-vault clean-staging` only for staged files that are byte-identical to vault PDFs.
-8. Report which files were only inspected, which commands changed vault state, and which files still require human judgment.
+5. Read the staged or attached PDF with `$scholar-vault-read-pdf` when deciding whether it is the right source, a better version, a thesis/report, or a duplicate with different metadata.
+6. For a known one-off match, use `scholar-vault attach-pdf --citekey <citekey> --pdf <path>` so the vault copies and verifies the PDF, syncs related runs, and rebuilds derived files.
+7. For run-level batches, use `scholar-vault rerun --run <run-id> --ui`; keep `--keep-existing-pdfs` only when you do not want attached PDFs considered for replacement.
+8. Use `scholar-vault clean-staging` only for staged files that are byte-identical to vault PDFs.
+9. Report which files were only inspected, which commands changed vault state, and which files still require human judgment.
 
 ## Commands
 

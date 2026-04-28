@@ -1,6 +1,6 @@
 # scholar-vault
 
-`scholar-vault` is a local-first research source wiki. The canonical record for a source is a Markdown card under `papers/`, not a database row and not a browser export. Scholar Labs is the first ingestion adapter, but direct PDFs, BibTeX, DOI imports, and manual notes all converge on the same paper card format.
+`scholar-vault` is a local-first research source wiki. The linked PDF is the canonical evidence artifact for a selected source; the Markdown card under `papers/` is the durable metadata, provenance, index, and notes layer over that PDF, not a database row and not a browser export. Scholar Labs is the first ingestion adapter, but direct PDFs, BibTeX, DOI imports, and manual notes all converge on the same paper card format.
 
 The vault is designed for plain files, Obsidian compatibility, and agent readability. A Codex agent should be able to see which sources exist, how they were discovered, where their PDFs live, which runs imported them, and which topic pages synthesize them without walking every PDF in a folder.
 
@@ -488,7 +488,10 @@ scholar-vault resolve-citation --citekey smith2024rag --venue "Example Venue" --
 
 `resolve-citation` is an alias of `set-metadata`. It updates DOI/citation
 status, metadata completeness, fingerprints, and derived files through the same
-rebuild path as the GUI manual resolver.
+rebuild path as the GUI manual resolver. For theses, reports, and other
+non-article PDFs with no DOI or journal/conference venue, fill the known fields
+and use `--lock` so the missing DOI/venue is accepted instead of repeatedly
+surfacing as an enrichment issue.
 
 Interpretation:
 
@@ -508,8 +511,10 @@ Set `metadata_lock: true` in a paper card to prevent automatic metadata overwrit
 
 Ambiguous citation rows in the GUI can be resolved with **Resolve Metadata**.
 The workflow saves manually checked DOI, authors, year, venue, and URL values,
-then rebuilds the generated card, indexes, exports, topics, and run notes. You
-can also do the same from the CLI:
+then rebuilds the generated card, indexes, exports, topics, and run notes. For
+thesis/report/non-article PDFs, leave genuinely absent DOI or venue fields blank
+and enable the metadata lock in the dialog. You can also do the same from the
+CLI:
 
 ```fish
 scholar-vault set-metadata --citekey smith2024rag --doi 10.1145/example --authors "Jane Smith; John Doe" --year 2024 --venue "Proceedings of Example Research"
@@ -794,16 +799,18 @@ Available skills:
   active staging/PDF issues, optional candidate context, and metadata issues
   before doing deeper work.
 - `$scholar-vault-synthesize`: write evidence-linked synthesis notes under
-  `syntheses/` from canonical paper cards and run provenance.
+  `syntheses/` from linked PDFs, paper cards, and run provenance.
 - `$scholar-vault-refine-card`: safely improve `papers/*.md` notes and safe
-  metadata while preserving generated sections, enrichment state, locks, and
-  provenance.
+  metadata from PDF evidence while preserving generated sections, enrichment
+  state, locks, and provenance.
 - `$scholar-vault-curate-topics`: clean noisy prompt-derived `topics`
   frontmatter, then rebuild derived topic pages and indexes.
 - `$scholar-vault-pdf-triage`: inspect orphan, duplicate, unmatched, and
   staged PDFs, then choose safe CLI repair workflows.
 - `$scholar-vault-gap-scout`: write `tasks/<date>-research-gaps.md` with next
   active staging, metadata, import, and synthesis actions.
+- `$scholar-vault-read-pdf`: read linked PDFs as the primary evidence and add
+  evidence-grounded notes, topics, metadata fixes, syntheses, or metacards.
 
 Example prompts:
 
@@ -813,6 +820,7 @@ Use $scholar-vault-gap-scout to identify the next import and metadata gaps.
 Use $scholar-vault-synthesize to write a synthesis on OD-flow visualization.
 Use $scholar-vault-curate-topics to propose a cleanup of noisy topics.
 Use $scholar-vault-pdf-triage to inspect current staging PDFs and historical unmatched records.
+Use $scholar-vault-read-pdf to read selected PDFs and refine their cards.
 ```
 
 The skills do not require subagents and do not launch them by themselves. That
@@ -825,7 +833,8 @@ main thread.
 
 ## Generated Records
 
-- `papers/*.md`: canonical source cards for selected papers by default.
+- `pdfs/*.pdf`: canonical evidence artifacts for selected sources.
+- `papers/*.md`: canonical source cards for selected papers by default; these store metadata, provenance, links, abstracts, keywords, and notes over the linked PDFs.
 - `papers/*.md` body sections: human-readable keywords, abstract, and primary Scholar Labs summary. Long prose is not duplicated in frontmatter.
 - `runs/<run_id>/<Short Title.md>`: Obsidian-friendly per-run provenance pages that keep all Scholar Labs candidate results.
 - `runs/*/index.yaml`: machine-readable run records used by `resume`, `rerun`, and rebuilds.

@@ -35,7 +35,8 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 
 ## Vault Model
 
-- `papers/*.md` are canonical source records.
+- `papers/*.md` are canonical source records for metadata, links, provenance, and notes.
+- Linked `pdfs/*.pdf` files are the canonical evidence artifacts.
 - `runs/<run_id>/<Short Title>.md` is the Obsidian-facing Scholar Labs run note; `runs/<run_id>/index.yaml` is the machine-readable run record.
 - `pdfs/` stores attached canonical PDFs.
 - `raw/` stores raw exports, staged/archive data, and provider metadata; treat it as immutable unless the user explicitly asks for vault maintenance.

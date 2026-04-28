@@ -1,11 +1,11 @@
 ---
 name: scholar-vault-refine-card
-description: Safely refine canonical Scholar Vault paper cards. Use when Codex is asked to improve notes, fix safe metadata, add manual context, clean paper-card wording, or prepare cards for better agent use while preserving generated sections, provenance, abstracts, locks, and enrichment-managed fields.
+description: Safely refine Scholar Vault paper cards as durable indexes over linked PDFs. Use when Codex is asked to improve notes, fix safe metadata, add manual context from reading PDFs, clean paper-card wording, or prepare cards for better agent use while preserving generated sections, provenance, abstracts, locks, and enrichment-managed fields.
 ---
 
 # Scholar Vault Refine Card
 
-Use this skill to improve canonical `papers/*.md` cards without breaking importer idempotence or generated views.
+Use this skill to improve `papers/*.md` cards without breaking importer idempotence or generated views. The linked PDF is the canonical evidence artifact; the card is the durable metadata, index, and notes layer over that PDF.
 
 ## CLI Environment
 
@@ -58,6 +58,7 @@ Use the CLI for tool-managed changes:
 ```fish
 conda activate scholar-vault
 scholar-vault resolve-citation --citekey <citekey> --doi <doi> --authors "Author A; Author B" --year <year> --venue "<venue>"
+scholar-vault resolve-citation --citekey <citekey> --authors "Author A" --year <year> --url <url> --lock
 scholar-vault set-abstract --citekey <citekey> --file <text-file> --source-url <url>
 scholar-vault set-keywords --citekey <citekey> --text "Keyword A; Keyword B"
 scholar-vault enrich --citekey <citekey>
@@ -71,11 +72,14 @@ Use `metadata_lock`, `abstract_lock`, and explicit refresh flags according to th
 ## Workflow
 
 1. Read `AGENTS.md`, then the target paper card and any linked run notes needed for provenance.
-2. Inspect frontmatter and body sections with the parser model in mind: `## Abstract`, `## Keywords`, `## Scholar Labs summary`, `## Why this source matters`, and `## Notes` are parsed by the tool.
-3. Make the smallest durable edit that satisfies the request.
-4. If any generated or indexed view should reflect the edit, run `scholar-vault rebuild` using the CLI environment above.
-5. Report what changed, what was preserved, and whether rebuild/verification ran.
+2. Resolve and read the linked PDF when adding or changing factual notes, methods, claims, limitations, document type, or source connections. Use `$scholar-vault-read-pdf` for deeper PDF reading.
+3. Inspect frontmatter and body sections with the parser model in mind: `## Abstract`, `## Keywords`, `## Scholar Labs summary`, `## Why this source matters`, and `## Notes` are parsed by the tool.
+4. Make the smallest durable edit that satisfies the request.
+5. If any generated or indexed view should reflect the edit, run `scholar-vault rebuild` using the CLI environment above.
+6. Report what changed, what was preserved, what PDF evidence was used, and whether rebuild/verification ran.
 
 ## Notes Style
 
 Put agent-written interpretation in `## Notes` with short dated or titled subsections when useful. Link related cards with relative links, and separate facts from interpretation.
+
+For theses, reports, preprints, and other non-article documents, do not invent DOI or journal/conference metadata. Note the document type from the PDF and use `resolve-citation --lock` when the absence of DOI or venue is expected.

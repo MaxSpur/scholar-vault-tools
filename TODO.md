@@ -68,4 +68,6 @@
 - [x] Add `topic-map` for dry-run/apply cleanup of noisy topic frontmatter.
 - [x] Add `resolve-citation` as a safe citation metadata correction alias with optional metadata locking.
 - [x] Add a `scholar-vault-pdf-triage` Codex skill for staging/PDF repair workflows.
+- [x] Let enrichment UI metadata resolution accept thesis/report/non-article PDFs with intentionally absent DOI or venue by saving a metadata lock.
+- [x] Add a `scholar-vault-read-pdf` Codex skill so vault refinement workflows read linked PDFs as primary evidence.
 - [ ] Add an Obsidian-friendly command or workflow for exporting useful BibTeX directly from the vault while working in Obsidian.

@@ -42,6 +42,7 @@ Prioritize gaps that materially improve the vault as an LLM-readable wiki:
 - User-requested next-import candidates from Scholar Labs run results.
 - Canonical cards with attached PDFs but incomplete/ambiguous citation metadata.
 - Cards with missing abstracts, missing publication keywords, or no useful notes.
+- Cards whose linked PDFs have not been read deeply enough to support reliable synthesis.
 - Topic noise that blocks retrieval or synthesis.
 - Areas where syntheses show thin evidence, conflicting claims, or outdated coverage.
 
@@ -61,6 +62,8 @@ scholar-vault enrich --dry-run
 scholar-vault enrich --only missing-abstract --dry-run
 scholar-vault enrich --only missing-keywords --dry-run
 ```
+
+Use `$scholar-vault-read-pdf` when a gap requires checking what the selected PDF actually says rather than relying on card metadata or Scholar Labs summaries.
 
 Use non-dry-run commands only when the user asked to repair the vault, not when only scouting.
 
