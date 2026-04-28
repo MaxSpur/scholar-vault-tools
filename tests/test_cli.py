@@ -314,6 +314,93 @@ def test_topic_map_command_dry_runs_mapping(tmp_path) -> None:
     assert "papers/source.md" in result.output
 
 
+def test_proposal_audit_command_outputs_json(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    proposal = paths.proposals / "pepr-mobidec"
+    proposal.mkdir(parents=True)
+    (proposal / "outline.md").write_text("# Outline\n", encoding="utf-8")
+    (proposal / "raw-idea.md").write_text(
+        "# Raw Idea\n\n## Original User Notes - Verbatim\n",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["proposal-audit", "--vault", str(vault), "proposals/pepr-mobidec", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["counts"]["files"] == 2
+
+
+def test_notes_missing_command_outputs_json(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source",
+            pdf="pdfs/source.pdf",
+            pdf_status="attached",
+        ),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["notes-missing", "--vault", str(vault), "--heading", "PDF reading notes", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["missing"] == 1
+    assert payload["missing_cards"][0]["paper"] == "papers/source.md"
+
+
+def test_concept_index_command_outputs_json(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    (paths.concepts / "method.md").write_text("# Method\n", encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["concept-index", "--vault", str(vault), "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["concepts"] == 1
+    assert payload["index"] == "_indexes/concepts.md"
+
+
+def test_proposal_sprint_scaffold_command_outputs_json(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    initialize_vault(vault)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "proposal-sprint",
+            "scaffold",
+            "--vault",
+            str(vault),
+            "--title",
+            "PEPR Mobidec",
+            "pepr-mobidec",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["proposal"] == "proposals/pepr-mobidec"
+    assert "proposals/pepr-mobidec/source-matrix.md" in payload["files"]["created"]
+
+
 def test_resolve_citation_alias_can_lock_metadata(tmp_path) -> None:
     from scholar_vault.importer import _save_card  # noqa: PLC0415
     from scholar_vault.models import SourceCard  # noqa: PLC0415

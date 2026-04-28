@@ -26,14 +26,14 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 
 ## Reading Workflow
 
-1. Start from `AGENTS.md`, `scholar-vault status --json`, and the target `papers/*.md` card.
+1. Start from `AGENTS.md`, `scholar-vault status --json`, and the target `papers/*.md` card. Use `scholar-vault notes-missing --heading "PDF reading notes"` when building a queue of selected cards that still need PDF reading.
 2. Resolve the linked `pdf` field relative to the vault root and read the actual PDF before making factual claims.
 3. Use the card and run notes for metadata, provenance, Scholar Labs rationale, and existing notes. Use the PDF for evidence, methods, findings, limitations, definitions, and citation-worthy claims.
 4. For serious reading, extract the full PDF text first, then search within that text for abstract, introduction, methods, datasets, evaluation, results, discussion, conclusion, limitations, and references to related vault papers.
 5. Use Codex's available PDF-reading/rendering capabilities for important figures, tables, diagrams, maps, visual encodings, equations, or scanned content. If the paper is figure-heavy or the user asks about visuals, inspect the rendered PDF pages before summarizing claims.
 6. Use page ranges only for targeted revisits after full-text orientation, for very long documents, or when rendering selected figures/pages. Do not treat a first-page excerpt as enough for synthesis.
 7. Write durable findings to the card's `## Notes`, to a new `syntheses/*.md`, to a new `concepts/*.md`, or to a new `tasks/*.md` depending on the user's goal.
-8. Run `scholar-vault rebuild` after card edits so indexes, exports, and LLM files reflect the changes.
+8. Run `scholar-vault concept-index` after concept-only edits, or `scholar-vault rebuild` after card, topic, synthesis, task, or proposal edits so indexes, exports, and LLM files reflect the changes.
 
 ## PDF Text Helper
 

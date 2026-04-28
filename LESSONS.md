@@ -18,6 +18,8 @@
 - A generic enrichment command should run every user-visible enrichment queue by default. Keep narrow legacy commands for scripts, but make `--only` the filter users reach for when the UI reports a specific queue.
 - Agent-facing diagnostics should be structured commands, not repeated ad hoc `rg` work. Keep `status --json`, `pdf-doctor --json`, and dry-run topic maps available so Codex can inspect before editing.
 - In this vault, the PDF is the canonical evidence artifact and the card is an index/notes layer. Skills that refine claims or connections must read the linked PDF before treating a card summary as evidence.
+- Vault-side `AGENTS.md` should be initialized from the full vault operating guide, but existing vault-local `AGENTS.md` files must be preserved so user project notes are not overwritten.
+- Proposal and research-loop helpers should scaffold or report durable work queues without overwriting prose. Commands like `notes-missing`, `concept-index`, and `proposal-sprint scaffold` should make PDF-grounded refinement easier while preserving user-written metacards.
 - The leftover staging PDF GUI is a parent queue, not a one-shot launcher. Reviewed reruns should return to the same window and refresh the remaining candidates.
 - Already-attached staging-match rows should support direct inspection and non-destructive cleanup. Move redundant staging PDFs into a staging-local `trash/` folder instead of deleting them or archiving them into the vault.
 - A parent queue window must not remain modal/frontmost while it launches child workflows. Hide or make it modeless during reviewed reruns so import reports and follow-up windows can receive focus.

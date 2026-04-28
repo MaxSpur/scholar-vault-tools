@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
+from textwrap import dedent
+from typing import Any
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -166,29 +168,236 @@ def render_unmatched_index(manifests: list[ImportManifest]) -> str:
     return "\n".join(lines)
 
 
+def render_artifact_index(
+    title: str,
+    artifacts: list[dict[str, Any]],
+    *,
+    empty_message: str,
+) -> str:
+    lines = [f"# {title}", ""]
+    if not artifacts:
+        lines.extend([empty_message, ""])
+        return "\n".join(lines)
+    for artifact in artifacts:
+        label = artifact.get("title") or artifact.get("path")
+        path = artifact.get("path")
+        type_value = artifact.get("type")
+        created = artifact.get("created")
+        detail = []
+        if type_value:
+            detail.append(f"type={type_value}")
+        if created:
+            detail.append(f"created={created}")
+        suffix = f" ({', '.join(detail)})" if detail else ""
+        lines.append(f"- [{label}](../{path}){suffix}")
+        sources = artifact.get("sources") or []
+        if sources:
+            lines.append(f"  - Sources: {', '.join(str(source) for source in sources[:8])}")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def render_vault_readme() -> str:
     return (
         "# scholar-vault research vault\n\n"
-        "This vault is a local-first source wiki. Canonical source records live in `papers/`, "
-        "Scholar Labs runs live in `runs/`, PDFs live in `pdfs/`, and derived navigation lives in "
+        "This vault is a local-first source wiki. Paper card records live in `papers/`, "
+        "canonical evidence PDFs live in `pdfs/`, Scholar Labs runs live in `runs/`, durable "
+        "agent-written concepts/syntheses/proposals live in their named folders, and "
+        "derived navigation lives in "
         "`_indexes/`, `_exports/`, `llms.txt`, and `llms-full.txt`.\n"
     )
 
 
 def render_vault_agents() -> str:
     return (
-        "# Vault maintenance notes\n\n"
-        "- Treat `papers/*.md` as canonical source cards.\n"
-        "- Treat Scholar Labs candidates without paper cards as optional discovery context, "
-        "not missing canonical sources.\n"
-        "- Treat unmatched manifest rows as historical audit records unless non-duplicate PDFs "
-        "still exist in staging.\n"
-        "- Keep raw inputs under `raw/` immutable where practical.\n"
-        "- Update topic pages and indexes through `scholar-vault rebuild` after manual edits.\n"
-        "- Preserve provenance in `discovered_in` and run pages instead of burying it in notes.\n"
-        "- Preserve run-specific Scholar Labs summaries in run pages and generated views.\n"
-        "- Keep provider abstracts in `## Abstract` separate from Scholar Labs summaries.\n"
-        "- Do not require Obsidian plugins, Zotero, or a database for normal operation.\n"
+        dedent(
+            """
+            # Scholar Vault Agent Notes
+
+            ## Scope
+
+            These instructions apply inside this research vault. They are for agents working on
+            the vault as an LLM-readable research wiki, not for developing the
+            `scholar-vault-tools` codebase.
+
+            ## Core Model
+
+            - Linked `pdfs/*.pdf` files are the canonical evidence artifacts.
+            - `papers/*.md` cards are the durable metadata, provenance, index, and notes layer
+              over those PDFs.
+            - Scholar Labs `runs/` are discovery provenance. They explain why sources were
+              found, but they are not evidence by themselves.
+            - `topics/`, `_indexes/`, `_exports/`, `llms.txt`, and `llms-full.txt` are
+              generated or derived views.
+            - Durable agent-written work belongs in non-generated folders such as `concepts/`,
+              `syntheses/`, `tasks/`, `proposals/`, and `sources/`.
+
+            ## CLI Environment
+
+            Before running any `scholar-vault ...` command, activate the Conda environment in
+            the same shell:
+
+            ```fish
+            conda activate scholar-vault
+            ```
+
+            If activation is unavailable or `scholar-vault` is not on `PATH`, use:
+
+            ```fish
+            /Users/MadMax/miniforge3/condabin/conda run -n scholar-vault scholar-vault ...
+            ```
+
+            Prefer structured commands for orientation:
+
+            ```fish
+            scholar-vault status --json
+            scholar-vault pdf-doctor --json
+            scholar-vault notes-missing --heading "PDF reading notes"
+            scholar-vault runs
+            ```
+
+            After editing only `concepts/`, run `scholar-vault concept-index`. After
+            editing paper cards, topics, syntheses, tasks, or proposals, run:
+
+            ```fish
+            scholar-vault rebuild
+            ```
+
+            ## Evidence Rules
+
+            - Read the linked PDF before writing factual claims, methods, findings, limitations,
+              definitions, or source connections.
+            - For serious reading, inspect the whole paper, including conclusions and
+              limitations. Page ranges are only for targeted revisits.
+            - Use available Codex PDF reading/rendering for figures, tables, diagrams, maps,
+              visual encodings, equations, scanned pages, and appendices.
+            - Do not rely on text extraction alone when visual evidence matters.
+            - Do not treat Scholar Labs summaries, run rankings, topic pages, `_indexes/`, or
+              `llms*.txt` as evidence.
+            - Keep provider/manual abstracts separate from Scholar Labs summaries.
+
+            ## Paper Card Edits
+
+            Safe durable card edits:
+
+            - Add PDF-grounded notes under `## Notes`.
+            - Add or refine `topics` only when the PDF supports the retrieval label.
+            - Use `scholar-vault set-keywords` for explicit PDF/provider keywords.
+            - Use `scholar-vault set-abstract` only for the paper's actual abstract.
+            - Use `scholar-vault resolve-citation` for safe metadata correction.
+
+            Preserve:
+
+            - `discovered_in`, Scholar Labs provenance, summaries, and `summary_sources`.
+            - `raw/` inputs and provider caches.
+            - Metadata locks, abstract locks, enrichment fingerprints, and retry state.
+            - Generated section structure unless deliberately making a compatible card edit.
+
+            For theses, reports, preprints, and other non-article PDFs with no DOI or
+            journal/conference venue, do not invent metadata. Use the enrichment UI metadata
+            resolver or:
+
+            ```fish
+            scholar-vault resolve-citation --citekey <citekey> \
+              --authors "..." \
+              --year <year> \
+              --url <url> \
+              --lock
+            ```
+
+            ## Candidate And Staging Semantics
+
+            - Candidate results without paper cards are optional discovery context in the
+              selected-only workflow. They are not maintenance defects.
+            - `_indexes/missing-pdfs.md` is not an action queue unless explicitly revisiting
+              Scholar Labs candidates.
+            - Historical unmatched manifest entries are audit records. They matter only when
+              non-duplicate PDFs still exist in staging.
+            - Use `scholar-vault pdf-doctor --json` before treating PDF/staging issues as
+              actionable.
+
+            ## Research Workflow
+
+            For actual vault improvement after import and enrichment:
+
+            1. Use `$scholar-vault-research-loop` for a focused question, concept, method,
+               dataset, proposal section, or paper cluster.
+            2. Orient from `status --json`, `llms.txt`, relevant cards, runs, topics, and
+               existing `concepts/`, `syntheses/`, `tasks/`, and `proposals/`.
+            3. Build a reading set from selected paper cards with attached PDFs.
+            4. Use `scholar-vault notes-missing --heading "PDF reading notes"` when you need
+               the unread selected-card queue.
+            5. Read PDFs as primary evidence.
+            6. Update only touched paper cards with concise `## Notes`.
+            7. Create `concepts/<slug>.md` for reusable concepts, methods, datasets, visual
+               encodings, evaluation protocols, or terminology.
+            8. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers and
+               literature-review prose.
+            9. Create `tasks/<date>-research-gaps.md` for unclear evidence, follow-up
+               reading, or next Scholar Labs prompts.
+            10. Run `scholar-vault concept-index` after concept-only edits, or
+                `scholar-vault rebuild` after broader paper/topic/synthesis/task/proposal edits.
+
+            ## Proposal Workflow
+
+            Proposal workspaces live under `proposals/`.
+
+            Start or refresh a workspace with:
+
+            ```fish
+            scholar-vault proposal-sprint scaffold <slug>
+            ```
+
+            Before treating proposal evidence as ready, run:
+
+            ```fish
+            scholar-vault proposal-audit proposals/<slug>
+            ```
+
+            The audit should pass or be consciously addressed. It checks for:
+
+            - cited papers without `### PDF reading notes`;
+            - read papers without `Proposal role: Core`, `Proposal role: Supporting`, or
+              `Proposal role: Discarded`;
+            - broken source-matrix links;
+            - raw idea cards missing `Original User Notes - Verbatim`;
+            - draft claims that still cite Scholar Labs summaries instead of PDF-grounded
+              evidence.
+
+            ## Skills
+
+            Use these project skills when available:
+
+            - `$scholar-vault-orient`: map current vault state before deeper work.
+            - `$scholar-vault-read-pdf`: read linked PDFs and add PDF-grounded notes or
+              connections.
+            - `$scholar-vault-research-loop`: run a focused PDF-grounded vault improvement
+              cycle.
+            - `$scholar-vault-synthesize`: write cross-paper syntheses under `syntheses/`.
+            - `$scholar-vault-refine-card`: safely improve touched paper cards.
+            - `$scholar-vault-curate-topics`: clean topic labels and rebuild generated views.
+            - `$scholar-vault-pdf-triage`: inspect active PDF/staging issues.
+            - `$scholar-vault-gap-scout`: write follow-up tasks and research gaps.
+
+            Skills do not need to launch subagents by themselves. Subagents may be useful for
+            parallel read-only PDF passes or verification when available, but final synthesis
+            and file edits should stay coordinated in the main thread.
+
+            ## Reporting
+
+            When reporting work, distinguish:
+
+            - PDF-grounded findings;
+            - card metadata/provenance;
+            - Scholar Labs discovery context;
+            - generated navigation;
+            - open uncertainty and follow-up tasks.
+
+            Do not claim a synthesis is evidence-grounded unless the relevant PDFs were read or
+            the limitation is stated clearly.
+            """
+        ).strip()
+        + "\n"
     )
 
 
@@ -207,6 +416,9 @@ def render_llms_txt() -> str:
     return (
         "scholar-vault navigation\n"
         "- Canonical sources: papers/\n"
+        "- Concepts and method cards: concepts/ and _indexes/concepts.md\n"
+        "- Synthesis notes: syntheses/ and _indexes/syntheses.md\n"
+        "- Proposal workspaces: proposals/ and _indexes/proposals.md\n"
         "- Scholar Labs provenance: runs/\n"
         "- Optional candidate discovery backlog: _indexes/missing-pdfs.md\n"
         "- Historical unmatched staging records: _indexes/unmatched.md\n"
@@ -220,6 +432,7 @@ def render_llms_full(
     cards: list[SourceCard],
     runs: list[RunRecord],
     manifests: list[ImportManifest],
+    artifacts: dict[str, list[dict[str, Any]]] | None = None,
 ) -> str:
     lines = ["scholar-vault overview", ""]
     lines.append("Runs:")
@@ -274,6 +487,23 @@ def render_llms_full(
                     f"- {entry.original_path} | run={manifest.run_id} | decision={entry.decision}"
                 )
     lines.append("")
+    if artifacts:
+        for folder, title in [
+            ("concepts", "Concepts"),
+            ("syntheses", "Syntheses"),
+            ("proposals", "Proposals"),
+        ]:
+            rows = artifacts.get(folder) or []
+            lines.append(f"{title}:")
+            if rows:
+                for artifact in rows:
+                    lines.append(
+                        f"- {artifact.get('title') or artifact.get('path')} | "
+                        f"{artifact.get('path')}"
+                    )
+            else:
+                lines.append("- none")
+            lines.append("")
     return "\n".join(lines)
 
 

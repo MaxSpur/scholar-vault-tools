@@ -28,7 +28,7 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 
 1. Orient with `$scholar-vault-orient`, `AGENTS.md`, `llms.txt`, and `scholar-vault status --json`.
 2. Choose a focused question, concept, method, dataset, or cluster of related selected sources.
-3. Build a reading set from `papers/*.md` cards with attached PDFs. Do not treat unselected Scholar Labs candidates as evidence.
+3. Build a reading set from `papers/*.md` cards with attached PDFs. Use `scholar-vault notes-missing --heading "PDF reading notes"` when you need the unread selected-card queue. Do not treat unselected Scholar Labs candidates as evidence.
 4. For each source that matters, use `$scholar-vault-read-pdf`: extract full text, inspect relevant rendered pages/figures/tables, and note exact evidence from the PDF.
 5. Update touched paper cards with concise `## Notes` that capture methods, claims, datasets, evaluation setup, limitations, visual encodings, and links to related cards.
 6. Create or update metacards when they improve retrieval:
@@ -36,7 +36,8 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
    - `syntheses/<slug>.md` for cross-paper answers, tensions, and evidence-backed literature review sections.
    - `tasks/<date>-research-gaps.md` for follow-up reading, missing evidence, or next Scholar Labs prompts.
 7. Improve retrieval labels through `topics` only when the PDF evidence supports the label. Use `$scholar-vault-curate-topics` for broad cleanup.
-8. Run `scholar-vault rebuild`, then re-run `scholar-vault status --json` to confirm generated views are refreshed.
+8. Run `scholar-vault concept-index` after concept-only edits, or `scholar-vault rebuild` after broader edits, then re-run `scholar-vault status --json` to confirm generated views are refreshed.
+9. For proposal workspaces, start with `scholar-vault proposal-sprint scaffold <slug>`, then run `scholar-vault proposal-audit proposals/<slug>` and fix structural evidence gaps before treating the draft as ready.
 
 ## Durable Note Shapes
 

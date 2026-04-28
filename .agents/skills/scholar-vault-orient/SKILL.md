@@ -56,6 +56,7 @@ conda activate scholar-vault
 scholar-vault status --json
 scholar-vault configure
 scholar-vault runs
+scholar-vault notes-missing --heading "PDF reading notes"
 scholar-vault enrich --dry-run
 scholar-vault match-staging
 ```

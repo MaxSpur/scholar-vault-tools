@@ -19,10 +19,15 @@
 ## CLI Workflows
 
 - `configure`: stores user-level defaults for the vault, staging folder, optional export folder, and code directory in `~/.config/scholar-vault/config.yaml`. `--ui` opens a native folder-picker dialog. `--folder-mode shared` omits `exports` so staging is used for PDFs and Scholar Labs JSON exports; `--folder-mode separate` records an explicit exports folder. Commands use these defaults unless explicit paths are passed.
+- `init`: creates the vault folder structure, generated starter docs, and a vault-specific `AGENTS.md` operating guide when those files do not already exist.
 - `runs` / `list-runs`: lists previous Scholar Labs run records with the run ID, exported date, selected/result counts, unresolved count, and title. `install-fish-completion` writes a Fish completion file directly and delegates command, option, `--run`, `--citekey`, `--only`, and `--folder-mode` completion back to Typer so custom callbacks use the explicit or configured vault.
 - `status` / `doctor`: read-only vault health reports for humans and agents. The command summarizes canonical-card issues, run records, topic noise, optional candidate discovery backlog, historical unmatched manifest entries, active staging counts, and PDF inventory issues, with `--json` for Codex-friendly structured output. Candidate results without cards are not defects in the selected-only workflow.
 - `pdf-doctor`: read-only PDF inventory report for `pdfs/` and the optional staging folder. It flags orphan vault PDFs, missing card PDF files, duplicate hashes, duplicate-style filenames, repeated historical unmatched staged filenames, staged files already present in the vault by hash, and non-duplicate PDFs still actionable in staging.
+- `notes-missing`: read-only paper-card report for selected/attached cards that lack a requested notes subheading such as `PDF reading notes`. It is meant to produce PDF-reading queues for actual vault improvement work.
+- `concept-index`: regenerates `_indexes/concepts.md` from durable `concepts/*.md` metacards and refreshes `llms.txt` / `llms-full.txt` without a full card/runs/topics rebuild.
 - `topic-map`: read-only topic-frequency/noise report by default. With a YAML mapping it can dry-run or `--apply` exact topic frontmatter removals/renames on canonical `papers/*.md` cards, then rebuild derived topic pages and indexes.
+- `proposal-audit`: read-only evidence audit for a `proposals/<slug>` workspace. It checks outline citations against PDF reading notes, read-paper proposal roles, source-matrix links, raw idea notes, and draft claims that still cite Scholar Labs summaries instead of PDF-grounded evidence.
+- `proposal-sprint scaffold`: idempotently creates or updates a proposal workspace with an index, outline, source matrix, reading log, and raw idea card, then rebuilds derived navigation.
 - `match-staging` / `staging-matches`: cross-run discovery for leftover staging PDFs. The terminal form is read-only and scores all staged PDFs, one `--pdf`, or a typed `--title` against stored Scholar Labs results. `--ui` opens a desktop picker with the same search modes, direct PDF/card actions, staging-trash cleanup for already attached rows, and handoff to the normal reviewed `rerun` import flow. GUI import reports offer this picker when PDFs remain in staging.
 - `import-labs`: Scholar Labs convenience flow. It keeps all JSON results on the run record, creates canonical paper cards only for selected results by default, archives matched PDFs out of staging only after the verified vault copy exists, enriches selected paper cards by default, and moves used browser-export JSON unchanged into a sibling `used/` folder after successful non-dry-run imports. If `--export` is omitted, it imports the newest top-level `.json` file from the configured exports folder when that folder has one, otherwise from the staging folder.
 - Import summaries report decision provenance separately: prior selections reused from an existing manifest, existing vault cards linked, newly accepted staged PDFs, review prompts, unresolved results, staged-file cleanup, and enrichment processing.
@@ -45,7 +50,7 @@
 - Staging scan cache: `.scholar-vault-pdf-scan-cache` beside staged PDFs, keyed by filename plus size/mtime and ignored by JSON export discovery.
 - Raw citation cache: `raw/metadata/<citekey>/`
 - Derived indexes and exports: `_indexes/`, `_exports/`, `llms.txt`, `llms-full.txt`
-- Optional agent-written metacards: `concepts/`, `syntheses/`, and `tasks/`
+- Optional agent-written metacards and workspaces: `concepts/`, `syntheses/`, `tasks/`, and `proposals/`
 
 ## Merge Strategy
 

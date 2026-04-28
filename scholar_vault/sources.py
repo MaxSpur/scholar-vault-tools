@@ -101,6 +101,10 @@ class VaultPaths:
     papers: Path
     runs: Path
     topics: Path
+    concepts: Path
+    syntheses: Path
+    tasks: Path
+    proposals: Path
     indexes: Path
     exports: Path
 
@@ -123,6 +127,10 @@ class VaultPaths:
             papers=root / "papers",
             runs=root / "runs",
             topics=root / "topics",
+            concepts=root / "concepts",
+            syntheses=root / "syntheses",
+            tasks=root / "tasks",
+            proposals=root / "proposals",
             indexes=indexes,
             exports=exports,
         )
@@ -141,6 +149,10 @@ class VaultPaths:
             self.papers,
             self.runs,
             self.topics,
+            self.concepts,
+            self.syntheses,
+            self.tasks,
+            self.proposals,
             self.indexes,
             self.exports,
         ):

@@ -20,6 +20,7 @@ from .importer import (
     attach_pdf,
     clean_staging,
     cleanup_run_selected_only,
+    concept_index,
     confirm_no_publication_keywords,
     doctor_vault,
     enrich_citations,
@@ -33,7 +34,10 @@ from .importer import (
     initialize_vault,
     latest_run_id,
     list_unmatched,
+    notes_missing,
     pdf_doctor,
+    proposal_audit,
+    proposal_sprint_scaffold,
     rebuild_vault,
     rename_run,
     reset_vault,
@@ -54,6 +58,8 @@ from .models import (
 from .sources import VaultPaths, infer_run_title, load_run_records, load_source_cards
 
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
+proposal_sprint_app = typer.Typer(help="Proposal sprint workspace helpers.")
+app.add_typer(proposal_sprint_app, name="proposal-sprint")
 console = Console()
 
 
@@ -334,6 +340,13 @@ JsonOutputArg = Annotated[
     bool,
     typer.Option("--json", help="Print machine-readable JSON."),
 ]
+HeadingArg = Annotated[
+    str,
+    typer.Option(
+        "--heading",
+        help="Markdown subheading to require under the paper card's Notes section.",
+    ),
+]
 TopicMappingArg = Annotated[
     Path | None,
     typer.Option(
@@ -348,6 +361,18 @@ TopicMappingArg = Annotated[
 ApplyArg = Annotated[
     bool,
     typer.Option("--apply", help="Apply the planned changes. Default is dry-run."),
+]
+ProposalPathArg = Annotated[
+    Path,
+    typer.Argument(help="Proposal folder or Markdown file to audit, relative to the vault."),
+]
+ProposalSlugArg = Annotated[
+    str,
+    typer.Argument(help="Proposal workspace slug, for example pepr-mobidec."),
+]
+ProposalTitleArg = Annotated[
+    str | None,
+    typer.Option("--title", help="Human-readable proposal title."),
 ]
 OnlyArg = Annotated[
     str,
@@ -1108,6 +1133,80 @@ def _print_topic_map_summary(summary: dict[str, Any]) -> None:
                 ", ".join(row["after"]),
             )
         console.print(table)
+
+
+def _print_proposal_audit(summary: dict[str, Any]) -> None:
+    status = "OK" if summary.get("ok") else "ISSUES"
+    console.print(f"Proposal audit: {summary.get('proposal')} [{status}]")
+    counts = summary.get("counts") or {}
+    console.print(
+        "Files={files}, paper refs={paper_refs}, read papers={read_papers}, "
+        "outlines={outline_files}, matrices={source_matrix_files}.".format(**counts)
+    )
+    _print_issue_counts("Proposal Audit Issues", summary.get("issue_counts") or {})
+    issues = summary.get("issues") or {}
+    for key, rows in issues.items():
+        if not rows:
+            continue
+        table = Table(title=key.replace("_", " ").title(), show_lines=False)
+        table.add_column("File")
+        table.add_column("Paper/Target")
+        table.add_column("Message")
+        for row in rows[:50]:
+            table.add_row(
+                str(row.get("file") or "-"),
+                str(row.get("paper") or row.get("target") or "-"),
+                str(row.get("message") or ""),
+            )
+        console.print(table)
+
+
+def _print_notes_missing(summary: dict[str, Any]) -> None:
+    status = "OK" if summary.get("ok") else "MISSING"
+    console.print(f"Notes check: heading={summary.get('heading')!r} [{status}]")
+    console.print(
+        "Eligible cards={eligible_cards}, present={present}, missing={missing}.".format(
+            **summary
+        )
+    )
+    rows = summary.get("missing_cards") or []
+    if not rows:
+        return
+    table = Table(title="Cards Missing Notes Heading", show_lines=False)
+    table.add_column("Paper")
+    table.add_column("Title")
+    table.add_column("PDF")
+    for row in rows[:80]:
+        table.add_row(
+            str(row.get("paper") or ""),
+            str(row.get("title") or ""),
+            str(row.get("pdf") or ""),
+        )
+    console.print(table)
+
+
+def _print_concept_index(summary: dict[str, Any]) -> None:
+    console.print(
+        f"Wrote {summary.get('index')} with {summary.get('concepts')} concept card(s)."
+    )
+    if summary.get("llm_files_written"):
+        console.print(f"Refreshed {summary.get('llm_files_written')} LLM context file(s).")
+
+
+def _print_proposal_scaffold(summary: dict[str, Any]) -> None:
+    console.print(f"Proposal sprint scaffold: {summary.get('proposal')}")
+    files = summary.get("files") or {}
+    for state in ("created", "updated", "unchanged"):
+        values = files.get(state) or []
+        if values:
+            console.print(f"- {state.title()}: {', '.join(values)}")
+    rebuild = summary.get("rebuild") or {}
+    if rebuild:
+        console.print(
+            "- Rebuilt derived outputs: "
+            f"{rebuild.get('index_files_written')} indexes, "
+            f"{rebuild.get('llm_files_written')} LLM files."
+        )
 
 
 def _show_enrichment_ui(
@@ -1888,6 +1987,31 @@ def pdf_doctor_command(
         _print_pdf_doctor_summary(summary)
 
 
+@app.command("notes-missing")
+def notes_missing_command(
+    vault: VaultArg = None,
+    heading: HeadingArg = "PDF reading notes",
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = notes_missing(_resolve_vault(vault), heading=heading)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_notes_missing(summary)
+
+
+@app.command("concept-index")
+def concept_index_command(
+    vault: VaultArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = concept_index(_resolve_vault(vault))
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_concept_index(summary)
+
+
 @app.command("topic-map")
 def topic_map_command(
     vault: VaultArg = None,
@@ -1912,6 +2036,33 @@ def topic_map_command(
         _print_json(summary)
     else:
         _print_topic_map_summary(summary)
+
+
+@app.command("proposal-audit")
+def proposal_audit_command(
+    proposal: ProposalPathArg,
+    vault: VaultArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = proposal_audit(_resolve_vault(vault), proposal)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_proposal_audit(summary)
+
+
+@proposal_sprint_app.command("scaffold")
+def proposal_sprint_scaffold_command(
+    slug: ProposalSlugArg,
+    vault: VaultArg = None,
+    title: ProposalTitleArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = proposal_sprint_scaffold(_resolve_vault(vault), slug, title=title)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_proposal_scaffold(summary)
 
 
 @app.command("enrich")

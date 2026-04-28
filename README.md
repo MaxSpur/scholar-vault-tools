@@ -164,6 +164,10 @@ scholar-labs-vault/
   papers/
   runs/
   topics/
+  concepts/
+  syntheses/
+  tasks/
+  proposals/
   _indexes/
     prompts.md
     papers.md
@@ -171,11 +175,18 @@ scholar-labs-vault/
     missing-pdfs.md
     unmatched.md
     zotero-migration.md
+    concepts.md
+    syntheses.md
+    proposals.md
   _exports/
     library.bib
     library.json
     library.csl.json
 ```
+
+`AGENTS.md` is initialized with the vault-specific agent operating rules from
+`VAULT_AGENTS_TEMPLATE.md`. Existing vault-level `AGENTS.md` files are preserved
+so local project notes are not overwritten by later commands.
 
 `init` does not install Codex skills. The optional project-local agent skills
 from this repository can be copied into `.agents/skills/` later; see
@@ -431,6 +442,11 @@ Inspect vault health for an agent or for manual triage:
 scholar-vault status --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault status --vault ~/Documents/Research/scholar-labs-vault --json
 scholar-vault doctor --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault notes-missing --vault ~/Documents/Research/scholar-labs-vault --heading "PDF reading notes"
+scholar-vault concept-index --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault proposal-sprint scaffold --vault ~/Documents/Research/scholar-labs-vault pepr-mobidec
+scholar-vault proposal-audit --vault ~/Documents/Research/scholar-labs-vault proposals/pepr-mobidec
+scholar-vault proposal-audit --vault ~/Documents/Research/scholar-labs-vault proposals/pepr-mobidec --json
 ```
 
 `status` and `doctor` are aliases. They are read-only and report card counts,
@@ -440,6 +456,25 @@ staging counts, topic noise, orphan PDFs, duplicate PDF hashes, and
 duplicate-style filenames. `enrichment_status: missing` is a diagnostic state,
 not necessarily a UI follow-up issue; `scholar-vault enrich --ui` shows only
 actionable rows such as ambiguous metadata or missing keywords.
+
+`notes-missing` is read-only. It lists active, attached paper cards whose
+`## Notes` section does not contain a requested subheading, for example
+`### PDF reading notes`. Use it to build a reading queue for selected sources.
+
+`concept-index` regenerates `_indexes/concepts.md` from durable concept cards
+and refreshes `llms.txt` / `llms-full.txt` so future agents can find those
+metacards without a full rebuild.
+
+`proposal-sprint scaffold <slug>` creates or updates
+`proposals/<slug>/index.md`, `outline.md`, `source-matrix.md`,
+`reading-log.md`, and `raw-idea.md`. It appends missing required sections but
+does not replace existing proposal prose, then rebuilds derived navigation.
+
+`proposal-audit` is read-only. It checks a proposal workspace for cited papers
+without `### PDF reading notes`, read papers without `Proposal role: Core`,
+`Proposal role: Supporting`, or `Proposal role: Discarded`, broken source-matrix
+links, missing `Original User Notes - Verbatim` in the raw idea card, and draft
+claims that still cite Scholar Labs summaries instead of PDF-grounded evidence.
 
 Enrich canonical paper cards with citation metadata, abstracts, and publication keywords:
 
@@ -844,22 +879,31 @@ normal research workflow is:
    dataset, or paper cluster.
 2. Let Codex orient from `status --json`, `llms.txt`, cards, topics, runs, and
    existing `syntheses/`, `concepts/`, and `tasks/`.
-3. Read the linked PDFs as primary evidence. Text extraction should cover the
+3. Use `scholar-vault notes-missing --heading "PDF reading notes"` when you
+   need a concrete queue of selected cards that have not yet received PDF
+   reading notes.
+4. Read the linked PDFs as primary evidence. Text extraction should cover the
    full paper for serious reading; page ranges are only for targeted revisits.
-4. Use Codex's PDF reading/rendering capabilities for figures, tables, maps,
+5. Use Codex's PDF reading/rendering capabilities for figures, tables, maps,
    visualizations, equations, scanned pages, and appendix material. Do not rely
    on text extraction alone for visual evidence.
-5. Update only touched paper cards with concise `## Notes` that capture claims,
+6. Update only touched paper cards with concise `## Notes` that capture claims,
    methods, datasets, evaluation setup, limitations, visual encodings, and
    links to related paper cards.
-6. Create `concepts/<slug>.md` for reusable concepts, methods, datasets,
+7. Create `concepts/<slug>.md` for reusable concepts, methods, datasets,
    evaluation protocols, or visual encodings that connect multiple papers.
-7. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers,
+8. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers,
    tensions, and literature-review prose.
-8. Create `tasks/<date>-research-gaps.md` for unclear evidence, follow-up
+9. Create `tasks/<date>-research-gaps.md` for unclear evidence, follow-up
    reading, or next Scholar Labs prompts.
-9. Run `scholar-vault rebuild` so generated indexes, exports, topics, and
-   `llms*.txt` include the new durable notes and connections.
+10. For proposal workspaces, start with
+   `scholar-vault proposal-sprint scaffold <slug>`, then run
+   `scholar-vault proposal-audit proposals/<slug>` before treating the draft
+   evidence layer as ready.
+11. Run `scholar-vault concept-index` after concept-only edits, or
+   `scholar-vault rebuild` after broader paper, topic, synthesis, task, or
+   proposal edits, so generated context files include the new durable notes and
+   connections.
 
 ## Generated Records
 
@@ -868,6 +912,7 @@ normal research workflow is:
 - `concepts/*.md`: optional agent-written concept/metacards that connect papers by method, dataset, visual encoding, evaluation protocol, or terminology.
 - `syntheses/*.md`: optional agent-written cross-paper syntheses grounded in PDFs.
 - `tasks/*.md`: optional agent-written follow-up tasks and research gaps.
+- `proposals/*.md` or `proposals/<slug>/*.md`: optional proposal workspaces, outlines, source matrices, and draft evidence layers.
 - `papers/*.md` body sections: human-readable keywords, abstract, and primary Scholar Labs summary. Long prose is not duplicated in frontmatter.
 - `runs/<run_id>/<Short Title.md>`: Obsidian-friendly per-run provenance pages that keep all Scholar Labs candidate results.
 - `runs/*/index.yaml`: machine-readable run records used by `resume`, `rerun`, and rebuilds.

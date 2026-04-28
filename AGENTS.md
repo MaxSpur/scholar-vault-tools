@@ -10,7 +10,7 @@
 ## Working Rules
 
 - Before running any `scholar-vault ...` CLI command, make sure the `scholar-vault` Conda environment is active in that shell (`conda activate scholar-vault`). If the shell cannot resolve the command, use `/Users/MadMax/miniforge3/condabin/conda run -n scholar-vault scholar-vault ...` instead of retrying plain `scholar-vault`.
-- Prefer `scholar-vault status --json`, `scholar-vault pdf-doctor --json`, and dry-run `scholar-vault topic-map --mapping ...` for agent orientation before manually scanning many generated files.
+- Prefer `scholar-vault status --json`, `scholar-vault pdf-doctor --json`, `scholar-vault notes-missing --heading "PDF reading notes"`, `scholar-vault concept-index`, and dry-run `scholar-vault topic-map --mapping ...` for agent orientation and indexing before manually scanning many generated files.
 - Keep linked PDFs as the canonical evidence artifacts. Treat `papers/` cards as the canonical metadata, provenance, index, and notes layer over those PDFs. Treat runs, indexes, and exports as derived views.
 - For Scholar Labs imports, keep all candidate results on the run record and create canonical `papers/*.md` cards only for selected results by default.
 - In the selected-only Scholar Labs workflow, candidate results without paper cards are discovery context, not maintenance defects. Do not treat `_indexes/missing-pdfs.md` as an action queue unless the user explicitly wants to revisit candidates or there are real, non-duplicate PDFs left in staging.
@@ -46,6 +46,7 @@
 - Keep generated Markdown Obsidian-safe: YAML frontmatter, plain links, no plugin-only syntax.
 - Use `resolve-citation` / `set-metadata`, `set-abstract`, `set-keywords`, `topic-map --apply`, `attach-pdf`, `rerun`, and `clean-staging` instead of hand-editing tool-managed metadata, topic batches, or PDF state.
 - Any workflow that refines factual claims, methods, findings, limitations, or source connections should read the linked PDF, not rely only on Scholar Labs summaries or existing card prose.
-- For PDF-grounded research work, durable agent-written metacards may live in `concepts/`, `syntheses/`, and `tasks/`. These folders are not generated; keep them concise, linked, and evidence-grounded.
+- For PDF-grounded research work, durable agent-written metacards may live in `concepts/`, `syntheses/`, and `tasks/`. These folders are not generated; keep them concise, linked, and evidence-grounded. Use `concept-index` for concept-only refreshes and `rebuild` after broader edits.
+- For proposal workspaces under `proposals/`, use `proposal-sprint scaffold <slug>` to create/update the outline, source matrix, reading log, and raw idea card, then use `proposal-audit` before treating outlines or draft claims as evidence-ready.
 - Rebuild should rerender existing generated paper cards from the current template, not only indexes. Template-only improvements such as `## Quick access` must apply to existing cards.
 - Maintain idempotence for import commands and rebuilds.

@@ -11,6 +11,7 @@ from scholar_vault.importer import (
     PDF_SCAN_CACHE_FILENAME,
     apply_topic_map,
     cleanup_run_selected_only,
+    concept_index,
     confirm_no_publication_keywords,
     doctor_vault,
     enrich_vault,
@@ -20,7 +21,10 @@ from scholar_vault.importer import (
     import_scholar_labs_run,
     initialize_vault,
     latest_run_id,
+    notes_missing,
     pdf_doctor,
+    proposal_audit,
+    proposal_sprint_scaffold,
     rebuild_vault,
     rename_run,
     reset_vault,
@@ -839,10 +843,207 @@ def test_rebuild_rerenders_existing_paper_cards_with_latest_template(tmp_path: P
     rendered = (paths.papers / "quick-access.md").read_text(encoding="utf-8")
     assert summary["papers"] == 1
     assert summary["paper_cards_written"] == 1
-    assert summary["index_files_written"] == 6
+    assert summary["index_files_written"] == 9
     assert summary["export_files_written"] == 3
     assert "## Quick access" in rendered
     assert "[Open local PDF](../pdfs/quick-access.pdf)" in rendered
+
+
+def test_initialize_vault_writes_full_agents_template(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+
+    paths = initialize_vault(vault)
+    agents = (paths.vault / "AGENTS.md").read_text(encoding="utf-8")
+
+    assert agents.startswith("# Scholar Vault Agent Notes")
+    assert "Linked `pdfs/*.pdf` files are the canonical evidence artifacts." in agents
+    assert 'scholar-vault notes-missing --heading "PDF reading notes"' in agents
+    assert "scholar-vault proposal-sprint scaffold <slug>" in agents
+    assert "scholar-vault proposal-audit proposals/<slug>" in agents
+    assert "$scholar-vault-research-loop" in agents
+
+
+def test_rebuild_indexes_research_artifacts(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    (paths.concepts / "flow-maps.md").write_text(
+        (
+            "---\n"
+            "type: concept\n"
+            "title: Flow Maps\n"
+            "sources:\n"
+            "  - papers/source.md\n"
+            "---\n\n"
+            "# Flow Maps\n"
+        ),
+        encoding="utf-8",
+    )
+    (paths.syntheses / "od-flow.md").write_text("# OD-flow Synthesis\n", encoding="utf-8")
+    (paths.proposals / "pepr-mobidec").mkdir(parents=True)
+    (paths.proposals / "pepr-mobidec" / "outline.md").write_text(
+        "# Proposal Outline\n",
+        encoding="utf-8",
+    )
+
+    rebuild_vault(vault)
+
+    concepts_index = (paths.indexes / "concepts.md").read_text(encoding="utf-8")
+    syntheses_index = (paths.indexes / "syntheses.md").read_text(encoding="utf-8")
+    proposals_index = (paths.indexes / "proposals.md").read_text(encoding="utf-8")
+    llms = (paths.vault / "llms.txt").read_text(encoding="utf-8")
+    llms_full = (paths.vault / "llms-full.txt").read_text(encoding="utf-8")
+
+    assert "[Flow Maps](../concepts/flow-maps.md)" in concepts_index
+    assert "[OD-flow Synthesis](../syntheses/od-flow.md)" in syntheses_index
+    assert "[Proposal Outline](../proposals/pepr-mobidec/outline.md)" in proposals_index
+    assert "_indexes/concepts.md" in llms
+    assert "Concepts:" in llms_full
+
+
+def test_notes_missing_reports_attached_cards_without_heading(tmp_path: Path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="read-paper",
+            citekey="readpaper",
+            title="Read Paper",
+            pdf="pdfs/read-paper.pdf",
+            pdf_status="attached",
+            notes="### PDF reading notes - 2026-04-28\nEvidence from the PDF.",
+        ),
+    )
+    _save_card(
+        paths,
+        SourceCard(
+            slug="unread-paper",
+            citekey="unreadpaper",
+            title="Unread Paper",
+            pdf="pdfs/unread-paper.pdf",
+            pdf_status="attached",
+        ),
+    )
+    _save_card(
+        paths,
+        SourceCard(
+            slug="candidate",
+            citekey="candidate",
+            title="Candidate",
+            status="candidate",
+        ),
+    )
+
+    summary = notes_missing(vault, heading="PDF reading notes")
+
+    assert summary["eligible_cards"] == 2
+    assert summary["present"] == 1
+    assert summary["missing"] == 1
+    assert summary["missing_cards"][0]["paper"] == "papers/unread-paper.md"
+
+
+def test_concept_index_refreshes_concept_index_and_llms(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    (paths.concepts / "flow-maps.md").write_text(
+        (
+            "---\n"
+            "type: concept\n"
+            "title: Flow Maps\n"
+            "sources:\n"
+            "  - papers/source.md\n"
+            "---\n\n"
+            "# Flow Maps\n"
+        ),
+        encoding="utf-8",
+    )
+
+    summary = concept_index(vault)
+
+    concepts_index = (paths.indexes / "concepts.md").read_text(encoding="utf-8")
+    llms_full = (paths.vault / "llms-full.txt").read_text(encoding="utf-8")
+    assert summary["concepts"] == 1
+    assert summary["index"] == "_indexes/concepts.md"
+    assert "[Flow Maps](../concepts/flow-maps.md)" in concepts_index
+    assert "Concepts:" in llms_full
+
+
+def test_proposal_sprint_scaffold_creates_and_updates_workspace(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    summary = proposal_sprint_scaffold(vault, "pepr-mobidec", title="PEPR Mobidec")
+
+    proposal = paths.proposals / "pepr-mobidec"
+    assert summary["proposal"] == "proposals/pepr-mobidec"
+    assert (proposal / "source-matrix.md").exists()
+    assert (proposal / "reading-log.md").exists()
+    assert (proposal / "outline.md").exists()
+    assert "Original User Notes - Verbatim" in (
+        proposal / "raw-idea.md"
+    ).read_text(encoding="utf-8")
+    assert "[Source matrix](source-matrix.md)" in (
+        proposal / "outline.md"
+    ).read_text(encoding="utf-8")
+
+    (proposal / "outline.md").write_text("# Custom Outline\n", encoding="utf-8")
+    updated = proposal_sprint_scaffold(vault, "proposals/pepr-mobidec")
+
+    assert "proposals/pepr-mobidec/outline.md" in updated["files"]["updated"]
+    assert "# Custom Outline" in (proposal / "outline.md").read_text(encoding="utf-8")
+    assert "_indexes/proposals.md" in (paths.vault / "llms.txt").read_text(encoding="utf-8")
+
+
+def test_proposal_audit_reports_evidence_gaps(tmp_path: Path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="read-paper",
+            citekey="readpaper",
+            title="Read Paper",
+            notes="### PDF reading notes - 2026-04-28\nEvidence from the PDF.",
+        ),
+    )
+    _save_card(
+        paths,
+        SourceCard(slug="unread-paper", citekey="unreadpaper", title="Unread Paper"),
+    )
+    proposal = paths.proposals / "pepr-mobidec"
+    proposal.mkdir(parents=True)
+    (proposal / "outline.md").write_text(
+        "# Outline\n\n"
+        "- Claim from [Read Paper](../../papers/read-paper.md).\n"
+        "- Claim from [Unread Paper](../../papers/unread-paper.md).\n"
+        "- Scholar Labs summary says this is relevant.\n",
+        encoding="utf-8",
+    )
+    (proposal / "source-matrix.md").write_text(
+        "# Source Matrix\n\n"
+        "| Source | Proposal role |\n"
+        "| --- | --- |\n"
+        "| [Read Paper](../../papers/read-paper.md) | Proposal role: Core |\n"
+        "| [Broken](../../papers/missing-paper.md) | Proposal role: Supporting |\n",
+        encoding="utf-8",
+    )
+    (proposal / "raw-idea.md").write_text(
+        "# Raw Idea\n\n## Original User Notes - Verbatim\n\nUser note.",
+        encoding="utf-8",
+    )
+
+    summary = proposal_audit(vault, "proposals/pepr-mobidec")
+
+    assert summary["ok"] is False
+    assert summary["issue_counts"]["outline_citations_without_pdf_reading_notes"] == 1
+    assert summary["issue_counts"]["broken_source_matrix_links"] == 1
+    assert summary["issue_counts"]["draft_claims_using_scholar_labs_summaries"] == 1
+    assert summary["issues"]["outline_citations_without_pdf_reading_notes"][0]["paper"] == (
+        "papers/unread-paper.md"
+    )
 
 
 def render_without_quick_access(card: SourceCard) -> str:
