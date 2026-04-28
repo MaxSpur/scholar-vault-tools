@@ -4,6 +4,7 @@
 - Preserve existing Scholar Labs summaries and provenance when merging later BibTeX or DOI enrichment.
 - Idempotence is easiest when run slugs depend on export metadata and when merges happen before any new card slug is allocated.
 - This shell may not expose `python` directly. Use `conda run -n scholar-vault ...` for reliable verification in this repo.
+- Vault-side Codex sessions may not have `scholar-vault` on `PATH`. Skills and docs should explicitly activate `conda activate scholar-vault` before CLI examples and give the `/Users/MadMax/miniforge3/condabin/conda run -n scholar-vault scholar-vault ...` fallback.
 - The Scholar Labs browser exporter is DOM-specific. Treat `prompt == "Google Scholar"` or `results == []` as a broken export, not as an empty but valid import.
 - For Scholar Labs, the run is the place to keep all candidate results. `papers/` should default to selected/attached sources only, otherwise Obsidian and LLM navigation get noisy fast.
 - If a workflow is meant to empty matched PDFs out of staging, make that explicit in the command name. The lower-level importer should stay safe by default, and the user-facing Labs convenience command can opt into verified copy-then-archive behavior.
@@ -14,6 +15,7 @@
 - After a PDF is attached to a canonical card, previous runs that mention the same paper should be synchronized immediately. Otherwise the same source looks unresolved in one run and selected in another until each run is rerun by hand.
 - `rebuild` should repair stale run links as well as rerender files. Use conservative identity checks such as Scholar CID or exact normalized title, not fuzzy matching, when backfilling existing card/PDF attachments into older runs.
 - Explicit absence needs its own state. A rendered "no publication keywords" section must round-trip through the card parser without becoming a real keyword and without reappearing in follow-up queues.
+- A generic enrichment command should run every user-visible enrichment queue by default. Keep narrow legacy commands for scripts, but make `--only` the filter users reach for when the UI reports a specific queue.
 - The leftover staging PDF GUI is a parent queue, not a one-shot launcher. Reviewed reruns should return to the same window and refresh the remaining candidates.
 - Already-attached staging-match rows should support direct inspection and non-destructive cleanup. Move redundant staging PDFs into a staging-local `trash/` folder instead of deleting them or archiving them into the vault.
 - A parent queue window must not remain modal/frontmost while it launches child workflows. Hide or make it modeless during reviewed reruns so import reports and follow-up windows can receive focus.
@@ -68,6 +70,7 @@
 - Obsidian Graph uses Markdown file basenames, so generated run notes should not be named `index.md`. Use meaningful run filenames and keep machine state in `index.yaml`.
 - Keep run IDs and Obsidian run-note titles separate. The run ID is for idempotence and manifests; the short title is for human navigation and Graph labels.
 - When asking for a run title, show the full Scholar Labs prompt from the JSON. The title decision depends on the prompt context, so truncated prompt text is not enough.
+- Fish completion should be installed as an actual `~/.config/fish/completions/*.fish` file for project CLIs. Relying on Typer shell detection can silently fail or require process inspection that is not always available.
 - If a user renames a generated run note in Obsidian, preserve that filename through `note_file`; do not slugify it back into a machine-looking name during rebuild.
 - Staging-side caches should not use a `.json` suffix. `import-labs` discovers the newest top-level JSON export, so cache files need a hidden non-JSON name.
 - Rebuild must rerender generated paper Markdown when templates change. Metadata-only rebuilds leave old body layout problems such as missing Quick access sections in existing cards.

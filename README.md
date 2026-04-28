@@ -67,12 +67,13 @@ From Fish, install tab completion for command names, options, and vault-backed
 values such as run IDs:
 
 ```fish
-scholar-vault --install-completion
+scholar-vault install-fish-completion
 exec fish
 ```
 
-Use `scholar-vault --show-completion` from Fish if you want to inspect the
-generated completion script instead of installing it.
+This writes `~/.config/fish/completions/scholar-vault.fish` directly, avoiding
+Typer shell-detection issues. Use `scholar-vault show-fish-completion` if you
+want to inspect the generated completion script instead of installing it.
 
 Run the test suite if you are developing the tool:
 
@@ -84,6 +85,14 @@ python -m ruff check .
 If Fish cannot find `scholar-vault`, confirm that `conda activate
 scholar-vault` succeeded, then reinstall from the repository folder with
 `python -m pip install -e .`.
+
+All examples below assume the `scholar-vault` Conda environment is active in
+the current shell before calling `scholar-vault`. In an agent or shell where
+activation is unavailable, use the explicit fallback form:
+
+```fish
+/Users/MadMax/miniforge3/condabin/conda run -n scholar-vault scholar-vault runs
+```
 
 ## Configure Default Paths
 
@@ -125,7 +134,7 @@ scholar-vault import-labs --commit
 scholar-vault import-pdf
 scholar-vault rerun --commit
 scholar-vault rebuild
-scholar-vault enrich-citations --abstracts
+scholar-vault enrich --ui
 ```
 
 ## Initialize A Vault
@@ -166,6 +175,83 @@ scholar-labs-vault/
     library.json
     library.csl.json
 ```
+
+`init` does not install Codex skills. The optional project-local agent skills
+from this repository can be copied into `.agents/skills/` later; see
+[Codex Agent Skills](#codex-agent-skills).
+
+## End-To-End Tutorial
+
+The normal workflow is: configure paths once, import a Scholar Labs run, resolve
+PDF and metadata follow-up, then use the vault as an agent-readable wiki.
+
+1. Configure your defaults:
+
+```fish
+conda activate scholar-vault
+cd ~/Developer/scholar-vault-tools
+scholar-vault configure \
+  --code ~/Developer/scholar-vault-tools \
+  --vault ~/Documents/Research/scholar-labs-vault \
+  --staging ~/Downloads/scholar-labs-staging \
+  --folder-mode shared
+```
+
+2. Create the vault if needed:
+
+```fish
+scholar-vault init --vault ~/Documents/Research/scholar-labs-vault
+```
+
+3. In Google Scholar Labs, run a prompt, download the PDFs you want into the
+staging folder, and save the visible results with
+`browser/scholar_labs_json_exporter.js`.
+
+4. Import the newest unused Scholar Labs export and review matches in the
+desktop UI:
+
+```fish
+scholar-vault import-labs --ui
+```
+
+For a mostly automatic terminal import, use:
+
+```fish
+scholar-vault import-labs --commit
+```
+
+The import keeps all Scholar Labs candidates on the run record, creates
+canonical `papers/*.md` cards for selected/matched papers by default, copies
+verified PDFs into `pdfs/`, archives matched staging PDFs, moves the used JSON
+export into `used/`, and runs citation, abstract, and keyword enrichment unless
+you pass `--no-enrich`.
+
+5. If PDFs remain in staging, triage them against previous runs:
+
+```fish
+scholar-vault match-staging --ui
+scholar-vault rerun --ui
+```
+
+6. Resolve metadata, abstract, and keyword issues:
+
+```fish
+scholar-vault enrich --ui
+```
+
+Use `set-abstract` or `set-keywords` when a manual correction is clearer than
+another provider lookup.
+
+7. Rebuild after manual paper-card edits:
+
+```fish
+scholar-vault rebuild
+```
+
+8. Open the vault in Obsidian or start a Codex project from the vault folder.
+Use `llms.txt`, `llms-full.txt`, `_indexes/`, `papers/`, and `runs/` as the
+agent navigation surface. Install the optional Codex skills when you want guided
+agent refinement workflows.
 
 ## Scholar Labs Workflow
 
@@ -332,28 +418,29 @@ Regenerate BibTeX only:
 scholar-vault bibtex --vault ~/Documents/Research/scholar-labs-vault
 ```
 
-Enrich canonical paper cards with DOI and citation metadata:
+Enrich canonical paper cards with citation metadata, abstracts, and publication keywords:
 
 ```fish
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault
 ```
 
 Useful enrichment variants:
 
 ```fish
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --citekey smith2024rag
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-doi
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-bibtex
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --abstracts
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-abstract
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-keywords
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --refresh
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --refresh-abstracts
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --retry-failed
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --dry-run
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --citekey smith2024rag
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --only missing-doi
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --only missing-bibtex
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --only missing-abstract
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --only missing-keywords
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --refresh
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --refresh-abstracts
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --retry-failed
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --dry-run
 ```
 
-`enrich-citations` processes canonical `papers/*.md` cards only. It tries local DOI detection first, then cached provider lookups from Crossref, OpenAlex, Europe PMC, DataCite, and DOI content negotiation. Raw provider responses are cached under `raw/metadata/<citekey>/`. When a known DOI resolves to a preprint or repository record with incomplete venue metadata, enrichment may search for a strong published-version match and promote the published DOI and venue instead.
+`enrich` processes canonical `papers/*.md` cards only. By default it runs citation/DOI, abstract, and publication-keyword passes. Use `--only` as a filter when you want to focus on one queue. The older `enrich-citations` command remains available for citation-only scripts.
+
+For citation metadata, the tool tries local DOI detection first, then cached provider lookups from Crossref, OpenAlex, Europe PMC, DataCite, and DOI content negotiation. Raw provider responses are cached under `raw/metadata/<citekey>/`. When a known DOI resolves to a preprint or repository record with incomplete venue metadata, enrichment may search for a strong published-version match and promote the published DOI and venue instead.
 
 During processing, progress output reports local DOI/PDF scans, provider
 attempts, candidate counts, skipped fallback passes, and final write decisions.
@@ -363,7 +450,7 @@ the GUI result browser when you want to filter those groups and open the
 associated paper card or PDF:
 
 ```fish
-scholar-vault enrich-citations --ui
+scholar-vault enrich --ui
 ```
 
 The command writes these frontmatter fields: `doi_status`, `doi_source`, `doi_confidence`, `citation_status`, `citation_source`, `citation_last_checked`, `citation_enriched_at`, `citation_input_fingerprint`, `citation_retries`, `citation_skip_reason`, `metadata_lock`, `enrichment_status`, `enrichment_missing`, and `enrichment_refresh`.
@@ -379,17 +466,16 @@ Interpretation:
 - `unresolved`: no acceptable DOI or citation metadata was found.
 - `incomplete`: citation metadata was generated, but canonical fields such as `venue`, `authors`, `year`, or `doi` are still missing or still look like Scholar preview strings.
 
-Set `metadata_lock: true` in a paper card to prevent automatic metadata overwrites. Use `--refresh` to reprocess generated or verified records, `--retry-failed` to retry unresolved records past the retry limit, and `--force` only when you intentionally want to process locked metadata. To mark one card for another normal enrichment attempt from Obsidian, set `enrichment_refresh: true` in that paper card and run `scholar-vault enrich-citations`; the flag is cleared after processing.
+Set `metadata_lock: true` in a paper card to prevent automatic metadata overwrites. Use `--refresh` to reprocess generated or verified records, `--retry-failed` to retry unresolved records past the retry limit, and `--force` only when you intentionally want to process locked metadata. To mark one card for another normal enrichment attempt from Obsidian, set `enrichment_refresh: true` in that paper card and run `scholar-vault enrich`; the flag is cleared after processing.
 
-Abstract enrichment is opt-in through the same command:
+To focus only on abstract enrichment, use `--only missing-abstract`:
 
 ```fish
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --abstracts
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-abstract
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --citekey smith2024rag --abstracts
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --refresh-abstracts
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --retry-failed --abstracts
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --dry-run --abstracts
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --only missing-abstract
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --citekey smith2024rag --only missing-abstract
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --refresh-abstracts
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --retry-failed --only missing-abstract
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --dry-run --only missing-abstract
 ```
 
 The abstract is not the Scholar Labs summary. Scholar Labs summaries explain why the source appeared in a prompt result; abstracts are provider or PDF metadata and are stored in the `## Abstract` section of each paper card. Frontmatter keeps only abstract status, source, confidence, fingerprint, and lock metadata so agents do not read the same long abstract twice.
@@ -403,7 +489,7 @@ The `--ui` follow-up window shows only actionable abstract/citation/keyword prob
 Paper keywords are written to `keywords` frontmatter and the `## Keywords` section when available. PDF keyword extraction recognizes both `Keywords` and `Index Terms` labels, and accepts common separators such as commas, semicolons, pipes, middle dots, and bullets. To retry attached PDFs that have no captured keywords, run:
 
 ```fish
-scholar-vault enrich-citations --vault ~/Documents/Research/scholar-labs-vault --only missing-keywords
+scholar-vault enrich --vault ~/Documents/Research/scholar-labs-vault --only missing-keywords
 ```
 
 If automatic PDF keyword extraction still finds nothing, GUI follow-up shows a keywords issue row like a missing abstract. You can also set keywords from the CLI:
@@ -575,6 +661,86 @@ scholar-vault reset --vault ~/Documents/Research/scholar-labs-vault --yes
 ```
 
 `reset` only clears vault-managed state inside the vault itself. It does not touch your external download folders such as `~/Downloads/scholar-labs-staging` or `~/Downloads/scholar-labs-exports`.
+
+## Codex Agent Skills
+
+This repository includes optional Codex skills under `.agents/skills/` for
+post-import vault refinement. They are not part of the generated vault by
+default; copy them into the vault when you want to start a Codex project there.
+
+```fish
+set src ~/Developer/scholar-vault-tools/.agents/skills
+set vault ~/Documents/Research/scholar-labs-vault
+
+mkdir -p $vault/.agents/skills
+rsync -a $src/ $vault/.agents/skills/
+```
+
+Rerunning the same `rsync -a $src/ $vault/.agents/skills/` command updates and
+overwrites files with the same names and adds new skill files. It does not
+remove old files that no longer exist in the source. Use `rsync -a --delete
+$src/ $vault/.agents/skills/` only if the vault skill folder contains no
+vault-local skills you want to keep.
+
+Verify the install:
+
+```fish
+find $vault/.agents/skills -maxdepth 2 -name SKILL.md -print
+```
+
+Then open a new Codex session with the vault as the project folder:
+
+```fish
+cd ~/Documents/Research/scholar-labs-vault
+```
+
+When a vault-side Codex task needs the CLI, first run commands from an active
+environment:
+
+```fish
+conda activate scholar-vault
+scholar-vault runs
+```
+
+If that Codex shell does not have Conda activation initialized, use:
+
+```fish
+/Users/MadMax/miniforge3/condabin/conda run -n scholar-vault scholar-vault runs
+```
+
+If a Codex session was already open on the vault, restart it or open a fresh
+session so `.agents/skills/` is scanned.
+
+Available skills:
+
+- `$scholar-vault-orient`: map relevant papers, runs, topics, missing PDFs,
+  unmatched PDFs, and metadata issues before doing deeper work.
+- `$scholar-vault-synthesize`: write evidence-linked synthesis notes under
+  `syntheses/` from canonical paper cards and run provenance.
+- `$scholar-vault-refine-card`: safely improve `papers/*.md` notes and safe
+  metadata while preserving generated sections, enrichment state, locks, and
+  provenance.
+- `$scholar-vault-curate-topics`: clean noisy prompt-derived `topics`
+  frontmatter, then rebuild derived topic pages and indexes.
+- `$scholar-vault-gap-scout`: write `tasks/<date>-research-gaps.md` with next
+  PDF, metadata, import, and synthesis actions.
+
+Example prompts:
+
+```text
+Use $scholar-vault-orient to map the current vault state.
+Use $scholar-vault-gap-scout to identify the next import and metadata gaps.
+Use $scholar-vault-synthesize to write a synthesis on OD-flow visualization.
+Use $scholar-vault-curate-topics to propose a cleanup of noisy topics.
+```
+
+The skills do not require subagents and do not launch them by themselves. That
+is intentional: they should work in a normal single-agent Codex session and in
+environments where subagent tools are unavailable. For large vault refinement
+tasks, subagents can still be useful for parallel read-only exploration or
+independent verification when the active Codex environment and user instructions
+allow them, but final synthesis and file edits should stay coordinated in the
+main thread.
 
 ## Generated Records
 

@@ -11,6 +11,7 @@ from scholar_vault.importer import (
     PDF_SCAN_CACHE_FILENAME,
     cleanup_run_selected_only,
     confirm_no_publication_keywords,
+    enrich_vault,
     find_staged_run_matches,
     import_bibtex,
     import_pdf_dropins,
@@ -49,6 +50,76 @@ def _write_pdf_with_title(path: Path, title: str) -> None:
     writer.add_metadata({"/Title": title})
     with path.open("wb") as handle:
         writer.write(handle)
+
+
+def test_enrich_vault_runs_all_enrichment_queues_by_default(tmp_path, monkeypatch) -> None:
+    from scholar_vault import importer
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(paths, SourceCard(slug="source", citekey="source", title="Source"))
+    calls: list[tuple[str, bool, bool, bool]] = []
+
+    def fake_enrich_cards(_paths, cards, options, **_kwargs):
+        calls.append((options.only, options.abstracts, options.refresh, options.refresh_abstracts))
+        status = (
+            "resolved"
+            if options.abstracts or options.only == "missing-keywords"
+            else "verified"
+        )
+        return [
+            EnrichmentResult(
+                card.citekey or card.slug,
+                status,
+                "ok",
+            )
+            for card in cards
+        ]
+
+    monkeypatch.setattr(importer, "enrich_cards", fake_enrich_cards)
+
+    summary = enrich_vault(vault, refresh=True, refresh_abstracts=True, dry_run=True)
+
+    assert calls == [
+        ("all", False, True, False),
+        ("all", True, False, True),
+        ("missing-keywords", False, True, False),
+    ]
+    assert summary["citation_enrichment"]["processed"] == 1
+    assert summary["abstract_enrichment"]["processed"] == 1
+    assert summary["keyword_enrichment"]["processed"] == 1
+
+
+def test_enrich_vault_only_filters_to_keyword_queue(tmp_path, monkeypatch) -> None:
+    from scholar_vault import importer
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(paths, SourceCard(slug="source", citekey="source", title="Source"))
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_enrich_cards(_paths, cards, options, **_kwargs):
+        calls.append((options.only, [card.slug for card in cards]))
+        return [
+            EnrichmentResult(
+                card.citekey or card.slug,
+                "unresolved",
+                "no keywords found in attached PDF",
+                missing_fields=("keywords",),
+            )
+            for card in cards
+        ]
+
+    monkeypatch.setattr(importer, "enrich_cards", fake_enrich_cards)
+
+    summary = enrich_vault(vault, citekey="source", only="missing-keywords", dry_run=True)
+
+    assert calls == [("missing-keywords", ["source"])]
+    assert summary["citation_enrichment"]["processed"] == 0
+    assert summary["abstract_enrichment"]["processed"] == 0
+    assert summary["keyword_enrichment"]["unresolved"] == 1
 
 
 def _write_export(

@@ -15,6 +15,8 @@
 - [x] Promote trusted DOI metadata into canonical paper card fields so venues/authors/titles are not left as Scholar preview strings.
 - [x] Add canonical-card abstract enrichment with separate abstract provenance, locks, refresh behavior, and exports.
 - [x] Add missing-keyword enrichment from attached PDFs plus manual keyword follow-up resolution.
+- [x] Add a broad `enrich` command that runs citation, abstract, and publication-keyword enrichment by default, with `--only` as a queue filter.
+- [x] Document that vault-side agents must activate the `scholar-vault` Conda environment, or use the explicit `conda run -n scholar-vault scholar-vault ...` fallback, before running CLI commands.
 - [x] Show step-by-step GUI progress while saving manual abstracts or keywords.
 - [x] Add short Obsidian-facing run titles, `--title`, and `rename-run` while keeping stable run IDs.
 - [x] Store run titles in Scholar Labs JSON exports and prompt for a title, with the full JSON prompt visible, when importing older untitled exports.
@@ -48,7 +50,7 @@
 - [x] Promote automatic enrichment results in the import run report and keep GUI progress logs through the report and follow-up windows.
 - [x] Make post-import report/follow-up windows modeless and mark the import log as report-ready instead of busy/cancellable.
 - [x] Make Scholar Labs imports/resumes check staged PDFs as replacement candidates by default, with `--keep-existing-pdfs` as the opt-out.
-- [x] Add `runs` / `list-runs` discovery plus shell completion for run IDs, citekeys, and constrained CLI option values.
+- [x] Add `runs` / `list-runs` discovery plus direct Fish shell completion for command names, run IDs, citekeys, and constrained CLI option values.
 - [x] Add a `rerun --ui` run picker for choosing previous Scholar Labs runs with counts and provenance details.
 - [x] Cache staged PDF scan metadata in the staging folder so mixed-run staging folders do not repeat expensive PDF text extraction on every import.
 - [x] Add read-only cross-run matching for leftover staging PDFs and typed title searches.

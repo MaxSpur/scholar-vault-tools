@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scholar Vault Curate Topics"
+  short_description: "Clean vault topic taxonomy"
+  default_prompt: "Use $scholar-vault-curate-topics to clean noisy Scholar Vault topics and rebuild the derived indexes."

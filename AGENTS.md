@@ -9,6 +9,7 @@
 
 ## Working Rules
 
+- Before running any `scholar-vault ...` CLI command, make sure the `scholar-vault` Conda environment is active in that shell (`conda activate scholar-vault`). If the shell cannot resolve the command, use `/Users/MadMax/miniforge3/condabin/conda run -n scholar-vault scholar-vault ...` instead of retrying plain `scholar-vault`.
 - Keep `papers/` cards as the canonical archive object. Treat runs, indexes, and exports as derived views.
 - For Scholar Labs imports, keep all candidate results on the run record and create canonical `papers/*.md` cards only for selected results by default.
 - Preserve raw inputs where practical. Scholar Labs exports copied into vault storage should stay immutable.
@@ -29,12 +30,12 @@
 - Keep run IDs stable for idempotence. Use `note_file`, the run `title` field, `--title`, `rename-run`, or an Obsidian filename rename to change Obsidian-facing run note names.
 - User-level path defaults live in `~/.config/scholar-vault/config.yaml` unless `SCHOLAR_VAULT_CONFIG` overrides the location. Commands should use explicit CLI paths when provided and fall back to configured defaults only when options are omitted.
 - `import-labs` may omit `--export`; in that case it imports the newest top-level `.json` in the configured exports folder when that folder has one, otherwise the newest top-level `.json` in staging, and ignores files already moved into `used/`.
-- `enrich-citations` must process canonical `papers/*.md` cards only. Do not enrich run candidates directly.
+- `enrich` / `enrich-citations` must process canonical `papers/*.md` cards only. Do not enrich run candidates directly.
 - Citation enrichment should preserve Scholar Labs summaries, rationale, provenance, and topics. Respect `metadata_lock: true`, `citation_status: verified`, fingerprints, and retry limits unless the user passes the explicit override flags.
 - Treat `enrichment_refresh: true` on a paper card as a user-requested one-card retry. It should bypass normal citation/abstract skip logic, refresh provider caches for that card, and clear after processing.
 - Mark generated but incomplete metadata with `enrichment_status: incomplete` and list missing fields in `enrichment_missing`, especially when `venue` is still a Scholar preview string.
 - When a DOI points to a preprint/repository record with incomplete venue metadata, enrichment may promote a strong published-version match if title/author/year checks are strong enough.
-- Abstract enrichment is part of `enrich-citations` but only runs when `--abstracts`, `--only missing-abstract`, or `--refresh-abstracts` is passed. Treat abstracts as separate metadata from Scholar Labs summaries.
+- Abstract enrichment is part of `enrich`; `--only missing-abstract` focuses on that queue. Treat abstracts as separate metadata from Scholar Labs summaries.
 - Preserve non-empty manual abstracts and `abstract_lock: true` records unless the user explicitly passes `--force`. Use `--refresh-abstracts` for deliberate provider upgrades such as replacing `pdf_extracted` with Crossref.
 - Keep raw citation provider responses under `raw/metadata/<citekey>/` and use cached responses before making repeated remote requests.
 - Keep generated Markdown Obsidian-safe: YAML frontmatter, plain links, no plugin-only syntax.

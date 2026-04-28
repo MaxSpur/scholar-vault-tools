@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scholar Vault Orient"
+  short_description: "Map vault papers, runs, and issues"
+  default_prompt: "Use $scholar-vault-orient to map the relevant papers, runs, topics, and open issues in this vault."

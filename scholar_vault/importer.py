@@ -2938,6 +2938,171 @@ def export_bibtex(vault: Path | str) -> Path:
     return write_library_bib(cards, paths.exports / "library.bib")
 
 
+def _enrichment_counts(details: list[dict[str, Any]]) -> dict[str, int]:
+    return {
+        "processed": len([row for row in details if not row.get("skipped")]),
+        "changed": len([row for row in details if row.get("changed")]),
+        "skipped": len([row for row in details if row.get("skipped")]),
+        "generated": len([row for row in details if row.get("status") == "generated"]),
+        "resolved": len([row for row in details if row.get("status") == "resolved"]),
+        "verified": len([row for row in details if row.get("status") == "verified"]),
+        "ambiguous": len([row for row in details if row.get("status") == "ambiguous"]),
+        "unresolved": len([row for row in details if row.get("status") == "unresolved"]),
+    }
+
+
+def _run_enrichment_pass(
+    paths: VaultPaths,
+    cards: list[SourceCard],
+    options: EnrichmentOptions,
+    *,
+    abstracts: bool = False,
+    keywords: bool = False,
+    progress: ProgressCallback | None = None,
+) -> tuple[list[EnrichmentResult], list[dict[str, Any]]]:
+    def report_progress(card: SourceCard, index: int, total: int, status: str) -> None:
+        if progress:
+            progress(
+                _enrichment_progress_message(
+                    card,
+                    status,
+                    abstracts=abstracts,
+                    keywords=keywords,
+                ),
+                index,
+                total,
+            )
+
+    results = enrich_cards(paths, cards, options, progress=report_progress)
+    details = [
+        _enrichment_detail(paths, card, result, abstracts=abstracts, keywords=keywords)
+        for card, result in zip(cards, results, strict=False)
+    ]
+    return results, details
+
+
+def enrich_vault(
+    vault: Path | str,
+    *,
+    citekey: str | None = None,
+    only: str = "all",
+    refresh: bool = False,
+    refresh_abstracts: bool = False,
+    retry_failed: bool = False,
+    dry_run: bool = False,
+    force: bool = False,
+    progress: ProgressCallback | None = None,
+) -> dict[str, Any]:
+    valid_only = {
+        "all",
+        "missing-doi",
+        "missing-bibtex",
+        "missing-abstract",
+        "missing-keywords",
+    }
+    if only not in valid_only:
+        raise ValueError(
+            "--only must be one of: all, missing-doi, missing-bibtex, "
+            "missing-abstract, missing-keywords"
+        )
+
+    paths = initialize_vault(vault)
+    cards = load_source_cards(paths)
+    filter_citekey = citekey
+    if citekey:
+        cards = [card for card in cards if citekey in {card.citekey, card.slug}]
+        if not cards:
+            raise ValueError(f"No paper card found for citekey: {citekey}")
+        filter_citekey = None
+
+    citation_details: list[dict[str, Any]] = []
+    abstract_details: list[dict[str, Any]] = []
+    keyword_details: list[dict[str, Any]] = []
+    changed_slugs: set[str] = set()
+
+    if only in {"all", "missing-doi", "missing-bibtex"}:
+        citation_results, citation_details = _run_enrichment_pass(
+            paths,
+            cards,
+            EnrichmentOptions(
+                only=only,  # type: ignore[arg-type]
+                citekey=filter_citekey,
+                refresh=refresh,
+                retry_failed=retry_failed,
+                dry_run=dry_run,
+                force=force,
+            ),
+            progress=progress,
+        )
+        changed_slugs.update(
+            card.slug
+            for card, result in zip(cards, citation_results, strict=False)
+            if result.changed
+        )
+
+    if only in {"all", "missing-abstract"}:
+        abstract_results, abstract_details = _run_enrichment_pass(
+            paths,
+            cards,
+            EnrichmentOptions(
+                only="missing-abstract" if only == "missing-abstract" else "all",
+                citekey=filter_citekey,
+                abstracts=True,
+                refresh_abstracts=refresh_abstracts,
+                retry_failed=retry_failed,
+                dry_run=dry_run,
+                force=force,
+            ),
+            abstracts=True,
+            progress=progress,
+        )
+        changed_slugs.update(
+            card.slug
+            for card, result in zip(cards, abstract_results, strict=False)
+            if result.changed
+        )
+
+    if only in {"all", "missing-keywords"}:
+        keyword_results, keyword_details = _run_enrichment_pass(
+            paths,
+            cards,
+            EnrichmentOptions(
+                only="missing-keywords",
+                citekey=filter_citekey,
+                refresh=refresh,
+                retry_failed=retry_failed,
+                dry_run=dry_run,
+                force=force,
+            ),
+            keywords=True,
+            progress=progress,
+        )
+        changed_slugs.update(
+            card.slug
+            for card, result in zip(cards, keyword_results, strict=False)
+            if result.changed
+        )
+
+    if not dry_run:
+        for card in cards:
+            if card.slug in changed_slugs:
+                _save_card(paths, card)
+        _rebuild_indexes(paths)
+
+    details = [*citation_details, *abstract_details, *keyword_details]
+    counts = _enrichment_counts(details)
+    return {
+        **counts,
+        "citation_enrichment": _enrichment_counts(citation_details),
+        "abstract_enrichment": _enrichment_counts(abstract_details),
+        "keyword_enrichment": _enrichment_counts(keyword_details),
+        "enrichment_details": citation_details,
+        "abstract_details": abstract_details,
+        "keyword_details": keyword_details,
+        "details": details,
+    }
+
+
 def enrich_citations(
     vault: Path | str,
     *,
@@ -2960,7 +3125,7 @@ def enrich_citations(
     }
     if only not in valid_only:
         raise ValueError(
-            "--only must be one of: missing-doi, missing-bibtex, "
+            "--only must be one of: all, missing-doi, missing-bibtex, "
             "missing-abstract, missing-keywords"
         )
 

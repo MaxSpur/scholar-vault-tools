@@ -9,6 +9,7 @@ from scholar_vault.cli import (
     _complete_only_modes,
     _complete_run_ids,
     _enrichment_progress_reporter,
+    _fish_completion_script,
     _import_summary_lines,
     _show_enrichment_ui,
     _with_progress,
@@ -198,6 +199,69 @@ def test_enrichment_ui_does_not_show_non_issue_skips(monkeypatch) -> None:
     assert called is False
 
 
+def test_enrichment_ui_mentions_keyword_followup(monkeypatch, tmp_path) -> None:
+    from scholar_vault import cli
+
+    vault = tmp_path / "vault"
+    initialize_vault(vault)
+    monkeypatch.setattr(cli, "_make_gui_progress", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli, "_show_enrichment_ui", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(cli, "_keyword_followup_count", lambda *_args, **_kwargs: 11)
+    monkeypatch.setattr(
+        cli,
+        "enrich_citations",
+        lambda *_args, **_kwargs: {
+            "processed": 2,
+            "changed": 0,
+            "skipped": 90,
+            "generated": 0,
+            "verified": 0,
+            "ambiguous": 2,
+            "unresolved": 0,
+            "details": [{"kind": "citation", "category": "ambiguous"}],
+        },
+    )
+
+    result = CliRunner().invoke(app, ["enrich-citations", "--vault", str(vault), "--ui"])
+
+    assert result.exit_code == 0
+    assert "Enriched citations: processed=2" in result.output
+    assert "Publication keyword follow-up: 11 paper cards still missing keywords" in result.output
+    assert "scholar-vault enrich --only missing-keywords --ui" in result.output
+
+
+def test_enrich_command_runs_all_passes_by_default(monkeypatch, tmp_path) -> None:
+    from scholar_vault import cli
+
+    vault = tmp_path / "vault"
+    initialize_vault(vault)
+    received: dict[str, object] = {}
+
+    def fake_enrich_vault(*_args, **kwargs):
+        received.update(kwargs)
+        return {
+            "processed": 6,
+            "changed": 3,
+            "skipped": 2,
+            "citation_enrichment": {"processed": 2, "changed": 1, "skipped": 1},
+            "abstract_enrichment": {"processed": 2, "changed": 1, "skipped": 1},
+            "keyword_enrichment": {"processed": 2, "changed": 1, "skipped": 0},
+            "details": [],
+        }
+
+    monkeypatch.setattr(cli, "_make_gui_progress", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli, "enrich_vault", fake_enrich_vault)
+
+    result = CliRunner().invoke(app, ["enrich", "--vault", str(vault)])
+
+    assert result.exit_code == 0
+    assert received["only"] == "all"
+    assert "Enriched vault: processed=6, changed=3, skipped=2." in result.output
+    assert "Citations: processed=2, changed=1" in result.output
+    assert "Abstracts: processed=2, changed=1" in result.output
+    assert "Keywords: processed=2, changed=1" in result.output
+
+
 def test_import_canceled_exits_cleanly(capsys) -> None:
     def action(_report):
         raise ImportCanceled("Run example already exists. Import canceled.")
@@ -373,6 +437,24 @@ def test_run_completion_uses_vault_runs(tmp_path) -> None:
         "missing-abstract",
         "missing-keywords",
     ]
+
+
+def test_fish_completion_script_delegates_to_typer() -> None:
+    script = _fish_completion_script()
+
+    assert "_SCHOLAR_VAULT_COMPLETE=complete_fish" in script
+    assert "_TYPER_COMPLETE_FISH_ACTION=get-args" in script
+    assert "--command scholar-vault" in script
+
+
+def test_install_fish_completion_writes_explicit_path(tmp_path) -> None:
+    target = tmp_path / "fish" / "completions" / "scholar-vault.fish"
+    result = CliRunner().invoke(app, ["install-fish-completion", "--path", str(target)])
+
+    assert result.exit_code == 0
+    assert target.exists()
+    assert "_SCHOLAR_VAULT_COMPLETE=complete_fish" in target.read_text(encoding="utf-8")
+    assert "Restart Fish" in result.output
 
 
 def test_rerun_checks_for_pdf_upgrades_by_default(tmp_path, monkeypatch) -> None:

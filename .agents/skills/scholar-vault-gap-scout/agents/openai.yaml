@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scholar Vault Gap Scout"
+  short_description: "Find next research and metadata gaps"
+  default_prompt: "Use $scholar-vault-gap-scout to identify the next Scholar Vault import, PDF, metadata, and synthesis gaps."
