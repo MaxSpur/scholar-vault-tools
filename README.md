@@ -449,9 +449,11 @@ One-card BibTeX uses the best available source in this order: cached provider
 BibTeX from `raw/metadata/<citekey>/citation.bib`, cached CSL JSON from
 `citation.csl.json`, then a card-derived fallback. It normalizes the entry key
 to the vault citekey and adds useful vault-local fields such as `file`,
-`abstract`, and publication `keywords` when present. Use `--with-vault-note`
-when you also want Scholar Labs summary/rationale text in the BibTeX `note`
-field.
+`abstract`, and publication `keywords` when present. Exported values are
+normalized for traditional BibTeX compatibility: smart punctuation becomes
+ASCII punctuation, en/em dashes become TeX-style `--` / `---`, and remaining
+Latin accents become TeX accent macros. Use `--with-vault-note` when you also
+want Scholar Labs summary/rationale text in the BibTeX `note` field.
 
 Inspect vault health for an agent or for manual triage:
 

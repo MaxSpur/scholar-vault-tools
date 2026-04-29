@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import bibtexparser
+from unidecode import unidecode
 
 from .models import SourceCard
 from .sources import clean_markdown_text, normalize_doi
@@ -37,6 +39,63 @@ BIBTEX_FIELD_ORDER = [
     "file",
     "note",
 ]
+BIBTEX_PUNCTUATION_TRANSLATION = str.maketrans(
+    {
+        "\u00a0": " ",
+        "\u00ad": "",
+        "\u2010": "-",
+        "\u2011": "-",
+        "\u2012": "-",
+        "\u2013": "--",
+        "\u2014": "---",
+        "\u2015": "---",
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201a": "'",
+        "\u201b": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u201e": '"',
+        "\u201f": '"',
+        "\u2026": "...",
+        "\u2032": "'",
+        "\u2033": '"',
+        "\u2044": "/",
+        "\u2212": "-",
+    }
+)
+TEX_SPECIAL_CHARS = {
+    "Æ": r"{\AE}",
+    "æ": r"{\ae}",
+    "Œ": r"{\OE}",
+    "œ": r"{\oe}",
+    "Ø": r"{\O}",
+    "ø": r"{\o}",
+    "Å": r"{\AA}",
+    "å": r"{\aa}",
+    "Ł": r"{\L}",
+    "ł": r"{\l}",
+    "Đ": r"{\DJ}",
+    "đ": r"{\dj}",
+    "Þ": r"{\TH}",
+    "þ": r"{\th}",
+    "ß": r"{\ss}",
+}
+TEX_COMBINING_ACCENTS = {
+    "\u0300": r"\`",
+    "\u0301": r"\'",
+    "\u0302": r"\^",
+    "\u0303": r"\~",
+    "\u0304": r"\=",
+    "\u0306": r"\u",
+    "\u0307": r"\.",
+    "\u0308": '\\"',
+    "\u030a": r"\r",
+    "\u030b": r"\H",
+    "\u030c": r"\v",
+    "\u0327": r"\c",
+    "\u0328": r"\k",
+}
 
 
 @dataclass(frozen=True)
@@ -73,11 +132,38 @@ def extract_pdf_paths(entry: dict[str, str]) -> list[str]:
     return candidates
 
 
-def _escape_bibtex(value: str) -> str:
+def _char_to_bibtex_ascii(char: str) -> str:
+    if ord(char) < 128:
+        return char
+    if char in TEX_SPECIAL_CHARS:
+        return TEX_SPECIAL_CHARS[char]
+    decomposed = unicodedata.normalize("NFD", char)
+    if not decomposed or decomposed == char:
+        return unidecode(char)
+    base = decomposed[0]
+    accents = [mark for mark in decomposed[1:] if unicodedata.combining(mark)]
+    if base and ord(base) < 128 and accents:
+        rendered = base
+        for accent in accents:
+            command = TEX_COMBINING_ACCENTS.get(accent)
+            if command is None:
+                return unidecode(char)
+            rendered = f"{command}{rendered}"
+        return f"{{{rendered}}}"
+    return unidecode(char)
+
+
+def _normalize_bibtex_value(value: str) -> str:
     cleaned = re.sub(r"\s+", " ", str(value)).strip()
-    if cleaned.count("{") == cleaned.count("}"):
-        return cleaned.replace("\\", "\\\\")
-    return cleaned.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+    translated = cleaned.translate(BIBTEX_PUNCTUATION_TRANSLATION)
+    return "".join(_char_to_bibtex_ascii(char) for char in translated)
+
+
+def _escape_bibtex(value: str) -> str:
+    normalized = _normalize_bibtex_value(value)
+    if normalized.count("{") == normalized.count("}"):
+        return normalized
+    return normalized.replace("{", r"\{").replace("}", r"\}")
 
 
 def _metadata_dir(metadata_root: Path | None, card: SourceCard) -> Path | None:
@@ -392,8 +478,12 @@ def render_card_bibtex(
 
 def normalize_bibtex_for_card(card: SourceCard, raw_bibtex: str | None = None) -> str:
     if raw_bibtex:
-        normalized = raw_bibtex.strip()
-        normalized = rekey_bibtex(normalized, card.citekey or card.slug)
+        parsed = _parse_raw_bibtex(raw_bibtex)
+        if parsed is not None:
+            entry_type, fields = parsed
+            normalized = _format_bibtex(entry_type, card.citekey or card.slug, fields)
+        else:
+            normalized = rekey_bibtex(raw_bibtex.strip(), card.citekey or card.slug)
     else:
         normalized = card_to_bibtex(card) or ""
     return normalized.rstrip() + "\n" if normalized else ""

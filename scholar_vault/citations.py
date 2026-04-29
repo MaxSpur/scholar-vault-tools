@@ -17,7 +17,8 @@ from typing import Any, Literal
 
 from rapidfuzz import fuzz
 
-from .bibtex import card_to_bibtex
+from .bibtex import normalize_bibtex_for_card as _normalize_bibtex_for_card
+from .bibtex import rekey_bibtex as _rekey_bibtex
 from .matcher import extract_pdf_text_excerpt, read_pdf_metadata, score_title_match
 from .models import SourceCard
 from .sources import (
@@ -808,17 +809,11 @@ def select_candidate(
 
 
 def normalize_bibtex_for_card(card: SourceCard, raw_bibtex: str | None = None) -> str:
-    if raw_bibtex:
-        normalized = raw_bibtex.strip()
-        key = card.citekey or card.slug
-        normalized = rekey_bibtex(normalized, key)
-    else:
-        normalized = card_to_bibtex(card) or ""
-    return normalized.rstrip() + "\n" if normalized else ""
+    return _normalize_bibtex_for_card(card, raw_bibtex)
 
 
 def rekey_bibtex(raw_bibtex: str, key: str) -> str:
-    return re.sub(r"^@\s*([^{]+)\{[^,]+,", rf"@\1{{{key},", raw_bibtex.strip(), count=1)
+    return _rekey_bibtex(raw_bibtex, key)
 
 
 def _author_surnames(authors: list[str]) -> list[str]:

@@ -22,6 +22,7 @@
 - Proposal and research-loop helpers should scaffold or report durable work queues without overwriting prose. Commands like `notes-missing`, `concept-index`, and `proposal-sprint scaffold` should make PDF-grounded refinement easier while preserving user-written metacards.
 - Proposal evidence may live outside `proposals/<slug>`. Audits should follow explicit outline frontmatter such as `evidence_matrix: syntheses/<matrix>.md` instead of assuming every source matrix lives inside the proposal folder.
 - BibTeX export should be provider-first but vault-aware: prefer cached `citation.bib`, fall back to CSL JSON, then card metadata, and normalize the key/file/abstract/keyword fields for local use.
+- Traditional BibTeX compatibility is safest with ASCII output. Normalize smart punctuation and dashes, preserve provider TeX macros, and convert Latin accents to TeX macros instead of emitting raw Unicode.
 - The leftover staging PDF GUI is a parent queue, not a one-shot launcher. Reviewed reruns should return to the same window and refresh the remaining candidates.
 - Already-attached staging-match rows should support direct inspection and non-destructive cleanup. Move redundant staging PDFs into a staging-local `trash/` folder instead of deleting them or archiving them into the vault.
 - A parent queue window must not remain modal/frontmost while it launches child workflows. Hide or make it modeless during reviewed reruns so import reports and follow-up windows can receive focus.

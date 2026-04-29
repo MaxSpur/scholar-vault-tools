@@ -386,6 +386,29 @@ def test_bibtex_generation_normalizes_key_and_includes_pdf_note_topics() -> None
     assert "@article{smith2024rag," in rendered
 
 
+def test_bibtex_normalization_converts_raw_provider_unicode_punctuation() -> None:
+    card = SourceCard(
+        slug="oneil2025maps",
+        citekey="oneil2025maps",
+        title="Card Title",
+        citation_status="generated",
+    )
+    raw = (
+        "@article{wrongkey,\n"
+        "  title={O’Neil’s 3–D maps — evidence…},\n"
+        "  author={José O’Neil},\n"
+        "  year={2025}\n"
+        "}\n"
+    )
+
+    rendered = normalize_bibtex_for_card(card, raw)
+
+    assert all(ord(char) < 128 for char in rendered)
+    assert "@article{oneil2025maps," in rendered
+    assert "title = {O'Neil's 3--D maps --- evidence...}" in rendered
+    assert r"author = {Jos{\'e} O'Neil}" in rendered
+
+
 def test_library_bib_uses_paper_keywords_not_navigation_topics(tmp_path: Path) -> None:
     card = SourceCard(
         slug="smith2024rag",
@@ -1379,3 +1402,55 @@ def test_card_bibtex_fallback_infers_conference_venue() -> None:
     assert result.source == "card"
     assert "@inproceedings{lee2025vis," in result.entry
     assert "booktitle = {Proceedings of IEEE VIS}" in result.entry
+
+
+def test_card_bibtex_normalizes_unicode_punctuation_to_ascii() -> None:
+    card = SourceCard(
+        slug="oneil2025maps",
+        citekey="oneil2025maps",
+        title="O’Neil’s 3–D maps — evidence… and limits",
+        authors=["José O’Neil"],
+        year=2025,
+        venue="Proceedings of IEEE VIS",
+        abstract="A “smart-quoted” abstract with non‑breaking punctuation.",
+        citation_status="verified",
+    )
+
+    result = render_card_bibtex(card, include_vault_note=False)
+
+    assert result is not None
+    assert all(ord(char) < 128 for char in result.entry)
+    assert "title = {O'Neil's 3--D maps --- evidence... and limits}" in result.entry
+    assert r"author = {Jos{\'e} O'Neil}" in result.entry
+    assert 'abstract = {A "smart-quoted" abstract with non-breaking punctuation.}' in (
+        result.entry
+    )
+
+
+def test_card_bibtex_preserves_provider_tex_macros(tmp_path: Path) -> None:
+    metadata_root = tmp_path / "metadata"
+    cache_dir = metadata_root / "muller2025"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "citation.bib").write_text(
+        (
+            "@article{wrongkey,\n"
+            "  title={M{\\\"u}ller's result -- already TeX-safe},\n"
+            "  author={M{\\\"u}ller, Anna},\n"
+            "  year={2025}\n"
+            "}\n"
+        ),
+        encoding="utf-8",
+    )
+    card = SourceCard(
+        slug="muller2025",
+        citekey="muller2025",
+        title="Muller Result",
+        citation_status="verified",
+    )
+
+    result = render_card_bibtex(card, metadata_root=metadata_root, include_vault_note=False)
+
+    assert result is not None
+    assert all(ord(char) < 128 for char in result.entry)
+    assert r'M{\\"u}ller' not in result.entry
+    assert r'M{\"u}ller' in result.entry
