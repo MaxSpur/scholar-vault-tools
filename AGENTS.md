@@ -45,6 +45,7 @@
 - Keep raw citation provider responses under `raw/metadata/<citekey>/` and use cached responses before making repeated remote requests.
 - Keep generated Markdown Obsidian-safe: YAML frontmatter, plain links, no plugin-only syntax.
 - Use `resolve-citation` / `set-metadata`, `set-abstract`, `set-keywords`, `topic-map --apply`, `attach-pdf`, `rerun`, and `clean-staging` instead of hand-editing tool-managed metadata, topic batches, or PDF state.
+- Use `card-bibtex <citekey>` or `bibtex --citekey <citekey>` when exporting one card's BibTeX for Obsidian-side work. It should prefer cached provider BibTeX/CSL before card fallback.
 - Any workflow that refines factual claims, methods, findings, limitations, or source connections should read the linked PDF, not rely only on Scholar Labs summaries or existing card prose.
 - For PDF-grounded research work, durable agent-written metacards may live in `concepts/`, `syntheses/`, and `tasks/`. These folders are not generated; keep them concise, linked, and evidence-grounded. Use `concept-index` for concept-only refreshes and `rebuild` after broader edits.
 - For proposal workspaces under `proposals/`, use `proposal-sprint scaffold <slug>` to create/update the outline, source matrix, reading log, and raw idea card, set outline `evidence_matrix` when the source matrix lives elsewhere such as `syntheses/`, then use `proposal-audit` before treating outlines or draft claims as evidence-ready.

@@ -26,6 +26,7 @@ from .importer import (
     enrich_citations,
     enrich_vault,
     export_bibtex,
+    export_card_bibtex,
     find_staged_run_matches,
     import_bibtex,
     import_doi,
@@ -270,6 +271,29 @@ CitekeyArg = Annotated[str, typer.Option(..., autocompletion=_complete_citekeys)
 OptionalCitekeyArg = Annotated[
     str | None,
     typer.Option("--citekey", autocompletion=_complete_citekeys),
+]
+CitekeyArgument = Annotated[
+    str,
+    typer.Argument(autocompletion=_complete_citekeys, help="Paper citekey or card slug."),
+]
+BibtexOutputArg = Annotated[
+    Path | None,
+    typer.Option(
+        "--output",
+        "-o",
+        exists=False,
+        file_okay=True,
+        dir_okay=False,
+        resolve_path=True,
+        help="Write one-card BibTeX to a file instead of printing it.",
+    ),
+]
+VaultNoteArg = Annotated[
+    bool,
+    typer.Option(
+        "--with-vault-note",
+        help="Include Scholar Labs summary/rationale in the BibTeX note field.",
+    ),
 ]
 AbstractTextArg = Annotated[
     str | None,
@@ -1193,6 +1217,21 @@ def _print_concept_index(summary: dict[str, Any]) -> None:
         console.print(f"Refreshed {summary.get('llm_files_written')} LLM context file(s).")
 
 
+def _print_card_bibtex_summary(summary: dict[str, Any]) -> None:
+    warnings = summary.get("warnings") or []
+    if summary.get("output"):
+        console.print(
+            f"Wrote {summary.get('output')} "
+            f"(source={summary.get('source')}, citekey={summary.get('citekey')})."
+        )
+    else:
+        console.print(summary.get("bibtex") or "", end="")
+    if warnings:
+        err_console = Console(stderr=True)
+        for warning in warnings:
+            err_console.print(f"BibTeX warning: {warning}")
+
+
 def _print_proposal_scaffold(summary: dict[str, Any]) -> None:
     console.print(f"Proposal sprint scaffold: {summary.get('proposal')}")
     files = summary.get("files") or {}
@@ -1949,9 +1988,41 @@ def rebuild_command(vault: VaultArg = None) -> None:
 
 
 @app.command("bibtex")
-def bibtex_command(vault: VaultArg = None) -> None:
+def bibtex_command(
+    vault: VaultArg = None,
+    citekey: OptionalCitekeyArg = None,
+    output: BibtexOutputArg = None,
+    with_vault_note: VaultNoteArg = False,
+) -> None:
+    if citekey:
+        summary = export_card_bibtex(
+            _resolve_vault(vault),
+            citekey,
+            output=output,
+            include_vault_note=with_vault_note,
+        )
+        _print_card_bibtex_summary(summary)
+        return
+    if output is not None:
+        raise typer.BadParameter("--output is only supported with --citekey.")
     output = export_bibtex(_resolve_vault(vault))
     console.print(f"Wrote {output}")
+
+
+@app.command("card-bibtex")
+def card_bibtex_command(
+    citekey: CitekeyArgument,
+    vault: VaultArg = None,
+    output: BibtexOutputArg = None,
+    with_vault_note: VaultNoteArg = False,
+) -> None:
+    summary = export_card_bibtex(
+        _resolve_vault(vault),
+        citekey,
+        output=output,
+        include_vault_note=with_vault_note,
+    )
+    _print_card_bibtex_summary(summary)
 
 
 @app.command("doctor")

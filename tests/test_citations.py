@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scholar_vault.bibtex import write_library_bib
+from scholar_vault.bibtex import render_card_bibtex, write_library_bib
 from scholar_vault.citations import (
     CitationCandidate,
     EnrichmentOptions,
@@ -1281,3 +1281,101 @@ def test_library_bib_includes_abstract_for_enriched_papers(tmp_path: Path) -> No
     output = write_library_bib([enriched], tmp_path / "library.bib")
 
     assert "abstract = {A useful abstract.}" in output.read_text(encoding="utf-8")
+
+
+def test_card_bibtex_prefers_cached_provider_bibtex_and_adds_vault_fields(
+    tmp_path: Path,
+) -> None:
+    metadata_root = tmp_path / "metadata"
+    cache_dir = metadata_root / "smith2024rag"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "citation.bib").write_text(
+        (
+            "@inproceedings{wrongkey,\n"
+            "  title={Provider Title},\n"
+            "  author={Jane Smith and John Doe},\n"
+            "  booktitle={Proceedings of the Test Conference},\n"
+            "  pages={10--20},\n"
+            "  year={2024},\n"
+            "  doi={10.1145/example}\n"
+            "}\n"
+        ),
+        encoding="utf-8",
+    )
+    card = SourceCard(
+        slug="smith2024rag",
+        citekey="smith2024rag",
+        title="Card Title",
+        doi="10.1145/example",
+        pdf="pdfs/smith2024rag.pdf",
+        abstract="A useful abstract.",
+        keywords=["Retrieval", "Evaluation"],
+        citation_status="verified",
+    )
+
+    result = render_card_bibtex(card, metadata_root=metadata_root, include_vault_note=False)
+
+    assert result is not None
+    assert result.source == "cached_bibtex"
+    assert "@inproceedings{smith2024rag," in result.entry
+    assert "booktitle = {Proceedings of the Test Conference}" in result.entry
+    assert "pages = {10--20}" in result.entry
+    assert "abstract = {A useful abstract.}" in result.entry
+    assert "keywords = {Retrieval, Evaluation}" in result.entry
+    assert "file = {pdfs/smith2024rag.pdf}" in result.entry
+
+
+def test_card_bibtex_uses_cached_csl_when_provider_bibtex_is_absent(tmp_path: Path) -> None:
+    metadata_root = tmp_path / "metadata"
+    cache_dir = metadata_root / "lee2025vis"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "citation.csl.json").write_text(
+        json.dumps(
+            {
+                "type": "paper-conference",
+                "title": "Immersive Visual Analytics",
+                "author": [{"given": "Ada", "family": "Lee"}],
+                "container-title": "IEEE VIS",
+                "issued": {"date-parts": [[2025, 10]]},
+                "page": "1-9",
+                "DOI": "10.1109/vis.example",
+                "URL": "https://doi.org/10.1109/vis.example",
+            }
+        ),
+        encoding="utf-8",
+    )
+    card = SourceCard(
+        slug="lee2025vis",
+        citekey="lee2025vis",
+        title="Immersive Visual Analytics",
+        citation_status="verified",
+    )
+
+    result = render_card_bibtex(card, metadata_root=metadata_root, include_vault_note=False)
+
+    assert result is not None
+    assert result.source == "cached_csl"
+    assert "@inproceedings{lee2025vis," in result.entry
+    assert "author = {Ada Lee}" in result.entry
+    assert "booktitle = {IEEE VIS}" in result.entry
+    assert "month = {10}" in result.entry
+    assert "pages = {1-9}" in result.entry
+
+
+def test_card_bibtex_fallback_infers_conference_venue() -> None:
+    card = SourceCard(
+        slug="lee2025vis",
+        citekey="lee2025vis",
+        title="Immersive Visual Analytics",
+        authors=["Ada Lee"],
+        year=2025,
+        venue="Proceedings of IEEE VIS",
+        citation_status="verified",
+    )
+
+    result = render_card_bibtex(card, include_vault_note=False)
+
+    assert result is not None
+    assert result.source == "card"
+    assert "@inproceedings{lee2025vis," in result.entry
+    assert "booktitle = {Proceedings of IEEE VIS}" in result.entry

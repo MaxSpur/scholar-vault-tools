@@ -14,7 +14,13 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from .bibtex import extract_pdf_paths, parse_bibtex_file, split_bibtex_authors, write_library_bib
+from .bibtex import (
+    extract_pdf_paths,
+    parse_bibtex_file,
+    render_card_bibtex,
+    split_bibtex_authors,
+    write_library_bib,
+)
 from .citations import (
     EnrichmentOptions,
     EnrichmentProgress,
@@ -777,7 +783,7 @@ def _rebuild_indexes(
     _manual_save_step(progress, "Writing library exports")
     write_json(paths.exports / "library.json", _cards_to_library_json(cards))
     write_json(paths.exports / "library.csl.json", _cards_to_csl_json(cards))
-    write_library_bib(cards, paths.exports / "library.bib")
+    write_library_bib(cards, paths.exports / "library.bib", metadata_root=paths.raw_metadata)
 
     _manual_save_step(progress, "Writing topic pages")
     for topic, topic_list in topic_cards.items():
@@ -3156,9 +3162,55 @@ def rebuild_vault(vault: Path | str) -> dict[str, int]:
 
 
 def export_bibtex(vault: Path | str) -> Path:
-    paths = initialize_vault(vault)
+    paths = initialize_vault(vault, rebuild=False)
     cards = load_source_cards(paths)
-    return write_library_bib(cards, paths.exports / "library.bib")
+    return write_library_bib(
+        cards,
+        paths.exports / "library.bib",
+        metadata_root=paths.raw_metadata,
+    )
+
+
+def export_card_bibtex(
+    vault: Path | str,
+    citekey: str,
+    *,
+    output: Path | str | None = None,
+    include_vault_note: bool = False,
+) -> dict[str, Any]:
+    paths = initialize_vault(vault, rebuild=False)
+    cards = load_source_cards(paths)
+    card = next(
+        (
+            candidate
+            for candidate in cards
+            if citekey in {candidate.citekey, candidate.slug}
+        ),
+        None,
+    )
+    if card is None:
+        raise ValueError(f"No paper card found for citekey: {citekey}")
+    rendered = render_card_bibtex(
+        card,
+        metadata_root=paths.raw_metadata,
+        include_vault_note=include_vault_note,
+        require_ready=False,
+    )
+    if rendered is None:
+        raise ValueError(f"Cannot render BibTeX for {citekey}: missing title")
+    output_path = Path(output).expanduser().resolve() if output is not None else None
+    if output_path is not None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered.entry.rstrip() + "\n", encoding="utf-8")
+    return {
+        "vault": str(paths.vault),
+        "citekey": card.citekey or card.slug,
+        "paper": _card_ref(card),
+        "source": rendered.source,
+        "warnings": list(rendered.warnings),
+        "output": str(output_path) if output_path else None,
+        "bibtex": rendered.entry.rstrip() + "\n",
+    }
 
 
 def concept_index(vault: Path | str) -> dict[str, Any]:

@@ -401,6 +401,61 @@ def test_proposal_sprint_scaffold_command_outputs_json(tmp_path) -> None:
     assert "proposals/pepr-mobidec/source-matrix.md" in payload["files"]["created"]
 
 
+def test_card_bibtex_command_prints_single_entry(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source Paper",
+            authors=["Jane Smith"],
+            year=2024,
+            venue="Proceedings of TestConf",
+            citation_status="verified",
+        ),
+    )
+
+    result = CliRunner().invoke(app, ["card-bibtex", "--vault", str(vault), "source"])
+
+    assert result.exit_code == 0
+    assert "@inproceedings{source," in result.output
+    assert "booktitle = {Proceedings of TestConf}" in result.output
+
+
+def test_bibtex_command_with_citekey_writes_single_entry(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source Paper",
+            authors=["Jane Smith"],
+            year=2024,
+            citation_status="verified",
+        ),
+    )
+    output = tmp_path / "source.bib"
+
+    result = CliRunner().invoke(
+        app,
+        ["bibtex", "--vault", str(vault), "--citekey", "source", "--output", str(output)],
+    )
+
+    assert result.exit_code == 0
+    assert "Wrote" in result.output
+    assert "@misc{source," in output.read_text(encoding="utf-8")
+
+
 def test_resolve_citation_alias_can_lock_metadata(tmp_path) -> None:
     from scholar_vault.importer import _save_card  # noqa: PLC0415
     from scholar_vault.models import SourceCard  # noqa: PLC0415

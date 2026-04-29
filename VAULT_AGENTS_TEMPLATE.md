@@ -35,6 +35,12 @@ scholar-vault notes-missing --heading "PDF reading notes"
 scholar-vault runs
 ```
 
+For one-card BibTeX while working from Obsidian, copy the card `citekey` and run:
+
+```fish
+scholar-vault card-bibtex <citekey>
+```
+
 After editing only `concepts/`, run `scholar-vault concept-index`. After
 editing paper cards, topics, syntheses, tasks, or proposals, run:
 
