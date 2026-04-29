@@ -1,7 +1,7 @@
 # Lessons
 
 - Keep the paper card body sections parseable and stable. Rebuild depends on section headings, so cosmetic heading changes need matching parser updates.
-- Preserve existing Scholar Labs summaries and provenance when merging later BibTeX or DOI enrichment.
+- Preserve existing Scholar Labs summaries and provenance when merging later provider BibTeX/CSL or DOI enrichment.
 - Idempotence is easiest when run slugs depend on export metadata and when merges happen before any new card slug is allocated.
 - This shell may not expose `python` directly. Use `conda run -n scholar-vault ...` for reliable verification in this repo.
 - Vault-side Codex sessions may not have `scholar-vault` on `PATH`. Skills and docs should explicitly activate `conda activate scholar-vault` before CLI examples and give the `/Users/MadMax/miniforge3/condabin/conda run -n scholar-vault scholar-vault ...` fallback.
@@ -21,8 +21,8 @@
 - Vault-side `AGENTS.md` should be initialized from the full vault operating guide, but existing vault-local `AGENTS.md` files must be preserved so user project notes are not overwritten.
 - Proposal and research-loop helpers should scaffold or report durable work queues without overwriting prose. Commands like `notes-missing`, `concept-index`, and `proposal-sprint scaffold` should make PDF-grounded refinement easier while preserving user-written metacards.
 - Proposal evidence may live outside `proposals/<slug>`. Audits should follow explicit outline frontmatter such as `evidence_matrix: syntheses/<matrix>.md` instead of assuming every source matrix lives inside the proposal folder.
-- BibTeX export should be provider-first but vault-aware: prefer cached `citation.bib`, fall back to CSL JSON, then card metadata, and normalize the key/file/abstract/keyword fields for local use.
-- Traditional BibTeX compatibility is safest with ASCII output. Normalize smart punctuation and dashes, preserve provider TeX macros, and convert Latin accents to TeX macros instead of emitting raw Unicode.
+- BibLaTeX export should be provider-first but vault-aware: prefer cached `citation.bib`, fall back to CSL JSON, then card metadata, and normalize the key/file/abstract/keyword fields for local use.
+- BibLaTeX/TeX compatibility is safest with ASCII output for this project. Normalize smart punctuation and dashes, preserve provider TeX macros, convert Latin accents to TeX macros, and brace-protect uppercase title tokens instead of emitting raw Unicode or fragile titles.
 - The leftover staging PDF GUI is a parent queue, not a one-shot launcher. Reviewed reruns should return to the same window and refresh the remaining candidates.
 - Already-attached staging-match rows should support direct inspection and non-destructive cleanup. Move redundant staging PDFs into a staging-local `trash/` folder instead of deleting them or archiving them into the vault.
 - A parent queue window must not remain modal/frontmost while it launches child workflows. Hide or make it modeless during reviewed reruns so import reports and follow-up windows can receive focus.
@@ -46,7 +46,7 @@
 - Exact DOI metadata can legitimately have a different title/year than a preprint card. Let DOI-work metadata promote the canonical title, year, and venue when DOI, first author, and year are compatible.
 - Keep abstracts separate from Scholar Labs summaries. Abstract enrichment needs its own source, confidence, lock, and fingerprint fields so provider text does not overwrite the reason a source was added.
 - PDF abstract headings are often run-in labels such as `Abstract.` rather than standalone `Abstract` headings. Recognize those forms and normalize PDF line wrapping/hyphenation before accepting local abstract fallback text.
-- Keep paper-provided keywords separate from project `topics`. Topics are prompt/rationale navigation labels, while keywords should come from BibTeX, provider metadata, or PDF keyword blocks and should be the source for BibTeX/CSL keyword exports.
+- Keep paper-provided keywords separate from project `topics`. Topics are prompt/rationale navigation labels, while keywords should come from BibTeX, provider metadata, or PDF keyword blocks and should be the source for BibLaTeX/CSL keyword exports.
 - Treat `Index Terms` as paper keywords. IEEE-style PDFs often use that label instead of `Keywords`, keyword lists may use pipe separators, and missing keyword extraction should surface a manual follow-up just like missing abstracts.
 - Long-running metadata provider lookups need visible CLI progress. A command that appears idle during enrichment is hard to trust even when it is working correctly.
 - Do not run blocking terminal prompts under Rich live progress. Interactive imports should use plain progress lines so `[y/N]` prompts and GUI handoffs are visible.

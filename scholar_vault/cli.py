@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
 from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any
@@ -18,6 +20,7 @@ from .config import configured_path, latest_export_json, load_user_config, save_
 from .importer import (
     apply_topic_map,
     attach_pdf,
+    bibtex_doctor,
     clean_staging,
     cleanup_run_selected_only,
     concept_index,
@@ -285,14 +288,33 @@ BibtexOutputArg = Annotated[
         file_okay=True,
         dir_okay=False,
         resolve_path=True,
-        help="Write one-card BibTeX to a file instead of printing it.",
+        help="Write one-card BibLaTeX or cite text to a file instead of printing it.",
     ),
+]
+NoLocalFieldsArg = Annotated[
+    bool,
+    typer.Option(
+        "--no-local-fields",
+        help="Omit vault-local BibLaTeX fields such as abstract, file, keywords, and note.",
+    ),
+]
+ClipboardArg = Annotated[
+    bool,
+    typer.Option("--clipboard", help="Copy one-card BibLaTeX or cite text to the clipboard."),
+]
+CiteArg = Annotated[
+    bool,
+    typer.Option("--cite", help=r"Print or copy \cite{citekey} instead of a BibLaTeX entry."),
+]
+ValidateBiblatexArg = Annotated[
+    bool,
+    typer.Option("--validate", help="Print BibLaTeX validation status for one-card exports."),
 ]
 VaultNoteArg = Annotated[
     bool,
     typer.Option(
         "--with-vault-note",
-        help="Include Scholar Labs summary/rationale in the BibTeX note field.",
+        help="Include Scholar Labs summary/rationale in the BibLaTeX note field.",
     ),
 ]
 AbstractTextArg = Annotated[
@@ -1217,19 +1239,78 @@ def _print_concept_index(summary: dict[str, Any]) -> None:
         console.print(f"Refreshed {summary.get('llm_files_written')} LLM context file(s).")
 
 
-def _print_card_bibtex_summary(summary: dict[str, Any]) -> None:
+def _copy_to_clipboard(text: str) -> str:
+    pbcopy = shutil.which("pbcopy")
+    if pbcopy:
+        subprocess.run([pbcopy], input=text, text=True, check=True)
+        return "pbcopy"
+    wl_copy = shutil.which("wl-copy")
+    if wl_copy:
+        subprocess.run([wl_copy], input=text, text=True, check=True)
+        return "wl-copy"
+    xclip = shutil.which("xclip")
+    if xclip:
+        subprocess.run([xclip, "-selection", "clipboard"], input=text, text=True, check=True)
+        return "xclip"
+    raise RuntimeError("No clipboard command found. Install pbcopy, wl-copy, or xclip.")
+
+
+def _print_card_bibtex_summary(
+    summary: dict[str, Any],
+    *,
+    clipboard: bool = False,
+    validate: bool = False,
+) -> None:
     warnings = summary.get("warnings") or []
+    content = summary.get("content") or summary.get("bibtex") or ""
     if summary.get("output"):
         console.print(
             f"Wrote {summary.get('output')} "
             f"(source={summary.get('source')}, citekey={summary.get('citekey')})."
         )
+        if clipboard:
+            command = _copy_to_clipboard(content)
+            console.print(f"Copied {summary.get('citekey')} to clipboard with {command}.")
+    elif clipboard:
+        command = _copy_to_clipboard(content)
+        label = "cite" if summary.get("content_kind") == "cite" else "BibLaTeX"
+        console.print(
+            f"Copied {label} for {summary.get('citekey')} to clipboard with {command}."
+        )
     else:
-        console.print(summary.get("bibtex") or "", end="")
-    if warnings:
+        console.print(content, end="")
+    if warnings or validate:
         err_console = Console(stderr=True)
-        for warning in warnings:
-            err_console.print(f"BibTeX warning: {warning}")
+        if warnings:
+            for warning in warnings:
+                err_console.print(f"BibLaTeX warning: {warning}")
+        else:
+            err_console.print("BibLaTeX validation: OK")
+
+
+def _print_bibtex_doctor_summary(summary: dict[str, Any]) -> None:
+    console.print(
+        f"BibLaTeX doctor: {summary.get('issues')} issue row(s) across "
+        f"{summary.get('rendered')}/{summary.get('cards')} rendered card(s)."
+    )
+    rows = summary.get("rows") or []
+    if not rows:
+        return
+    table = Table(title="BibLaTeX Issues")
+    table.add_column("Citekey")
+    table.add_column("Type")
+    table.add_column("Source")
+    table.add_column("Warnings")
+    for row in rows[:50]:
+        table.add_row(
+            str(row.get("citekey") or ""),
+            str(row.get("entry_type") or ""),
+            str(row.get("source") or ""),
+            "; ".join(row.get("warnings") or []),
+        )
+    console.print(table)
+    if len(rows) > 50:
+        console.print(f"... {len(rows) - 50} more row(s). Use --json for full output.")
 
 
 def _print_proposal_scaffold(summary: dict[str, Any]) -> None:
@@ -1987,12 +2068,17 @@ def rebuild_command(vault: VaultArg = None) -> None:
         )
 
 
+@app.command("biblatex")
 @app.command("bibtex")
 def bibtex_command(
     vault: VaultArg = None,
     citekey: OptionalCitekeyArg = None,
     output: BibtexOutputArg = None,
     with_vault_note: VaultNoteArg = False,
+    no_local_fields: NoLocalFieldsArg = False,
+    clipboard: ClipboardArg = False,
+    cite: CiteArg = False,
+    validate: ValidateBiblatexArg = False,
 ) -> None:
     if citekey:
         summary = export_card_bibtex(
@@ -2000,29 +2086,60 @@ def bibtex_command(
             citekey,
             output=output,
             include_vault_note=with_vault_note,
+            include_local_fields=not no_local_fields,
+            cite=cite,
         )
-        _print_card_bibtex_summary(summary)
+        _print_card_bibtex_summary(summary, clipboard=clipboard, validate=validate)
         return
     if output is not None:
         raise typer.BadParameter("--output is only supported with --citekey.")
-    output = export_bibtex(_resolve_vault(vault))
+    if clipboard:
+        raise typer.BadParameter("--clipboard is only supported with --citekey.")
+    if cite:
+        raise typer.BadParameter("--cite is only supported with --citekey.")
+    output = export_bibtex(
+        _resolve_vault(vault),
+        include_local_fields=not no_local_fields,
+    )
     console.print(f"Wrote {output}")
+    if validate:
+        _print_bibtex_doctor_summary(bibtex_doctor(_resolve_vault(vault)))
 
 
+@app.command("card-biblatex")
 @app.command("card-bibtex")
 def card_bibtex_command(
     citekey: CitekeyArgument,
     vault: VaultArg = None,
     output: BibtexOutputArg = None,
     with_vault_note: VaultNoteArg = False,
+    no_local_fields: NoLocalFieldsArg = False,
+    clipboard: ClipboardArg = False,
+    cite: CiteArg = False,
+    validate: ValidateBiblatexArg = False,
 ) -> None:
     summary = export_card_bibtex(
         _resolve_vault(vault),
         citekey,
         output=output,
         include_vault_note=with_vault_note,
+        include_local_fields=not no_local_fields,
+        cite=cite,
     )
-    _print_card_bibtex_summary(summary)
+    _print_card_bibtex_summary(summary, clipboard=clipboard, validate=validate)
+
+
+@app.command("biblatex-doctor")
+@app.command("bibtex-doctor")
+def bibtex_doctor_command(
+    vault: VaultArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = bibtex_doctor(_resolve_vault(vault))
+    if json_output:
+        console.print_json(data=summary)
+        return
+    _print_bibtex_doctor_summary(summary)
 
 
 @app.command("doctor")

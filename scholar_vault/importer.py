@@ -3161,13 +3161,18 @@ def rebuild_vault(vault: Path | str) -> dict[str, int]:
     return _rebuild_indexes(paths)
 
 
-def export_bibtex(vault: Path | str) -> Path:
+def export_bibtex(
+    vault: Path | str,
+    *,
+    include_local_fields: bool = True,
+) -> Path:
     paths = initialize_vault(vault, rebuild=False)
     cards = load_source_cards(paths)
     return write_library_bib(
         cards,
         paths.exports / "library.bib",
         metadata_root=paths.raw_metadata,
+        include_local_fields=include_local_fields,
     )
 
 
@@ -3177,6 +3182,8 @@ def export_card_bibtex(
     *,
     output: Path | str | None = None,
     include_vault_note: bool = False,
+    include_local_fields: bool = True,
+    cite: bool = False,
 ) -> dict[str, Any]:
     paths = initialize_vault(vault, rebuild=False)
     cards = load_source_cards(paths)
@@ -3190,26 +3197,82 @@ def export_card_bibtex(
     )
     if card is None:
         raise ValueError(f"No paper card found for citekey: {citekey}")
-    rendered = render_card_bibtex(
-        card,
-        metadata_root=paths.raw_metadata,
-        include_vault_note=include_vault_note,
-        require_ready=False,
-    )
-    if rendered is None:
-        raise ValueError(f"Cannot render BibTeX for {citekey}: missing title")
+    if cite:
+        citekey_value = card.citekey or card.slug
+        content = f"\\cite{{{citekey_value}}}\n"
+        rendered = None
+    else:
+        rendered = render_card_bibtex(
+            card,
+            metadata_root=paths.raw_metadata,
+            include_vault_note=include_vault_note,
+            include_local_fields=include_local_fields,
+            require_ready=False,
+        )
+        if rendered is None:
+            raise ValueError(f"Cannot render BibLaTeX for {citekey}: missing title")
+        content = rendered.entry.rstrip() + "\n"
     output_path = Path(output).expanduser().resolve() if output is not None else None
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(rendered.entry.rstrip() + "\n", encoding="utf-8")
+        output_path.write_text(content, encoding="utf-8")
     return {
         "vault": str(paths.vault),
         "citekey": card.citekey or card.slug,
         "paper": _card_ref(card),
-        "source": rendered.source,
-        "warnings": list(rendered.warnings),
+        "source": "cite" if cite else rendered.source,
+        "entry_type": None if cite else rendered.entry_type,
+        "warnings": [] if cite else list(rendered.warnings),
         "output": str(output_path) if output_path else None,
-        "bibtex": rendered.entry.rstrip() + "\n",
+        "bibtex": content,
+        "content": content,
+        "content_kind": "cite" if cite else "biblatex",
+    }
+
+
+def bibtex_doctor(vault: Path | str) -> dict[str, Any]:
+    paths = initialize_vault(vault, rebuild=False)
+    cards = load_source_cards(paths)
+    rows: list[dict[str, Any]] = []
+    rendered_count = 0
+    for card in cards:
+        rendered = render_card_bibtex(
+            card,
+            metadata_root=paths.raw_metadata,
+            include_vault_note=False,
+            include_local_fields=True,
+            require_ready=False,
+        )
+        if rendered is None:
+            rows.append(
+                {
+                    "citekey": card.citekey or card.slug,
+                    "paper": _card_ref(card),
+                    "title": card.title,
+                    "entry_type": None,
+                    "source": None,
+                    "warnings": ["cannot render BibLaTeX: missing title"],
+                }
+            )
+            continue
+        rendered_count += 1
+        if rendered.warnings:
+            rows.append(
+                {
+                    "citekey": card.citekey or card.slug,
+                    "paper": _card_ref(card),
+                    "title": card.title,
+                    "entry_type": rendered.entry_type,
+                    "source": rendered.source,
+                    "warnings": list(rendered.warnings),
+                }
+            )
+    return {
+        "vault": str(paths.vault),
+        "cards": len(cards),
+        "rendered": rendered_count,
+        "issues": len(rows),
+        "rows": rows,
     }
 
 

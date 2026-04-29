@@ -256,10 +256,10 @@ def render_vault_agents() -> str:
             scholar-vault runs
             ```
 
-            For one-card BibTeX while working from Obsidian, copy the card `citekey` and run:
+            For one-card BibLaTeX while working from Obsidian, copy the card `citekey` and run:
 
             ```fish
-            scholar-vault card-bibtex <citekey>
+            scholar-vault card-biblatex <citekey>
             ```
 
             After editing only `concepts/`, run `scholar-vault concept-index`. After
@@ -418,13 +418,14 @@ def render_zotero_migration() -> str:
     return (
         "# Zotero migration\n\n"
         "When you want Zotero copies later, import `_exports/library.bib` into Zotero.\n\n"
-        "- The exported BibTeX prefers cached provider BibTeX/CSL metadata, then falls back "
+        "- The exported BibLaTeX prefers cached provider BibTeX/CSL metadata, then falls back "
         "to card metadata.\n"
         "- The exported entries include DOI, URL, abstracts when known, keywords, PDF file "
         "paths, and note text.\n"
-        "- Scholar Labs summaries and rationale bullets are folded into the BibTeX `note` field.\n"
+        "- Scholar Labs summaries and rationale bullets are folded into the BibLaTeX `note` "
+        "field.\n"
         "- For one-card export while working in Obsidian, copy a card's `citekey` and run "
-        "`scholar-vault card-bibtex <citekey>`.\n"
+        "`scholar-vault card-biblatex <citekey>`.\n"
         "- `papers/` remains the canonical archive even after a Zotero import.\n"
     )
 

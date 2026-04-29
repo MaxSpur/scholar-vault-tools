@@ -2,7 +2,7 @@
 
 - [x] Scaffold the package, CLI, browser exporter, templates, and tests.
 - [x] Implement local-first vault initialization and generated documentation.
-- [x] Implement Scholar Labs, direct PDF, BibTeX, DOI, rebuild, and BibTeX export workflows.
+- [x] Implement Scholar Labs, direct PDF, BibTeX import, DOI, rebuild, and BibLaTeX export workflows.
 - [x] Add matching, citekey, slug, and Markdown rendering coverage.
 - [x] Run verification commands and record any fixes from the first pass.
 - [x] Reject invalid Scholar Labs exports and keep failed raw exports for debugging without creating runs or paper cards.
@@ -11,7 +11,7 @@
 - [x] Move successfully used Scholar Labs JSON exports unchanged into an exports-folder `used/` subfolder while keeping run resume metadata valid.
 - [x] Add a `rerun` shortcut for rescanning an existing run after more PDFs are added to staging.
 - [x] Make `rerun` default to the latest recorded run when `--run` is omitted.
-- [x] Add canonical-card DOI and BibTeX enrichment with cached provider responses, skip rules, fingerprints, and generated-only BibTeX export.
+- [x] Add canonical-card DOI and provider BibTeX/CSL enrichment with cached provider responses, skip rules, fingerprints, and generated-only BibLaTeX export.
 - [x] Promote trusted DOI metadata into canonical paper card fields so venues/authors/titles are not left as Scholar preview strings.
 - [x] Add canonical-card abstract enrichment with separate abstract provenance, locks, refresh behavior, and exports.
 - [x] Add missing-keyword enrichment from attached PDFs plus manual keyword follow-up resolution.
@@ -76,4 +76,5 @@
 - [x] Initialize new vaults with the full vault-specific `AGENTS.md` operating guide.
 - [x] Add `notes-missing`, `concept-index`, and `proposal-sprint scaffold` helper commands for PDF-reading and proposal sprint workflows.
 - [x] Make `proposal-audit` follow `evidence_matrix` outline frontmatter so shared source matrices under `syntheses/` are audited.
-- [x] Add an Obsidian-friendly one-card BibTeX command for exporting useful BibTeX directly from a pasted citekey.
+- [x] Add an Obsidian-friendly one-card BibLaTeX command for exporting useful BibLaTeX directly from a pasted citekey.
+- [x] Add BibLaTeX validation, title capitalization protection, clipboard output, `--cite`, `--no-local-fields`, and provider-backed entry-type inference.

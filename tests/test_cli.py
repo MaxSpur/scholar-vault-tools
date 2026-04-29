@@ -456,6 +456,125 @@ def test_bibtex_command_with_citekey_writes_single_entry(tmp_path) -> None:
     assert "@misc{source," in output.read_text(encoding="utf-8")
 
 
+def test_card_bibtex_command_can_print_cite(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source Paper",
+            citation_status="verified",
+        ),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["card-bibtex", "--vault", str(vault), "--cite", "source"],
+    )
+
+    assert result.exit_code == 0
+    assert result.output == "\\cite{source}\n"
+
+
+def test_card_bibtex_command_can_copy_to_clipboard(tmp_path, monkeypatch) -> None:
+    from scholar_vault import cli  # noqa: PLC0415
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source Paper",
+            authors=["Jane Smith"],
+            year=2024,
+            citation_status="verified",
+        ),
+    )
+    copied: dict[str, str] = {}
+
+    def fake_copy(text: str) -> str:
+        copied["text"] = text
+        return "test-copy"
+
+    monkeypatch.setattr(cli, "_copy_to_clipboard", fake_copy)
+
+    result = CliRunner().invoke(
+        app,
+        ["card-bibtex", "--vault", str(vault), "--clipboard", "source"],
+    )
+
+    assert result.exit_code == 0
+    assert "Copied BibLaTeX for source to clipboard with test-copy." in result.output
+    assert copied["text"].startswith("@misc{source,")
+
+
+def test_card_bibtex_command_can_omit_local_fields(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source Paper",
+            authors=["Jane Smith"],
+            year=2024,
+            pdf="pdfs/source.pdf",
+            abstract="A useful abstract.",
+            keywords=["Keyword"],
+            citation_status="verified",
+        ),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["card-bibtex", "--vault", str(vault), "--no-local-fields", "source"],
+    )
+
+    assert result.exit_code == 0
+    assert "abstract = " not in result.output
+    assert "file = " not in result.output
+    assert "keywords = " not in result.output
+
+
+def test_bibtex_doctor_command_reports_json(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source Paper",
+            venue="Journal of Test Results",
+            citation_status="missing",
+        ),
+    )
+
+    result = CliRunner().invoke(app, ["biblatex-doctor", "--vault", str(vault), "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["issues"] == 1
+    assert payload["rows"][0]["citekey"] == "source"
+    assert "missing required author/editor for @article" in payload["rows"][0]["warnings"]
+
+
 def test_resolve_citation_alias_can_lock_metadata(tmp_path) -> None:
     from scholar_vault.importer import _save_card  # noqa: PLC0415
     from scholar_vault.models import SourceCard  # noqa: PLC0415

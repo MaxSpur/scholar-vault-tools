@@ -1974,7 +1974,7 @@ def _enrichment_status_detail(status: str, *, abstracts: bool) -> str:
         return (
             "checking providers, cache, DOI, and PDF text"
             if abstracts
-            else "checking DOI providers, cache, BibTeX, and missing fields"
+            else "checking DOI providers, cache, citation metadata, and missing fields"
         )
     if normalized == "skipped":
         return "no change; existing state, lock, cache, or retry rule"

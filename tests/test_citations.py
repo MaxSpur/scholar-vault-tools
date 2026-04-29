@@ -1454,3 +1454,146 @@ def test_card_bibtex_preserves_provider_tex_macros(tmp_path: Path) -> None:
     assert all(ord(char) < 128 for char in result.entry)
     assert r'M{\\"u}ller' not in result.entry
     assert r'M{\"u}ller' in result.entry
+
+
+def test_card_bibtex_emits_biblatex_journaltitle_from_provider_bibtex(
+    tmp_path: Path,
+) -> None:
+    metadata_root = tmp_path / "metadata"
+    cache_dir = metadata_root / "smith2024"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "citation.bib").write_text(
+        (
+            "@article{wrongkey,\n"
+            "  title={Provider Article},\n"
+            "  author={Jane Smith},\n"
+            "  journal={Journal of Test Results},\n"
+            "  year={2024}\n"
+            "}\n"
+        ),
+        encoding="utf-8",
+    )
+    card = SourceCard(
+        slug="smith2024",
+        citekey="smith2024",
+        title="Provider Article",
+        citation_status="verified",
+    )
+
+    result = render_card_bibtex(card, metadata_root=metadata_root, include_vault_note=False)
+
+    assert result is not None
+    assert "@article{smith2024," in result.entry
+    assert "journaltitle = {Journal of Test Results}" in result.entry
+    assert "\n  journal = " not in result.entry
+
+
+def test_card_bibtex_can_omit_local_fields(tmp_path: Path) -> None:
+    metadata_root = tmp_path / "metadata"
+    cache_dir = metadata_root / "smith2024"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "citation.bib").write_text(
+        (
+            "@article{wrongkey,\n"
+            "  title={Provider Article},\n"
+            "  author={Jane Smith},\n"
+            "  journal={Journal of Test Results},\n"
+            "  abstract={Provider abstract},\n"
+            "  keywords={Provider keyword},\n"
+            "  year={2024}\n"
+            "}\n"
+        ),
+        encoding="utf-8",
+    )
+    card = SourceCard(
+        slug="smith2024",
+        citekey="smith2024",
+        title="Provider Article",
+        pdf="pdfs/smith2024.pdf",
+        abstract="Vault abstract.",
+        keywords=["Vault keyword"],
+        summary="Vault summary.",
+        citation_status="verified",
+    )
+
+    result = render_card_bibtex(
+        card,
+        metadata_root=metadata_root,
+        include_vault_note=True,
+        include_local_fields=False,
+    )
+
+    assert result is not None
+    assert "abstract = " not in result.entry
+    assert "keywords = " not in result.entry
+    assert "file = " not in result.entry
+    assert "note = " not in result.entry
+
+
+def test_card_bibtex_protects_title_capitalization() -> None:
+    card = SourceCard(
+        slug="llmwiki2026",
+        citekey="llmwiki2026",
+        title="LLM-Wiki for VR, 3D OD maps, and GeoAI",
+        authors=["Jane Smith"],
+        year=2026,
+        venue="Journal of Test Results",
+        citation_status="verified",
+    )
+
+    result = render_card_bibtex(card, include_vault_note=False)
+
+    assert result is not None
+    assert "title = {{LLM}-{Wiki} for {VR}, {3D} {OD} maps, and {GeoAI}}" in result.entry
+
+
+def test_card_bibtex_infers_entry_type_from_cached_crossref_metadata(
+    tmp_path: Path,
+) -> None:
+    metadata_root = tmp_path / "metadata"
+    cache_dir = metadata_root / "smith2024"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "citation.bib").write_text(
+        (
+            "@misc{wrongkey,\n"
+            "  title={Provider Conference Paper},\n"
+            "  author={Jane Smith},\n"
+            "  booktitle={Proceedings of TestConf},\n"
+            "  year={2024}\n"
+            "}\n"
+        ),
+        encoding="utf-8",
+    )
+    (cache_dir / "crossref.json").write_text(
+        json.dumps({"message": {"type": "proceedings-article"}}),
+        encoding="utf-8",
+    )
+    card = SourceCard(
+        slug="smith2024",
+        citekey="smith2024",
+        title="Provider Conference Paper",
+        citation_status="verified",
+    )
+
+    result = render_card_bibtex(card, metadata_root=metadata_root, include_vault_note=False)
+
+    assert result is not None
+    assert "@inproceedings{smith2024," in result.entry
+    assert "booktitle = {Proceedings of TestConf}" in result.entry
+
+
+def test_card_bibtex_reports_biblatex_validation_warnings() -> None:
+    card = SourceCard(
+        slug="incomplete",
+        citekey="incomplete",
+        title="Incomplete Article",
+        venue="Journal of Test Results",
+        citation_status="missing",
+    )
+
+    result = render_card_bibtex(card, include_vault_note=False, require_ready=False)
+
+    assert result is not None
+    assert any("citation_status is missing" in warning for warning in result.warnings)
+    assert "missing required author/editor for @article" in result.warnings
+    assert "missing required year/date for @article" in result.warnings

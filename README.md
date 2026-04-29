@@ -430,30 +430,48 @@ scholar-vault rebuild --vault ~/Documents/Research/scholar-labs-vault
 
 `rebuild` also rerenders generated paper and run Markdown from the current templates, so existing paper cards get new generated sections such as `## Quick access`. At the end it prints a compact summary with paper-card rewrites, normalized records, refreshed run notes, and regenerated index/export files.
 
-Regenerate the whole-vault BibTeX export:
+Regenerate the whole-vault BibLaTeX export:
 
 ```fish
+scholar-vault biblatex --vault ~/Documents/Research/scholar-labs-vault
+# Compatibility alias:
 scholar-vault bibtex --vault ~/Documents/Research/scholar-labs-vault
 ```
 
-Generate BibTeX for the card you are viewing in Obsidian by copying its
+Generate BibLaTeX for the card you are viewing in Obsidian by copying its
 `citekey` and running:
 
 ```fish
-scholar-vault card-bibtex --vault ~/Documents/Research/scholar-labs-vault smith2024rag
-scholar-vault bibtex --vault ~/Documents/Research/scholar-labs-vault --citekey smith2024rag
-scholar-vault bibtex --vault ~/Documents/Research/scholar-labs-vault --citekey smith2024rag --output ~/Desktop/smith2024rag.bib
+scholar-vault card-biblatex --vault ~/Documents/Research/scholar-labs-vault smith2024rag
+scholar-vault biblatex --vault ~/Documents/Research/scholar-labs-vault --citekey smith2024rag
+scholar-vault biblatex --vault ~/Documents/Research/scholar-labs-vault --citekey smith2024rag --output ~/Desktop/smith2024rag.bib
+scholar-vault card-biblatex --vault ~/Documents/Research/scholar-labs-vault --clipboard smith2024rag
+scholar-vault card-biblatex --vault ~/Documents/Research/scholar-labs-vault --cite --clipboard smith2024rag
 ```
 
-One-card BibTeX uses the best available source in this order: cached provider
+The `bibtex` and `card-bibtex` command names remain as compatibility aliases.
+One-card BibLaTeX uses the best available source in this order: cached provider
 BibTeX from `raw/metadata/<citekey>/citation.bib`, cached CSL JSON from
 `citation.csl.json`, then a card-derived fallback. It normalizes the entry key
 to the vault citekey and adds useful vault-local fields such as `file`,
 `abstract`, and publication `keywords` when present. Exported values are
-normalized for traditional BibTeX compatibility: smart punctuation becomes
-ASCII punctuation, en/em dashes become TeX-style `--` / `---`, and remaining
-Latin accents become TeX accent macros. Use `--with-vault-note` when you also
-want Scholar Labs summary/rationale text in the BibTeX `note` field.
+normalized for BibLaTeX/TeX compatibility: smart punctuation becomes ASCII
+punctuation, en/em dashes become TeX-style `--` / `---`, remaining Latin
+accents become TeX accent macros, and uppercase title tokens such as `LLM`,
+`VR`, `3D`, or `GeoAI` are brace-protected. Provider fields are normalized to
+BibLaTeX names such as `journaltitle`, `report`, and `thesis` where possible.
+Use `--no-local-fields` when you need a portable publication-only entry without
+vault-local `abstract`, `file`, `keywords`, or `note` fields. Use
+`--with-vault-note` when you also want Scholar Labs summary/rationale text in
+the BibLaTeX `note` field.
+
+Validate one-card or library export quality:
+
+```fish
+scholar-vault card-biblatex --vault ~/Documents/Research/scholar-labs-vault --validate smith2024rag
+scholar-vault biblatex-doctor --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault biblatex-doctor --vault ~/Documents/Research/scholar-labs-vault --json
+```
 
 Inspect vault health for an agent or for manual triage:
 
@@ -560,7 +578,7 @@ Interpretation:
   itself.
 - `detected`: DOI was found locally in frontmatter, URLs, PDF metadata, or PDF text.
 - `resolved`: a remote provider or DOI lookup accepted the DOI.
-- `generated`: BibTeX/CSL metadata was generated but has not been manually verified.
+- `generated`: provider BibTeX/CSL metadata was generated but has not been manually verified.
 - `verified`: DOI metadata and title/author/year consistency checks were strong.
 - `ambiguous`: providers returned plausible but conflicting or weak candidates.
 - `unresolved`: no acceptable DOI or citation metadata was found.
@@ -942,7 +960,7 @@ normal research workflow is:
 - `runs/*/index.yaml`: machine-readable run records used by `resume`, `rerun`, and rebuilds.
 - `runs/*/import-manifest.yaml`: transactional record of proposed matches, decisions, copied PDFs, and created cards.
 - `raw/metadata/<citekey>/`: cached citation provider responses and generated citation artifacts.
-- `raw/metadata/<citekey>/citation.bib` and `citation.csl.json`: preferred provider-backed sources for one-card and whole-library BibTeX export.
+- `raw/metadata/<citekey>/citation.bib` and `citation.csl.json`: preferred provider-backed sources for one-card and whole-library BibLaTeX export.
 - `topics/*.md`: simple topic pages derived from prompt keywords and rationale labels.
 - `_indexes/*.md`: navigation and maintenance views.
 - `llms.txt` and `llms-full.txt`: short and expanded agent navigation summaries.
