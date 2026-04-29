@@ -3896,3 +3896,186 @@ def _copy_detail(qt: dict[str, Any], detail: dict[str, Any] | None, key: str) ->
 
 def _has_category(details: list[dict[str, Any]], category: str) -> bool:
     return any(row.get("category") == category for row in details)
+
+
+def show_skill_sync(source: Path | str, target: Path | str) -> None:
+    from .skill_sync import (
+        adopt_skill,
+        compare_skillsets,
+        format_skillset_summary,
+        publish_skillset,
+    )
+
+    qt = _load_qt_modules(require_fitz=False)
+    app = _application(qt)
+    dialog = qt["QDialog"]()
+    dialog.setWindowTitle("Scholar Vault Skill Sync")
+    dialog.resize(980, 760)
+    dialog.setMinimumWidth(820)
+    dialog.setStyleSheet(_dark_dialog_stylesheet())
+
+    layout = qt["QVBoxLayout"](dialog)
+    layout.setContentsMargins(28, 24, 28, 22)
+    layout.setSpacing(12)
+
+    kicker = qt["QLabel"]("SCHOLAR VAULT // SKILL SYNC")
+    kicker.setFont(_summary_font(qt, 11, mono=True, bold=True))
+    kicker.setStyleSheet("color: #69ffad;")
+    layout.addWidget(kicker)
+
+    heading = qt["QLabel"]("Compare, Adopt, Publish")
+    heading.setFont(_summary_font(qt, 28, bold=True))
+    heading.setStyleSheet("color: #f3fff7;")
+    layout.addWidget(heading)
+
+    body = qt["QLabel"](
+        "Compare canonical repo skills with installed vault skills. Adopt vault-side "
+        "improvements back into the repo, then publish repo skills out to the vault. "
+        "Publishing never deletes extras unless you choose to archive them."
+    )
+    body.setWordWrap(True)
+    body.setFont(_summary_font(qt, 12))
+    body.setStyleSheet("color: #baffdc;")
+    layout.addWidget(body)
+
+    source_field = qt["QLineEdit"]()
+    source_field.setText(str(Path(source).expanduser().resolve()))
+    target_field = qt["QLineEdit"]()
+    target_field.setText(str(Path(target).expanduser().resolve()))
+    for label_text, field in [("Source skills", source_field), ("Target skills", target_field)]:
+        label = qt["QLabel"](label_text)
+        label.setFont(_summary_font(qt, 10, mono=True, bold=True))
+        label.setStyleSheet("color: #8ce7b8;")
+        layout.addWidget(label)
+        field.setMinimumHeight(36)
+        field.setFont(_summary_font(qt, 11, mono=True))
+        layout.addWidget(field)
+
+    summary_text = qt["QTextEdit"]()
+    summary_text.setReadOnly(True)
+    summary_text.setMinimumHeight(300)
+    summary_text.setFont(_summary_font(qt, 11, mono=True))
+    summary_text.setStyleSheet(
+        "QTextEdit { color: #d7ffe8; background: #00120b; border: 1px solid #006b45; "
+        "padding: 10px; }"
+    )
+    layout.addWidget(summary_text, 1)
+
+    chooser_row = qt["QHBoxLayout"]()
+    skill_combo = qt["QComboBox"]()
+    skill_combo.setMinimumHeight(38)
+    skill_combo.setFont(_summary_font(qt, 11))
+    chooser_row.addWidget(skill_combo, 1)
+    force_box = qt["QCheckBox"]("Force overwrite when adopting changed skills")
+    force_box.setFont(_summary_font(qt, 10))
+    chooser_row.addWidget(force_box)
+    layout.addLayout(chooser_row)
+
+    archive_box = qt["QCheckBox"]("Archive target-only skills during publish")
+    archive_box.setFont(_summary_font(qt, 10))
+    archive_box.setStyleSheet("color: #baffdc;")
+    layout.addWidget(archive_box)
+
+    buttons = qt["QHBoxLayout"]()
+    refresh_button = qt["QPushButton"]("Refresh Diff")
+    adopt_button = qt["QPushButton"]("Adopt Selected From Target")
+    publish_button = qt["QPushButton"]("Publish Source To Target")
+    close_button = qt["QPushButton"]("Close")
+    for button, tone in [
+        (refresh_button, "neutral"),
+        (adopt_button, "primary"),
+        (publish_button, "success"),
+        (close_button, "muted"),
+    ]:
+        button.setMinimumHeight(40)
+        _style_button(button, tone)
+    buttons.addWidget(refresh_button)
+    buttons.addWidget(adopt_button)
+    buttons.addWidget(publish_button)
+    buttons.addStretch(1)
+    buttons.addWidget(close_button)
+    layout.addLayout(buttons)
+
+    def paths() -> tuple[Path, Path]:
+        return (
+            Path(source_field.text()).expanduser().resolve(),
+            Path(target_field.text()).expanduser().resolve(),
+        )
+
+    def message(title: str, text: str) -> None:
+        box = qt["QMessageBox"](dialog)
+        box.setWindowTitle(title)
+        box.setText(text)
+        _style_message_box(qt, box)
+        box.exec()
+
+    def confirm(title: str, text: str) -> bool:
+        box = qt["QMessageBox"](dialog)
+        box.setWindowTitle(title)
+        box.setText(text)
+        box.setStandardButtons(
+            qt["QMessageBox"].StandardButton.Cancel
+            | qt["QMessageBox"].StandardButton.Ok
+        )
+        _style_message_box(qt, box)
+        return box.exec() == qt["QMessageBox"].StandardButton.Ok
+
+    def refresh() -> None:
+        source_path, target_path = paths()
+        summary = compare_skillsets(source_path, target_path)
+        summary_text.setPlainText(format_skillset_summary(summary))
+        skill_combo.clear()
+        for row in summary["skills"]:
+            if row["status"] in {"target-only", "changed"}:
+                skill_combo.addItem(f"{row['skill']} ({row['status']})", row["skill"])
+        adopt_button.setEnabled(skill_combo.count() > 0)
+        publish_button.setEnabled(
+            summary["counts"]["changed"] > 0
+            or summary["counts"]["source_only"] > 0
+            or summary["counts"]["target_only"] > 0
+        )
+
+    def adopt_selected() -> None:
+        skill = skill_combo.currentData()
+        if not skill:
+            return
+        if not confirm("Adopt Skill", f"Copy target skill '{skill}' back into the source?"):
+            return
+        source_path, target_path = paths()
+        result = adopt_skill(
+            source_path,
+            target_path,
+            skill,
+            apply=True,
+            force=force_box.isChecked(),
+        )
+        if result.get("action") == "blocked":
+            message("Adopt Blocked", str(result.get("reason")))
+        else:
+            message("Adopted", f"Adopted {skill}.")
+        refresh()
+
+    def publish() -> None:
+        if not confirm("Publish Skills", "Publish source skills into the target skill folder?"):
+            return
+        source_path, target_path = paths()
+        result = publish_skillset(
+            source_path,
+            target_path,
+            apply=True,
+            archive_extra=archive_box.isChecked(),
+        )
+        copied = ", ".join(result.get("copied") or []) or "none"
+        archived = ", ".join(result.get("archived") or []) or "none"
+        message("Published", f"Copied: {copied}\nArchived: {archived}")
+        refresh()
+
+    refresh_button.clicked.connect(refresh)
+    adopt_button.clicked.connect(adopt_selected)
+    publish_button.clicked.connect(publish)
+    close_button.clicked.connect(dialog.accept)
+    qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.reject)
+
+    refresh()
+    dialog.exec()
+    app.processEvents()

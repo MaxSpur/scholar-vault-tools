@@ -843,24 +843,57 @@ This repository includes optional Codex skills under `.agents/skills/` for
 post-import vault refinement. They are not part of the generated vault by
 default; copy them into the vault when you want to start a Codex project there.
 
-```fish
-set src ~/Developer/scholar-vault-tools/.agents/skills
-set vault ~/Documents/Research/scholar-labs-vault
+The safer workflow is to compare first, adopt any useful vault-side changes
+back into this repository, then publish from the repository into the vault.
 
-mkdir -p $vault/.agents/skills
-rsync -a $src/ $vault/.agents/skills/
+```fish
+scholar-vault skills diff --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault skills ui --vault ~/Documents/Research/scholar-labs-vault
 ```
 
-Rerunning the same `rsync -a $src/ $vault/.agents/skills/` command updates and
-overwrites files with the same names and adds new skill files. It does not
-remove old files that no longer exist in the source. Use `rsync -a --delete
-$src/ $vault/.agents/skills/` only if the vault skill folder contains no
-vault-local skills you want to keep.
+If a Codex session in the vault created a useful new or changed skill, adopt it
+back into the repository source of truth:
+
+```fish
+scholar-vault skills adopt scholar-vault-proposal-evidence-sprint \
+  --vault ~/Documents/Research/scholar-labs-vault
+
+# Dry-run by default. Add --apply to copy:
+scholar-vault skills adopt scholar-vault-proposal-evidence-sprint \
+  --vault ~/Documents/Research/scholar-labs-vault \
+  --apply
+```
+
+If the same skill exists on both sides and differs, `adopt` asks for
+`--force` before overwriting the repository copy. The overwritten source skill
+is backed up under `.agents/skills/.sync-backups/`.
+
+Then publish repository skills to the vault:
+
+```fish
+scholar-vault skills publish --vault ~/Documents/Research/scholar-labs-vault
+
+# Dry-run by default. Add --apply to copy:
+scholar-vault skills publish --vault ~/Documents/Research/scholar-labs-vault --apply
+```
+
+`publish` does not remove vault-only skills by default. If you intentionally
+want the vault to stop carrying target-only skills, use `--archive-extra`; this
+moves them into `.sync-backups/` instead of deleting them.
+
+For shell-script wrappers, use:
+
+```fish
+scripts/skills_diff.sh --vault ~/Documents/Research/scholar-labs-vault
+scripts/skills_ui.sh --vault ~/Documents/Research/scholar-labs-vault
+scripts/skills_adopt.sh <skill-name> --vault ~/Documents/Research/scholar-labs-vault --apply
+scripts/skills_publish.sh --vault ~/Documents/Research/scholar-labs-vault --apply
+```
 
 Verify the install:
 
 ```fish
-find $vault/.agents/skills -maxdepth 2 -name SKILL.md -print
+find ~/Documents/Research/scholar-labs-vault/.agents/skills -maxdepth 2 -name SKILL.md -print
 ```
 
 Then open a new Codex session with the vault as the project folder:

@@ -61,11 +61,21 @@ from .models import (
     ScholarLabsExport,
     SourceCard,
 )
+from .skill_sync import (
+    adopt_skill,
+    compare_skillsets,
+    default_source_skills_path,
+    format_skillset_summary,
+    publish_skillset,
+    vault_skills_path,
+)
 from .sources import VaultPaths, infer_run_title, load_run_records, load_source_cards
 
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
 proposal_sprint_app = typer.Typer(help="Proposal sprint workspace helpers.")
+skills_app = typer.Typer(help="Compare, adopt, and publish project-local Codex skills.")
 app.add_typer(proposal_sprint_app, name="proposal-sprint")
+app.add_typer(skills_app, name="skills")
 console = Console()
 
 
@@ -159,6 +169,29 @@ OptionalPdfArg = Annotated[
     Path | None,
     typer.Option("--pdf", exists=True, file_okay=True, dir_okay=False, resolve_path=True),
 ]
+SkillSourceArg = Annotated[
+    Path | None,
+    typer.Option(
+        "--source",
+        exists=False,
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        help="Canonical skills folder. Defaults to this repo's .agents/skills.",
+    ),
+]
+SkillTargetArg = Annotated[
+    Path | None,
+    typer.Option(
+        "--target",
+        exists=False,
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        help="Installed skills folder. Defaults to <vault>/.agents/skills.",
+    ),
+]
+SkillNameArg = Annotated[str, typer.Argument(help="Skill folder name to adopt.")]
 StagingArg = Annotated[
     Path | None,
     typer.Option("--staging", exists=True, file_okay=False, dir_okay=True, resolve_path=True),
@@ -429,6 +462,17 @@ TopicMappingArg = Annotated[
 ApplyArg = Annotated[
     bool,
     typer.Option("--apply", help="Apply the planned changes. Default is dry-run."),
+]
+ArchiveExtraArg = Annotated[
+    bool,
+    typer.Option(
+        "--archive-extra/--keep-extra",
+        help="When publishing, move target-only skills into .sync-backups.",
+    ),
+]
+BackupArg = Annotated[
+    bool,
+    typer.Option("--backup/--no-backup", help="Back up overwritten skills before copying."),
 ]
 ProposalPathArg = Annotated[
     Path,
@@ -808,6 +852,64 @@ def _configure_ui(config: dict[str, Any]) -> dict[str, Any] | None:
     except GuiUnavailable as exc:
         console.print(f"Configuration UI unavailable ({exc}). Falling back to terminal output.")
         return None
+
+
+def _resolve_skill_paths(
+    *,
+    source: Path | None,
+    target: Path | None,
+    vault: Path | None,
+) -> tuple[Path, Path]:
+    source_path = source.expanduser().resolve() if source else default_source_skills_path()
+    if target:
+        target_path = target.expanduser().resolve()
+    else:
+        resolved_vault = _resolve_vault(vault)
+        target_path = vault_skills_path(resolved_vault)
+    return source_path, target_path
+
+
+def _print_skillset_summary(summary: dict[str, Any]) -> None:
+    console.print(format_skillset_summary(summary), soft_wrap=True)
+
+
+def _print_skill_action(summary: dict[str, Any]) -> None:
+    action = summary.get("action")
+    if action == "blocked":
+        console.print(f"Blocked: {summary.get('reason')}")
+        return
+    if summary.get("apply"):
+        console.print(f"Applied: {action}")
+    else:
+        console.print(f"Dry-run: would {action}")
+    if summary.get("skill"):
+        console.print(f"- Skill: {summary['skill']}")
+    if summary.get("from"):
+        console.print(f"- From: {summary['from']}")
+    if summary.get("to"):
+        console.print(f"- To: {summary['to']}")
+    if summary.get("copied"):
+        console.print(f"- Skills to copy: {', '.join(summary['copied'])}")
+    if summary.get("target_only"):
+        console.print(f"- Target-only skills: {', '.join(summary['target_only'])}")
+    if summary.get("archived"):
+        console.print(f"- Archived: {', '.join(summary['archived'])}")
+    if summary.get("backup"):
+        console.print(f"- Backup: {summary['backup']}")
+    if summary.get("backups"):
+        console.print(f"- Backups: {', '.join(summary['backups'])}")
+
+
+def _show_skill_sync_ui(source: Path, target: Path) -> None:
+    try:
+        from .gui import GuiUnavailable, show_skill_sync
+    except Exception as exc:  # pragma: no cover - defensive optional import path
+        console.print(f"Skill sync UI unavailable ({exc}). Falling back to terminal output.")
+        return
+    try:
+        show_skill_sync(source, target)
+    except GuiUnavailable as exc:
+        console.print(f"Skill sync UI unavailable ({exc}). Falling back to terminal output.")
 
 
 def _apply_config_options(
@@ -2233,6 +2335,89 @@ def references_command(
         output_format=output_format,
     )
     _print_references_summary(summary)
+
+
+@skills_app.command("diff")
+def skills_diff_command(
+    vault: VaultArg = None,
+    source: SkillSourceArg = None,
+    target: SkillTargetArg = None,
+    json_output: JsonOutputArg = False,
+    ui: UiArg = False,
+) -> None:
+    source_path, target_path = _resolve_skill_paths(source=source, target=target, vault=vault)
+    if ui:
+        _show_skill_sync_ui(source_path, target_path)
+        return
+    summary = compare_skillsets(source_path, target_path)
+    if json_output:
+        console.print_json(data=summary)
+        return
+    _print_skillset_summary(summary)
+
+
+@skills_app.command("adopt")
+def skills_adopt_command(
+    skill: SkillNameArg,
+    vault: VaultArg = None,
+    source: SkillSourceArg = None,
+    target: SkillTargetArg = None,
+    apply: ApplyArg = False,
+    force: ForceArg = False,
+    backup: BackupArg = True,
+    json_output: JsonOutputArg = False,
+) -> None:
+    source_path, target_path = _resolve_skill_paths(source=source, target=target, vault=vault)
+    summary = adopt_skill(
+        source_path,
+        target_path,
+        skill,
+        apply=apply,
+        force=force,
+        backup=backup,
+    )
+    if json_output:
+        console.print_json(data=summary)
+        return
+    _print_skill_action(summary)
+    if not apply and summary.get("action") != "blocked":
+        console.print("Use --apply to copy the skill into the source skillset.")
+
+
+@skills_app.command("publish")
+def skills_publish_command(
+    vault: VaultArg = None,
+    source: SkillSourceArg = None,
+    target: SkillTargetArg = None,
+    apply: ApplyArg = False,
+    archive_extra: ArchiveExtraArg = False,
+    backup: BackupArg = True,
+    json_output: JsonOutputArg = False,
+) -> None:
+    source_path, target_path = _resolve_skill_paths(source=source, target=target, vault=vault)
+    summary = publish_skillset(
+        source_path,
+        target_path,
+        apply=apply,
+        archive_extra=archive_extra,
+        backup=backup,
+    )
+    if json_output:
+        console.print_json(data=summary)
+        return
+    _print_skill_action(summary)
+    if not apply:
+        console.print("Use --apply to publish source skills into the target skillset.")
+
+
+@skills_app.command("ui")
+def skills_ui_command(
+    vault: VaultArg = None,
+    source: SkillSourceArg = None,
+    target: SkillTargetArg = None,
+) -> None:
+    source_path, target_path = _resolve_skill_paths(source=source, target=target, vault=vault)
+    _show_skill_sync_ui(source_path, target_path)
 
 
 @app.command("doctor")

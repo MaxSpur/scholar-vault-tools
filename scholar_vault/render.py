@@ -247,6 +247,23 @@ def render_vault_agents() -> str:
             /Users/MadMax/miniforge3/condabin/conda run -n scholar-vault scholar-vault ...
             ```
 
+            ## Skill Synchronization
+
+            If you edit or create `.agents/skills/` entries inside this vault, tell the user
+            to adopt those changes back into the `scholar-vault-tools` repository before
+            publishing repository skills over this vault again. From the tools repository:
+
+            ```fish
+            scholar-vault skills diff --vault /path/to/this/vault
+            scholar-vault skills ui --vault /path/to/this/vault
+            scholar-vault skills adopt <skill-name> --vault /path/to/this/vault --apply
+            scholar-vault skills publish --vault /path/to/this/vault --apply
+            ```
+
+            Do not recommend raw `rsync --delete` for skill synchronization when either side
+            may contain local changes. `skills publish --archive-extra` archives vault-only
+            skills into `.sync-backups/` instead of deleting them.
+
             Prefer structured commands for orientation:
 
             ```fish

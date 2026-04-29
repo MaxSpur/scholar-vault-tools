@@ -79,3 +79,4 @@
 - [x] Add an Obsidian-friendly one-card BibLaTeX command for exporting useful BibLaTeX directly from a pasted citekey.
 - [x] Add BibLaTeX validation, title capitalization protection, clipboard output, `--cite`, `--no-local-fields`, and provider-backed entry-type inference.
 - [x] Add APA-style Markdown/RTF/plain formatted reference commands for one-card and whole-vault bibliography workflows.
+- [x] Add safe Codex skillset diff/adopt/publish commands, wrapper scripts, and an optional UI so repository and vault skills can be synchronized without blind overwrites.

@@ -694,6 +694,95 @@ def test_references_command_writes_single_rtf_document(tmp_path) -> None:
     assert "Smith, J. (2024). Source Paper." in rtf
 
 
+def _write_test_skill(root, name: str, body: str) -> None:
+    skill = root / name
+    (skill / "agents").mkdir(parents=True, exist_ok=True)
+    (skill / "SKILL.md").write_text(body, encoding="utf-8")
+    (skill / "agents" / "openai.yaml").write_text(
+        "interface:\n  display_name: Test\n",
+        encoding="utf-8",
+    )
+
+
+def test_skills_diff_command_reports_target_only(tmp_path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    _write_test_skill(source, "shared", "same\n")
+    _write_test_skill(target, "shared", "same\n")
+    _write_test_skill(target, "vault-only", "new\n")
+
+    result = CliRunner().invoke(
+        app,
+        ["skills", "diff", "--source", str(source), "--target", str(target)],
+    )
+
+    assert result.exit_code == 0
+    assert "vault-only: target-only" in result.output
+
+
+def test_skills_adopt_command_requires_apply(tmp_path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    _write_test_skill(target, "vault-only", "new\n")
+
+    dry_run = CliRunner().invoke(
+        app,
+        ["skills", "adopt", "--source", str(source), "--target", str(target), "vault-only"],
+    )
+
+    assert dry_run.exit_code == 0
+    assert "Dry-run" in dry_run.output
+    assert not (source / "vault-only").exists()
+
+    applied = CliRunner().invoke(
+        app,
+        [
+            "skills",
+            "adopt",
+            "--source",
+            str(source),
+            "--target",
+            str(target),
+            "--apply",
+            "vault-only",
+        ],
+    )
+
+    assert applied.exit_code == 0
+    assert (source / "vault-only" / "SKILL.md").exists()
+
+
+def test_skills_publish_command_dry_run_and_apply(tmp_path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    _write_test_skill(source, "repo-skill", "repo\n")
+
+    dry_run = CliRunner().invoke(
+        app,
+        ["skills", "publish", "--source", str(source), "--target", str(target)],
+    )
+
+    assert dry_run.exit_code == 0
+    assert "Dry-run" in dry_run.output
+    assert not (target / "repo-skill").exists()
+
+    applied = CliRunner().invoke(
+        app,
+        [
+            "skills",
+            "publish",
+            "--source",
+            str(source),
+            "--target",
+            str(target),
+            "--apply",
+        ],
+    )
+
+    assert applied.exit_code == 0
+    assert (target / "repo-skill" / "SKILL.md").exists()
+
+
 def test_resolve_citation_alias_can_lock_metadata(tmp_path) -> None:
     from scholar_vault.importer import _save_card  # noqa: PLC0415
     from scholar_vault.models import SourceCard  # noqa: PLC0415

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Proposal Evidence Sprint"
+  short_description: "Turn PDF reading batches into proposal evidence"
+  default_prompt: "Use $scholar-vault-proposal-evidence-sprint to read a focused paper batch, refine paper cards, update the source matrix/concepts, and strengthen the proposal outline."
