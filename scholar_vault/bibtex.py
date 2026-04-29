@@ -243,6 +243,25 @@ def _clean_scalar(value: Any) -> str:
     return clean_markdown_text(str(value)) if value is not None else ""
 
 
+def _clean_text_value(value: Any, *, separator: str = ", ") -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        parts = [_clean_text_value(item, separator=separator) for item in value]
+        return separator.join(part for part in parts if part)
+    if isinstance(value, dict):
+        return ""
+    return clean_markdown_text(str(value))
+
+
+def _csl_people(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, list):
+        return [person for person in value if isinstance(person, dict)]
+    return []
+
+
 def _first_mapping(value: Any) -> dict[str, Any] | None:
     if isinstance(value, dict):
         return value
@@ -307,13 +326,13 @@ def _provider_entry_type(metadata_root: Path | None, card: SourceCard) -> str | 
 
 def _normalize_field_names(
     entry_type: str,
-    fields: dict[str, str],
+    fields: dict[str, Any],
     *,
     include_local_fields: bool,
 ) -> dict[str, str]:
     normalized: dict[str, str] = {}
     for raw_key, raw_value in fields.items():
-        value = clean_markdown_text(raw_value)
+        value = _clean_text_value(raw_value)
         if not value:
             continue
         key = raw_key.lower()
@@ -356,11 +375,11 @@ def rekey_bibtex(raw_bibtex: str, key: str) -> str:
 
 
 def _csl_person_name(person: dict[str, Any]) -> str:
-    literal = clean_markdown_text(person.get("literal"))
+    literal = _clean_text_value(person.get("literal"))
     if literal:
         return literal
-    given = clean_markdown_text(person.get("given"))
-    family = clean_markdown_text(person.get("family"))
+    given = _clean_text_value(person.get("given"))
+    family = _clean_text_value(person.get("family"))
     return " ".join(part for part in [given, family] if part).strip()
 
 
@@ -380,10 +399,11 @@ def _csl_month(csl: dict[str, Any]) -> str | None:
     return None
 
 
-def _csl_entry_type(csl_type: str | None) -> str:
+def _csl_entry_type(csl_type: Any) -> str:
+    csl_type = _clean_scalar(csl_type)
     if mapped := _provider_type_to_entry_type(csl_type):
         return mapped
-    csl_type = (csl_type or "").casefold()
+    csl_type = csl_type.casefold()
     if csl_type == "manuscript":
         return "unpublished"
     return "misc"
@@ -429,33 +449,33 @@ def _entry_type_for_card(card: SourceCard) -> str:
 
 
 def _entry_from_csl(csl: dict[str, Any]) -> tuple[str, dict[str, str]] | None:
-    title = clean_markdown_text(csl.get("title"))
+    title = _clean_text_value(csl.get("title"))
     if not title:
         return None
     entry_type = _csl_entry_type(csl.get("type"))
     fields: dict[str, str] = {"title": title}
     authors = [
         name
-        for name in (_csl_person_name(person) for person in csl.get("author") or [])
+        for name in (_csl_person_name(person) for person in _csl_people(csl.get("author")))
         if name
     ]
     if authors:
         fields["author"] = " and ".join(authors)
     editors = [
         name
-        for name in (_csl_person_name(person) for person in csl.get("editor") or [])
+        for name in (_csl_person_name(person) for person in _csl_people(csl.get("editor")))
         if name
     ]
     if editors:
         fields["editor"] = " and ".join(editors)
-    container_title = clean_markdown_text(csl.get("container-title"))
+    container_title = _clean_text_value(csl.get("container-title"))
     if container_title:
         fields[_venue_field_name(entry_type)] = container_title
     if csl.get("publisher"):
         publisher_field = "institution" if entry_type in {"report", "thesis"} else "publisher"
-        fields.setdefault(publisher_field, clean_markdown_text(csl.get("publisher")))
+        fields.setdefault(publisher_field, _clean_text_value(csl.get("publisher")))
     if csl.get("publisher-place"):
-        fields["location"] = clean_markdown_text(csl.get("publisher-place"))
+        fields["location"] = _clean_text_value(csl.get("publisher-place"))
     for csl_key, bib_key in [
         ("volume", "volume"),
         ("issue", "number"),
@@ -468,7 +488,7 @@ def _entry_from_csl(csl: dict[str, Any]) -> tuple[str, dict[str, str]] | None:
     ]:
         value = csl.get(csl_key)
         if value:
-            fields[bib_key] = clean_markdown_text(value)
+            fields[bib_key] = _clean_text_value(value)
     if year := _csl_year(csl):
         fields["year"] = year
     if month := _csl_month(csl):

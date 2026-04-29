@@ -1385,6 +1385,42 @@ def test_card_bibtex_uses_cached_csl_when_provider_bibtex_is_absent(tmp_path: Pa
     assert "pages = {1-9}" in result.entry
 
 
+def test_card_bibtex_handles_list_valued_cached_csl_fields(tmp_path: Path) -> None:
+    metadata_root = tmp_path / "metadata"
+    cache_dir = metadata_root / "lee2025vis"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "citation.csl.json").write_text(
+        json.dumps(
+            {
+                "type": ["article-journal"],
+                "title": ["List Valued CSL Metadata"],
+                "author": [{"given": ["Ada"], "family": ["Lee"]}],
+                "container-title": ["Journal of Test Results"],
+                "publisher": ["Test Publisher"],
+                "ISSN": ["1234-5678", "8765-4321"],
+                "issued": {"date-parts": [[2025]]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    card = SourceCard(
+        slug="lee2025vis",
+        citekey="lee2025vis",
+        title="List Valued CSL Metadata",
+        citation_status="verified",
+    )
+
+    result = render_card_bibtex(card, metadata_root=metadata_root, include_vault_note=False)
+
+    assert result is not None
+    assert "@article{lee2025vis," in result.entry
+    assert "title = {List Valued {CSL} Metadata}" in result.entry
+    assert "author = {Ada Lee}" in result.entry
+    assert "journaltitle = {Journal of Test Results}" in result.entry
+    assert "publisher = {Test Publisher}" in result.entry
+    assert "issn = {1234-5678, 8765-4321}" in result.entry
+
+
 def test_card_bibtex_fallback_infers_conference_venue() -> None:
     card = SourceCard(
         slug="lee2025vis",

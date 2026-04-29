@@ -849,6 +849,44 @@ def test_rebuild_rerenders_existing_paper_cards_with_latest_template(tmp_path: P
     assert "[Open local PDF](../pdfs/quick-access.pdf)" in rendered
 
 
+def test_rebuild_exports_library_with_list_valued_cached_csl(tmp_path: Path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="list-csl",
+            citekey="listcsl",
+            title="List Valued CSL Metadata",
+            citation_status="verified",
+        ),
+    )
+    cache_dir = paths.raw_metadata / "listcsl"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "citation.csl.json").write_text(
+        json.dumps(
+            {
+                "type": ["article-journal"],
+                "title": ["List Valued CSL Metadata"],
+                "author": [{"given": ["Ada"], "family": ["Lee"]}],
+                "container-title": ["Journal of Test Results"],
+                "ISSN": ["1234-5678", "8765-4321"],
+                "issued": {"date-parts": [[2025]]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rebuild_vault(vault)
+
+    library = (paths.exports / "library.bib").read_text(encoding="utf-8")
+    assert "@article{listcsl," in library
+    assert "journaltitle = {Journal of Test Results}" in library
+    assert "issn = {1234-5678, 8765-4321}" in library
+
+
 def test_initialize_vault_writes_full_agents_template(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
 

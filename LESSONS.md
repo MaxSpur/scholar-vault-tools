@@ -23,6 +23,7 @@
 - Proposal evidence may live outside `proposals/<slug>`. Audits should follow explicit outline frontmatter such as `evidence_matrix: syntheses/<matrix>.md` instead of assuming every source matrix lives inside the proposal folder.
 - BibLaTeX export should be provider-first but vault-aware: prefer cached `citation.bib`, fall back to CSL JSON, then card metadata, and normalize the key/file/abstract/keyword fields for local use.
 - BibLaTeX/TeX compatibility is safest with ASCII output for this project. Normalize smart punctuation and dashes, preserve provider TeX macros, convert Latin accents to TeX macros, and brace-protect uppercase title tokens instead of emitting raw Unicode or fragile titles.
+- Cached CSL JSON may contain list-valued text fields even when BibLaTeX rendering needs strings. Normalize CSL scalars, lists, and person-name fields at the importer/export boundary before formatting entries.
 - The leftover staging PDF GUI is a parent queue, not a one-shot launcher. Reviewed reruns should return to the same window and refresh the remaining candidates.
 - Already-attached staging-match rows should support direct inspection and non-destructive cleanup. Move redundant staging PDFs into a staging-local `trash/` folder instead of deleting them or archiving them into the vault.
 - A parent queue window must not remain modal/frontmost while it launches child workflows. Hide or make it modeless during reviewed reruns so import reports and follow-up windows can receive focus.
