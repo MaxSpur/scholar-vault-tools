@@ -55,6 +55,7 @@ from .models import (
     SourceCard,
     SummarySource,
 )
+from .references import REFERENCE_FORMATS, REFERENCE_STYLES, render_card_reference
 from .render import (
     group_cards_by_topic,
     render_artifact_index,
@@ -3273,6 +3274,116 @@ def bibtex_doctor(vault: Path | str) -> dict[str, Any]:
         "rendered": rendered_count,
         "issues": len(rows),
         "rows": rows,
+    }
+
+
+def export_card_reference(
+    vault: Path | str,
+    citekey: str,
+    *,
+    output: Path | str | None = None,
+    style: str = "apa",
+    output_format: str = "markdown",
+) -> dict[str, Any]:
+    paths = initialize_vault(vault, rebuild=False)
+    cards = load_source_cards(paths)
+    card = next(
+        (
+            candidate
+            for candidate in cards
+            if citekey in {candidate.citekey, candidate.slug}
+        ),
+        None,
+    )
+    if card is None:
+        raise ValueError(f"No paper card found for citekey: {citekey}")
+    rendered = render_card_reference(
+        card,
+        metadata_root=paths.raw_metadata,
+        style=style,
+        output_format=output_format,
+    )
+    if rendered is None:
+        raise ValueError(f"Cannot render reference for {citekey}: missing title")
+    output_path = Path(output).expanduser().resolve() if output is not None else None
+    if output_path is not None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered.content, encoding="utf-8")
+    return {
+        "vault": str(paths.vault),
+        "citekey": card.citekey or card.slug,
+        "paper": _card_ref(card),
+        "source": rendered.source,
+        "style": rendered.style,
+        "format": rendered.output_format,
+        "warnings": list(rendered.warnings),
+        "output": str(output_path) if output_path else None,
+        "content": rendered.content,
+    }
+
+
+def export_references(
+    vault: Path | str,
+    *,
+    output: Path | str | None = None,
+    style: str = "apa",
+    output_format: str = "markdown",
+) -> dict[str, Any]:
+    style = style.casefold()
+    output_format = output_format.casefold()
+    if style not in REFERENCE_STYLES:
+        raise ValueError(f"Unsupported reference style: {style}")
+    if output_format not in REFERENCE_FORMATS:
+        raise ValueError(f"Unsupported reference format: {output_format}")
+    paths = initialize_vault(vault, rebuild=False)
+    cards = load_source_cards(paths)
+    rendered_entries = []
+    rows: list[dict[str, Any]] = []
+    for card in sorted(cards, key=lambda item: (item.authors[0] if item.authors else item.title)):
+        rendered = render_card_reference(
+            card,
+            metadata_root=paths.raw_metadata,
+            style=style,
+            output_format=output_format,
+            wrap_rtf=False,
+        )
+        if rendered is None:
+            rows.append(
+                {
+                    "citekey": card.citekey or card.slug,
+                    "paper": _card_ref(card),
+                    "warnings": ["cannot render reference: missing title"],
+                }
+            )
+            continue
+        rendered_entries.append(rendered.content.rstrip())
+        if rendered.warnings:
+            rows.append(
+                {
+                    "citekey": card.citekey or card.slug,
+                    "paper": _card_ref(card),
+                    "warnings": list(rendered.warnings),
+                }
+            )
+    extension = {"markdown": "md", "plain": "txt", "rtf": "rtf"}[output_format]
+    output_path = (
+        Path(output).expanduser().resolve()
+        if output is not None
+        else paths.exports / f"references-{style}.{extension}"
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_format == "rtf":
+        content = r"{\rtf1\ansi " + "\n".join(rendered_entries).rstrip() + "\n}\n"
+    else:
+        content = "\n\n".join(rendered_entries).rstrip() + "\n"
+    output_path.write_text(content, encoding="utf-8")
+    return {
+        "vault": str(paths.vault),
+        "style": style,
+        "format": output_format,
+        "output": str(output_path),
+        "references": len(rendered_entries),
+        "warnings": rows,
     }
 
 

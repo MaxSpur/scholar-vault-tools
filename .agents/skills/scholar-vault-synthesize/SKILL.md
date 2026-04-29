@@ -33,6 +33,7 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 5. Read relevant `runs/**/*.md` only to understand the original Scholar Labs prompt, ranking, rationale, and run-specific summary. Do not treat run candidates without paper cards as canonical evidence unless explicitly labeled.
 6. Write the synthesis into `syntheses/<short-slug>.md`. Create `syntheses/` if it does not exist.
 7. Link claims to paper cards with relative Markdown links and mention when evidence comes from a PDF read.
+8. When the user needs APA-style bibliography text, run `scholar-vault reference <citekey>` for individual sources or `scholar-vault references` for the whole vault instead of hand-formatting references.
 
 ## Source Rules
 
@@ -75,7 +76,7 @@ sources:
 - <Follow-up search, PDF triage, or synthesis need.>
 ```
 
-Use relative links appropriate to the note location. From `syntheses/`, link papers as `../papers/<slug>.md`.
+Use relative links appropriate to the note location. From `syntheses/`, link papers as `../papers/<slug>.md`. Use CLI-formatted references when exact APA-style reference prose is needed; keep paper-card links as the primary vault navigation.
 
 ## After Writing
 

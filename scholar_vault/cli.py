@@ -30,6 +30,8 @@ from .importer import (
     enrich_vault,
     export_bibtex,
     export_card_bibtex,
+    export_card_reference,
+    export_references,
     find_staged_run_matches,
     import_bibtex,
     import_doi,
@@ -291,6 +293,18 @@ BibtexOutputArg = Annotated[
         help="Write one-card BibLaTeX or cite text to a file instead of printing it.",
     ),
 ]
+ReferenceOutputArg = Annotated[
+    Path | None,
+    typer.Option(
+        "--output",
+        "-o",
+        exists=False,
+        file_okay=True,
+        dir_okay=False,
+        resolve_path=True,
+        help="Write formatted reference output to a file.",
+    ),
+]
 NoLocalFieldsArg = Annotated[
     bool,
     typer.Option(
@@ -300,7 +314,7 @@ NoLocalFieldsArg = Annotated[
 ]
 ClipboardArg = Annotated[
     bool,
-    typer.Option("--clipboard", help="Copy one-card BibLaTeX or cite text to the clipboard."),
+    typer.Option("--clipboard", help="Copy command output to the clipboard."),
 ]
 CiteArg = Annotated[
     bool,
@@ -309,6 +323,14 @@ CiteArg = Annotated[
 ValidateBiblatexArg = Annotated[
     bool,
     typer.Option("--validate", help="Print BibLaTeX validation status for one-card exports."),
+]
+ReferenceStyleArg = Annotated[
+    str,
+    typer.Option("--style", help="Reference style. Currently supported: apa."),
+]
+ReferenceFormatArg = Annotated[
+    str,
+    typer.Option("--format", help="Reference output format: markdown, rtf, or plain."),
 ]
 VaultNoteArg = Annotated[
     bool,
@@ -1313,6 +1335,42 @@ def _print_bibtex_doctor_summary(summary: dict[str, Any]) -> None:
         console.print(f"... {len(rows) - 50} more row(s). Use --json for full output.")
 
 
+def _print_reference_summary(
+    summary: dict[str, Any],
+    *,
+    clipboard: bool = False,
+) -> None:
+    warnings = summary.get("warnings") or []
+    content = summary.get("content") or ""
+    if summary.get("output"):
+        console.print(
+            f"Wrote {summary.get('output')} "
+            f"({summary.get('style')}, {summary.get('format')})."
+        )
+        if clipboard and content:
+            command = _copy_to_clipboard(content)
+            console.print(f"Copied reference to clipboard with {command}.")
+    elif clipboard:
+        command = _copy_to_clipboard(content)
+        console.print(f"Copied reference to clipboard with {command}.")
+    else:
+        console.print(content, end="", soft_wrap=True)
+    if warnings:
+        err_console = Console(stderr=True)
+        for warning in warnings:
+            err_console.print(f"Reference warning: {warning}")
+
+
+def _print_references_summary(summary: dict[str, Any]) -> None:
+    console.print(
+        f"Wrote {summary.get('references')} reference(s) to {summary.get('output')} "
+        f"({summary.get('style')}, {summary.get('format')})."
+    )
+    warnings = summary.get("warnings") or []
+    if warnings:
+        console.print(f"{len(warnings)} reference warning row(s).")
+
+
 def _print_proposal_scaffold(summary: dict[str, Any]) -> None:
     console.print(f"Proposal sprint scaffold: {summary.get('proposal')}")
     files = summary.get("files") or {}
@@ -2140,6 +2198,41 @@ def bibtex_doctor_command(
         console.print_json(data=summary)
         return
     _print_bibtex_doctor_summary(summary)
+
+
+@app.command("reference")
+def reference_command(
+    citekey: CitekeyArgument,
+    vault: VaultArg = None,
+    output: ReferenceOutputArg = None,
+    style: ReferenceStyleArg = "apa",
+    output_format: ReferenceFormatArg = "markdown",
+    clipboard: ClipboardArg = False,
+) -> None:
+    summary = export_card_reference(
+        _resolve_vault(vault),
+        citekey,
+        output=output,
+        style=style,
+        output_format=output_format,
+    )
+    _print_reference_summary(summary, clipboard=clipboard)
+
+
+@app.command("references")
+def references_command(
+    vault: VaultArg = None,
+    output: ReferenceOutputArg = None,
+    style: ReferenceStyleArg = "apa",
+    output_format: ReferenceFormatArg = "markdown",
+) -> None:
+    summary = export_references(
+        _resolve_vault(vault),
+        output=output,
+        style=style,
+        output_format=output_format,
+    )
+    _print_references_summary(summary)
 
 
 @app.command("doctor")

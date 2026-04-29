@@ -473,6 +473,22 @@ scholar-vault biblatex-doctor --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault biblatex-doctor --vault ~/Documents/Research/scholar-labs-vault --json
 ```
 
+Generate formatted APA-style references from the same provider-first metadata:
+
+```fish
+scholar-vault reference --vault ~/Documents/Research/scholar-labs-vault smith2024rag
+scholar-vault reference --vault ~/Documents/Research/scholar-labs-vault --format rtf --output ~/Desktop/smith2024rag.rtf smith2024rag
+scholar-vault reference --vault ~/Documents/Research/scholar-labs-vault --clipboard smith2024rag
+scholar-vault references --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault references --vault ~/Documents/Research/scholar-labs-vault --format rtf --output ~/Desktop/references.rtf
+```
+
+`reference` prints one card's formatted reference. `references` writes the whole
+vault bibliography to `_exports/references-apa.md` by default. Supported formats
+are `markdown`, `rtf`, and `plain`; the current supported style is `apa`. These
+commands are for copy/paste bibliographies and proposal drafts, while `biblatex`
+remains the machine-readable citation export.
+
 Inspect vault health for an agent or for manual triage:
 
 ```fish

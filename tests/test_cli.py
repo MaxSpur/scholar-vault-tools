@@ -575,6 +575,125 @@ def test_bibtex_doctor_command_reports_json(tmp_path) -> None:
     assert "missing required author/editor for @article" in payload["rows"][0]["warnings"]
 
 
+def test_reference_command_prints_apa_markdown(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source Paper",
+            authors=["Jane Smith"],
+            year=2024,
+            venue="Journal of Test Results",
+            doi="10.1145/example",
+            citation_status="verified",
+        ),
+    )
+
+    result = CliRunner().invoke(app, ["reference", "--vault", str(vault), "source"])
+
+    assert result.exit_code == 0
+    assert (
+        "Smith, J. (2024). Source Paper. *Journal of Test Results*. "
+        "https://doi.org/10.1145/example"
+    ) in result.output
+
+
+def test_reference_command_can_copy_to_clipboard(tmp_path, monkeypatch) -> None:
+    from scholar_vault import cli  # noqa: PLC0415
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source Paper",
+            authors=["Jane Smith"],
+            year=2024,
+            citation_status="verified",
+        ),
+    )
+    copied: dict[str, str] = {}
+
+    def fake_copy(text: str) -> str:
+        copied["text"] = text
+        return "test-copy"
+
+    monkeypatch.setattr(cli, "_copy_to_clipboard", fake_copy)
+
+    result = CliRunner().invoke(
+        app,
+        ["reference", "--vault", str(vault), "--clipboard", "source"],
+    )
+
+    assert result.exit_code == 0
+    assert "Copied reference to clipboard with test-copy." in result.output
+    assert copied["text"].startswith("Smith, J. (2024). Source Paper.")
+
+
+def test_references_command_writes_whole_vault_bibliography(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source Paper",
+            authors=["Jane Smith"],
+            year=2024,
+            citation_status="verified",
+        ),
+    )
+
+    result = CliRunner().invoke(app, ["references", "--vault", str(vault)])
+
+    assert result.exit_code == 0
+    assert "Wrote 1 reference(s)" in result.output
+    assert "Smith, J. (2024). Source Paper." in (
+        paths.exports / "references-apa.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_references_command_writes_single_rtf_document(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source Paper",
+            authors=["Jane Smith"],
+            year=2024,
+            citation_status="verified",
+        ),
+    )
+
+    result = CliRunner().invoke(app, ["references", "--vault", str(vault), "--format", "rtf"])
+
+    assert result.exit_code == 0
+    rtf = (paths.exports / "references-apa.rtf").read_text(encoding="utf-8")
+    assert rtf.startswith(r"{\rtf1\ansi ")
+    assert rtf.count(r"{\rtf1\ansi") == 1
+    assert "Smith, J. (2024). Source Paper." in rtf
+
+
 def test_resolve_citation_alias_can_lock_metadata(tmp_path) -> None:
     from scholar_vault.importer import _save_card  # noqa: PLC0415
     from scholar_vault.models import SourceCard  # noqa: PLC0415

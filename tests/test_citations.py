@@ -30,6 +30,7 @@ from scholar_vault.citations import (
 )
 from scholar_vault.importer import enrich_citations, initialize_vault
 from scholar_vault.models import SourceCard
+from scholar_vault.references import render_card_reference
 from scholar_vault.render import render_paper_markdown
 from scholar_vault.sources import VaultPaths
 
@@ -1633,3 +1634,62 @@ def test_card_bibtex_reports_biblatex_validation_warnings() -> None:
     assert any("citation_status is missing" in warning for warning in result.warnings)
     assert "missing required author/editor for @article" in result.warnings
     assert "missing required year/date for @article" in result.warnings
+
+
+def test_card_reference_renders_apa_markdown_from_provider_metadata(
+    tmp_path: Path,
+) -> None:
+    metadata_root = tmp_path / "metadata"
+    cache_dir = metadata_root / "smith2024"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "citation.csl.json").write_text(
+        json.dumps(
+            {
+                "type": "article-journal",
+                "title": "Evaluating LLM-Wiki systems",
+                "author": [
+                    {"given": "Jane", "family": "Smith"},
+                    {"given": "John", "family": "Doe"},
+                ],
+                "container-title": "Journal of Test Results",
+                "volume": "12",
+                "issue": "3",
+                "page": "10-20",
+                "DOI": "10.1145/example",
+                "issued": {"date-parts": [[2024]]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    card = SourceCard(
+        slug="smith2024",
+        citekey="smith2024",
+        title="Card Title",
+        citation_status="verified",
+    )
+
+    result = render_card_reference(card, metadata_root=metadata_root)
+
+    assert result is not None
+    assert result.content == (
+        "Smith, J., & Doe, J. (2024). Evaluating LLM-Wiki systems. "
+        "*Journal of Test Results*, *12*(3), 10-20. https://doi.org/10.1145/example\n"
+    )
+
+
+def test_card_reference_renders_apa_rtf() -> None:
+    card = SourceCard(
+        slug="report",
+        citekey="report",
+        title="Mobility data science report",
+        authors=["Jane Smith"],
+        year=2024,
+        venue="Technical Report",
+        citation_status="verified",
+    )
+
+    result = render_card_reference(card, output_format="rtf")
+
+    assert result is not None
+    assert result.content.startswith(r"{\rtf1\ansi ")
+    assert r"{\i Mobility data science report}" in result.content

@@ -262,6 +262,14 @@ def render_vault_agents() -> str:
             scholar-vault card-biblatex <citekey>
             ```
 
+            For APA-style Markdown/RTF/plain references, use the formatter instead of
+            hand-formatting:
+
+            ```fish
+            scholar-vault reference <citekey>
+            scholar-vault references
+            ```
+
             After editing only `concepts/`, run `scholar-vault concept-index`. After
             editing paper cards, topics, syntheses, tasks, or proposals, run:
 
@@ -426,6 +434,8 @@ def render_zotero_migration() -> str:
         "field.\n"
         "- For one-card export while working in Obsidian, copy a card's `citekey` and run "
         "`scholar-vault card-biblatex <citekey>`.\n"
+        "- For formatted APA-style bibliography text, use `scholar-vault reference <citekey>` "
+        "or `scholar-vault references`.\n"
         "- `papers/` remains the canonical archive even after a Zotero import.\n"
     )
 
