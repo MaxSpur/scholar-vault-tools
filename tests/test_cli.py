@@ -13,6 +13,8 @@ from scholar_vault.cli import (
     _import_summary_lines,
     _show_enrichment_ui,
     _with_progress,
+    _zsh_completion_path,
+    _zsh_completion_script,
     app,
 )
 from scholar_vault.importer import initialize_vault
@@ -1012,6 +1014,31 @@ def test_install_fish_completion_writes_explicit_path(tmp_path) -> None:
     assert target.exists()
     assert "_SCHOLAR_VAULT_COMPLETE=complete_fish" in target.read_text(encoding="utf-8")
     assert "Restart Fish" in result.output
+
+
+def test_zsh_completion_path_uses_zdotdir(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("ZDOTDIR", str(tmp_path))
+
+    assert _zsh_completion_path() == tmp_path / ".zfunc" / "_scholar-vault"
+
+
+def test_zsh_completion_script_is_autoloadable_function() -> None:
+    script = _zsh_completion_script()
+
+    assert script.startswith("#compdef scholar-vault\n")
+    assert "_SCHOLAR_VAULT_COMPLETE=complete_zsh" in script
+    assert "_TYPER_COMPLETE_ARGS=\"${words[1,$CURRENT]}\"" in script
+    assert "compdef _scholar_vault_completion scholar-vault" not in script
+
+
+def test_install_zsh_completion_writes_explicit_path(tmp_path) -> None:
+    target = tmp_path / "zsh" / "site-functions" / "_scholar-vault"
+    result = CliRunner().invoke(app, ["install-zsh-completion", "--path", str(target)])
+
+    assert result.exit_code == 0
+    assert target.exists()
+    assert target.read_text(encoding="utf-8").startswith("#compdef scholar-vault\n")
+    assert "fpath" in result.output
 
 
 def test_rerun_checks_for_pdf_upgrades_by_default(tmp_path, monkeypatch) -> None:

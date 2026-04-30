@@ -63,17 +63,13 @@ Verify that the command is on your `PATH`:
 scholar-vault --help
 ```
 
-From Fish, install tab completion for command names, options, and vault-backed
-values such as run IDs:
+Fish and zsh completions are available for command names, options, and
+vault-backed values such as run IDs. For Fish:
 
 ```fish
 scholar-vault install-fish-completion
 exec fish
 ```
-
-This writes `~/.config/fish/completions/scholar-vault.fish` directly, avoiding
-Typer shell-detection issues. Use `scholar-vault show-fish-completion` if you
-want to inspect the generated completion script instead of installing it.
 
 Run the test suite if you are developing the tool:
 
