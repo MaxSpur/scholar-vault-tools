@@ -18,7 +18,17 @@ def test_gui_dependency_loader_smoke() -> None:
 
     assert "QApplication" in modules
     assert "QEventLoop" in modules
+    assert "QFontDatabase" in modules
     assert "fitz" in modules
+
+
+def test_summary_font_uses_system_font() -> None:
+    from scholar_vault.gui import _load_qt_modules, _summary_font
+
+    modules = _load_qt_modules(require_fitz=False)
+    font = _summary_font(modules, 12, mono=True, bold=True)
+
+    assert "Helvetica Neue Condensed" not in font.family()
 
 
 def test_gui_pdf_preview_render_smoke(tmp_path: Path) -> None:

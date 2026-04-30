@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
 import subprocess
+import sys
+import threading
 from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any
@@ -534,6 +537,59 @@ def _confirm(prompt: str) -> bool:
     return typer.confirm(prompt, default=False)
 
 
+_KNOWN_GUI_STDERR_MARKERS = (
+    "qt.qpa.fonts: Populating font family aliases",
+    'Replace uses of missing font family "Helvetica Neue Condensed"',
+    "TSMSendMessageToUIServer: CFMessagePortSendRequest FAILED",
+)
+
+
+def _is_known_gui_stderr_noise(line: str) -> bool:
+    return any(marker in line for marker in _KNOWN_GUI_STDERR_MARKERS)
+
+
+@contextlib.contextmanager
+def _filtered_gui_stderr():
+    if os.environ.get("SCHOLAR_VAULT_GUI_DEBUG"):
+        yield
+        return
+    try:
+        original_stderr_fd = os.dup(2)
+        read_fd, write_fd = os.pipe()
+    except OSError:
+        yield
+        return
+
+    def forward_stderr() -> None:
+        with os.fdopen(read_fd, "rb", closefd=True) as pipe:
+            for raw_line in pipe:
+                line = raw_line.decode("utf-8", "replace")
+                if not _is_known_gui_stderr_noise(line):
+                    os.write(original_stderr_fd, raw_line)
+
+    thread = threading.Thread(target=forward_stderr, daemon=True)
+    thread.start()
+    write_fd_closed = False
+    try:
+        sys.stderr.flush()
+        os.dup2(write_fd, 2)
+        os.close(write_fd)
+        write_fd_closed = True
+        yield
+    finally:
+        sys.stderr.flush()
+        os.dup2(original_stderr_fd, 2)
+        if not write_fd_closed:
+            os.close(write_fd)
+        thread.join(timeout=1)
+        os.close(original_stderr_fd)
+
+
+def _call_gui(callback):
+    with _filtered_gui_stderr():
+        return callback()
+
+
 def _load_export_for_title(export_path: Path) -> ScholarLabsExport:
     return ScholarLabsExport.model_validate_json(export_path.read_text(encoding="utf-8"))
 
@@ -553,7 +609,7 @@ def _prompt_run_title_gui(default_title: str, prompt: str, export_path: Path) ->
         console.print(f"Title UI unavailable ({exc}). Falling back to terminal prompt.")
         return _prompt_run_title_cli(default_title, prompt)
     try:
-        return prompt_run_title(default_title, prompt, str(export_path))
+        return _call_gui(lambda: prompt_run_title(default_title, prompt, str(export_path)))
     except GuiUnavailable as exc:
         console.print(f"Title UI unavailable ({exc}). Falling back to terminal prompt.")
         return _prompt_run_title_cli(default_title, prompt)
@@ -611,7 +667,8 @@ def _match_reviewer(ui: bool):
         console.print(f"Review UI unavailable ({exc}). Falling back to terminal prompts.")
         return _terminal_match_review
     try:
-        return make_match_reviewer()
+        reviewer = _call_gui(make_match_reviewer)
+        return lambda request: _call_gui(lambda: reviewer(request))
     except GuiUnavailable as exc:
         console.print(f"Review UI unavailable ({exc}). Falling back to terminal prompts.")
         return _terminal_match_review
@@ -626,7 +683,8 @@ def _confirm_callback(ui: bool):
         console.print(f"Confirmation UI unavailable ({exc}). Falling back to terminal prompts.")
         return _confirm
     try:
-        return make_confirmer("Scholar Vault Import")
+        confirmer = _call_gui(lambda: make_confirmer("Scholar Vault Import"))
+        return lambda prompt: _call_gui(lambda: confirmer(prompt))
     except GuiUnavailable as exc:
         console.print(f"Confirmation UI unavailable ({exc}). Falling back to terminal prompts.")
         return _confirm
@@ -744,10 +802,12 @@ def _select_rerun_run_id(vault: Path, run: str | None, *, ui: bool) -> str:
         console.print(f"Rerun UI unavailable ({exc}). Falling back to latest run.")
         return latest_run_id(vault)
     try:
-        selected = choose_rerun(
-            runs,
-            str(paths.vault),
-            issue_summaries=_run_followup_issue_summaries(paths, runs),
+        selected = _call_gui(
+            lambda: choose_rerun(
+                runs,
+                str(paths.vault),
+                issue_summaries=_run_followup_issue_summaries(paths, runs),
+            )
         )
     except GuiUnavailable as exc:
         console.print(f"Rerun UI unavailable ({exc}). Falling back to latest run.")
@@ -795,16 +855,18 @@ def _choose_staging_match_run_id(
         )
 
     try:
-        return choose_staging_match(
-            str(vault),
-            str(staging),
-            search_callback,
-            title=title,
-            pdf=str(pdf) if pdf else None,
-            min_score=min_score,
-            limit=limit,
-            unselected_only=unselected_only,
-            run_callback=run_callback,
+        return _call_gui(
+            lambda: choose_staging_match(
+                str(vault),
+                str(staging),
+                search_callback,
+                title=title,
+                pdf=str(pdf) if pdf else None,
+                min_score=min_score,
+                limit=limit,
+                unselected_only=unselected_only,
+                run_callback=run_callback,
+            )
         )
     except GuiUnavailable as exc:
         console.print(f"Staging match UI unavailable ({exc}). Falling back to terminal output.")
@@ -848,7 +910,7 @@ def _configure_ui(config: dict[str, Any]) -> dict[str, Any] | None:
         console.print(f"Configuration UI unavailable ({exc}). Falling back to terminal output.")
         return None
     try:
-        return edit_configuration(config)
+        return _call_gui(lambda: edit_configuration(config))
     except GuiUnavailable as exc:
         console.print(f"Configuration UI unavailable ({exc}). Falling back to terminal output.")
         return None
@@ -907,7 +969,7 @@ def _show_skill_sync_ui(source: Path, target: Path) -> None:
         console.print(f"Skill sync UI unavailable ({exc}). Falling back to terminal output.")
         return
     try:
-        show_skill_sync(source, target)
+        _call_gui(lambda: show_skill_sync(source, target))
     except GuiUnavailable as exc:
         console.print(f"Skill sync UI unavailable ({exc}). Falling back to terminal output.")
 
@@ -1505,11 +1567,13 @@ def _show_enrichment_ui(
         console.print(f"Review UI unavailable ({exc}). Showing terminal details instead.")
         return False
     try:
-        show_enrichment_results(
-            rows,
-            abstracts=abstracts,
-            title=title,
-            close_label=close_label,
+        _call_gui(
+            lambda: show_enrichment_results(
+                rows,
+                abstracts=abstracts,
+                title=title,
+                close_label=close_label,
+            )
         )
     except GuiUnavailable as exc:
         console.print(f"Review UI unavailable ({exc}). Showing terminal details instead.")
@@ -1526,7 +1590,7 @@ def _make_gui_progress(enabled: bool, title: str):
         console.print(f"Progress UI unavailable ({exc}). Showing terminal progress instead.")
         return None
     try:
-        return make_progress_reporter(title)
+        return _call_gui(lambda: make_progress_reporter(title))
     except GuiUnavailable as exc:
         console.print(f"Progress UI unavailable ({exc}). Showing terminal progress instead.")
         return None
@@ -1551,11 +1615,13 @@ def _show_import_summary_ui(
         console.print(f"Summary UI unavailable ({exc}).")
         return None
     try:
-        return show_import_summary(
-            summary,
-            _import_summary_lines(summary),
-            followup_pending=followup_pending,
-            leftover_pending=_has_leftover_staging_pdfs(summary),
+        return _call_gui(
+            lambda: show_import_summary(
+                summary,
+                _import_summary_lines(summary),
+                followup_pending=followup_pending,
+                leftover_pending=_has_leftover_staging_pdfs(summary),
+            )
         )
     except GuiUnavailable as exc:
         console.print(f"Summary UI unavailable ({exc}).")

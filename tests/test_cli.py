@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 from click.exceptions import Exit
 from typer.testing import CliRunner
@@ -781,6 +782,30 @@ def test_skills_publish_command_dry_run_and_apply(tmp_path) -> None:
 
     assert applied.exit_code == 0
     assert (target / "repo-skill" / "SKILL.md").exists()
+
+
+def test_filtered_gui_stderr_suppresses_known_noise(capfd) -> None:
+    from scholar_vault.cli import _filtered_gui_stderr  # noqa: PLC0415
+
+    with _filtered_gui_stderr():
+        os.write(
+            2,
+            b'qt.qpa.fonts: Populating font family aliases took 355 ms. '
+            b'Replace uses of missing font family "Helvetica Neue Condensed" with one '
+            b"that exists to avoid this cost.\n",
+        )
+        os.write(
+            2,
+            b"2026-04-29 15:19:24.206 python[72896:795170] "
+            b"TSMSendMessageToUIServer: CFMessagePortSendRequest FAILED(-1) "
+            b"to send to port com.apple.tsm.uiserver\n",
+        )
+        os.write(2, b"real gui problem\n")
+
+    captured = capfd.readouterr()
+    assert "Helvetica Neue Condensed" not in captured.err
+    assert "TSMSendMessageToUIServer" not in captured.err
+    assert "real gui problem" in captured.err
 
 
 def test_resolve_citation_alias_can_lock_metadata(tmp_path) -> None:

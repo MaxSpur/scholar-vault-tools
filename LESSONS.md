@@ -26,6 +26,7 @@
 - Cached CSL JSON may contain list-valued text fields even when BibLaTeX rendering needs strings. Normalize CSL scalars, lists, and person-name fields at the importer/export boundary before formatting entries.
 - Human-facing references should be deterministic CLI output, not a skill-only instruction. Skills should call `reference` or `references` for APA-style Markdown/RTF/plain bibliographies instead of hand-formatting from cards.
 - Treat Codex skills as versioned project assets, not one-way copied files. Compare first, adopt useful vault-side changes back into the repository, publish from the repository to vaults, and archive target-only extras instead of deleting them.
+- GUI code should use Qt system fonts instead of hard-coded font families that may be absent on a user's Mac. If platform frameworks still emit harmless startup noise, filter only known benign lines and keep real stderr visible.
 - The leftover staging PDF GUI is a parent queue, not a one-shot launcher. Reviewed reruns should return to the same window and refresh the remaining candidates.
 - Already-attached staging-match rows should support direct inspection and non-destructive cleanup. Move redundant staging PDFs into a staging-local `trash/` folder instead of deleting them or archiving them into the vault.
 - A parent queue window must not remain modal/frontmost while it launches child workflows. Hide or make it modeless during reviewed reruns so import reports and follow-up windows can receive focus.

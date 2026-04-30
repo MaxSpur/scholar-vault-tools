@@ -24,7 +24,15 @@ class GuiUnavailable(RuntimeError):
 def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
     try:
         from PySide6.QtCore import QEventLoop, Qt, QTimer, QUrl
-        from PySide6.QtGui import QDesktopServices, QFont, QImage, QKeySequence, QPixmap, QShortcut
+        from PySide6.QtGui import (
+            QDesktopServices,
+            QFont,
+            QFontDatabase,
+            QImage,
+            QKeySequence,
+            QPixmap,
+            QShortcut,
+        )
         from PySide6.QtWidgets import (
             QApplication,
             QCheckBox,
@@ -62,6 +70,7 @@ def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
         "QFileDialog": QFileDialog,
         "QFrame": QFrame,
         "QFont": QFont,
+        "QFontDatabase": QFontDatabase,
         "QGridLayout": QGridLayout,
         "QHBoxLayout": QHBoxLayout,
         "QImage": QImage,
@@ -230,7 +239,6 @@ def _button_stylesheet(tone: str = "neutral") -> str:
             border: 1px solid {border};
             padding: 7px 14px;
             min-height: 28px;
-            font-family: "Helvetica Neue";
         }}
         QPushButton:hover {{ background: #102719; }}
         QPushButton:pressed {{ background: #17452f; }}
@@ -258,7 +266,6 @@ def _light_button_stylesheet(tone: str = "neutral", *, large: bool = False) -> s
             border: 2px solid {border};
             padding: 8px 16px;
             min-height: 34px;
-            font-family: "Helvetica Neue";
             {size}
         }}
         QPushButton:hover {{ background: {hover}; }}
@@ -2573,11 +2580,16 @@ def show_import_summary(
 
 
 def _summary_font(qt: dict[str, Any], size: int, *, mono: bool = False, bold: bool = False):
-    if mono:
-        family = "Helvetica Neue Condensed Black" if bold else "Helvetica Neue Condensed"
-    else:
-        family = "Helvetica Neue"
-    font = qt["QFont"](family)
+    database = qt.get("QFontDatabase")
+    if database is not None:
+        system_font = (
+            database.SystemFont.FixedFont if mono else database.SystemFont.GeneralFont
+        )
+        font = database.systemFont(system_font)
+    else:  # pragma: no cover - compatibility fallback for unusual Qt builds
+        font = qt["QFont"]()
+        if mono:
+            font.setStyleHint(qt["QFont"].StyleHint.Monospace)
     font.setPointSize(size)
     font.setBold(bold)
     return font
@@ -3766,8 +3778,7 @@ def _resolve_missing_keywords(
 
     editor = qt["QTextEdit"]()
     editor.setAcceptRichText(False)
-    editor_font = qt["QFont"]("Helvetica Neue")
-    editor_font.setPointSize(16)
+    editor_font = _summary_font(qt, 16)
     editor.setFont(editor_font)
     editor.setStyleSheet(
         "QTextEdit { background: #07100b; color: #f3fff7; border: 1px solid #078a5d; "
