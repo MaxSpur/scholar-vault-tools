@@ -1,0 +1,4 @@
+interface:
+  display_name: "PEPR DOCX Builder"
+  short_description: "Render PEPR proposal DOCX files from Markdown"
+  default_prompt: "Use $scholar-vault-pepr-docx to render a PEPR MobiDec proposal Markdown draft into the DOCX template, generate references, and verify pagination."
