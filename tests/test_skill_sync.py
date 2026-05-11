@@ -115,6 +115,19 @@ def test_publish_skillset_copies_without_archiving_extra_by_default(tmp_path: Pa
     assert (target / "vault-only").exists()
 
 
+def test_publish_skillset_can_copy_selected_skills_only(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    _write_skill(source, "copy-me", "repo\n")
+    _write_skill(source, "skip-me", "repo\n")
+
+    applied = publish_skillset(source, target, apply=True, skills=["copy-me"])
+
+    assert applied["copied"] == ["copy-me"]
+    assert (target / "copy-me" / "SKILL.md").exists()
+    assert not (target / "skip-me").exists()
+
+
 def test_publish_skillset_can_archive_target_only_skills(tmp_path: Path) -> None:
     source = tmp_path / "source"
     target = tmp_path / "target"

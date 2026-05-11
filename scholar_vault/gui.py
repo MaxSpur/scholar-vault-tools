@@ -243,6 +243,8 @@ def _button_stylesheet(tone: str = "neutral") -> str:
     tones = {
         "primary": ("#69ffad", "#f3fff7", "#0b2417"),
         "danger": ("#ff3b4f", "#ffd4d9", "#22050a"),
+        "warning": ("#ffb000", "#fff4cf", "#221700"),
+        "info": ("#9ecbff", "#eaf4ff", "#071322"),
         "success": ("#45ffb0", "#f3fff7", "#082116"),
         "muted": ("#2b6748", "#baffdc", "#07100b"),
         "neutral": ("#8ce7b8", "#f3fff7", "#07100b"),
@@ -4281,8 +4283,7 @@ def _skill_sync_color(row: dict[str, Any]) -> str:
     return "#8ce7b8"
 
 
-def _skill_sync_row_text(row: dict[str, Any], *, pull: bool = False) -> str:
-    skill = str(row.get("skill") or "")
+def _skill_sync_row_text(row: dict[str, Any]) -> str:
     status = str(row.get("status") or "")
     newer = str(row.get("newer") or "unknown")
     if status == "changed" and newer == "source":
@@ -4297,8 +4298,24 @@ def _skill_sync_row_text(row: dict[str, Any], *, pull: bool = False) -> str:
         hint = "repository-only"
     else:
         hint = status
-    action = "pull vault copy into repository" if pull else "update vault from repository"
-    return f"{skill}  -  {hint}  -  {action}"
+    changed_files = int(row.get("changed_files") or 0)
+    changed_text = ""
+    if changed_files:
+        suffix = "" if changed_files == 1 else "s"
+        changed_text = f"  -  {changed_files} file{suffix} differ"
+    return f"{status}  -  {hint}{changed_text}"
+
+
+def _skill_sync_default_selected(row: dict[str, Any]) -> bool:
+    return row.get("status") in {"changed", "source-only", "target-only"}
+
+
+def _skill_sync_can_update(row: dict[str, Any]) -> bool:
+    return row.get("status") in {"changed", "source-only"}
+
+
+def _skill_sync_can_pull(row: dict[str, Any]) -> bool:
+    return row.get("status") in {"changed", "target-only"}
 
 
 def _skill_sync_metric_panel(
@@ -4404,47 +4421,57 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
     )
     layout.addWidget(summary_text, 1)
 
+    hint_panel = _summary_panel(qt, "#ffb000")
+    hint_layout = qt["QVBoxLayout"](hint_panel)
+    hint_layout.setContentsMargins(12, 8, 12, 8)
     direction_hint = qt["QLabel"](
-        "If the repository source changed and the vault should receive that version, "
-        "click Update Vault From Repository. The selector below is only for pulling a "
-        "vault target skill back into the repository source."
+        "Select the skills you want to copy. The buttons decide direction: update copies "
+        "repository source into the vault target; pull copies the vault target back into "
+        "the repository source. Modification times only choose initial row selection."
     )
     direction_hint.setWordWrap(True)
     direction_hint.setFont(_summary_font(qt, 10))
-    direction_hint.setStyleSheet("color: #baffdc;")
-    layout.addWidget(direction_hint)
+    direction_hint.setStyleSheet("color: #fff4cf; border: none;")
+    hint_layout.addWidget(direction_hint)
+    layout.addWidget(hint_panel)
 
-    pull_label = qt["QLabel"]("Optional vault -> repository pull")
-    pull_label.setFont(_summary_font(qt, 10, mono=True, bold=True))
-    pull_label.setStyleSheet("color: #8ce7b8;")
-    layout.addWidget(pull_label)
+    skill_panel = _summary_panel(qt, "#69ffad")
+    skill_layout = qt["QVBoxLayout"](skill_panel)
+    skill_layout.setContentsMargins(12, 10, 12, 12)
+    skill_label = qt["QLabel"]("Skill differences")
+    skill_label.setFont(_summary_font(qt, 10, mono=True, bold=True))
+    skill_label.setStyleSheet("color: #69ffad; border: none;")
+    skill_list = qt["QListWidget"]()
+    skill_list.setMinimumHeight(110)
+    skill_list.setMaximumHeight(210)
+    skill_list.setFont(_summary_font(qt, 10))
+    skill_list.setSelectionMode(qt["QListWidget"].SelectionMode.NoSelection)
+    skill_list.setSpacing(6)
+    skill_layout.addWidget(skill_label)
+    skill_layout.addWidget(skill_list)
+    layout.addWidget(skill_panel)
 
-    chooser_row = qt["QHBoxLayout"]()
-    pull_list = qt["QListWidget"]()
-    pull_list.setMinimumHeight(86)
-    pull_list.setMaximumHeight(140)
-    pull_list.setFont(_summary_font(qt, 10))
-    chooser_row.addWidget(pull_list, 1)
+    option_row = qt["QHBoxLayout"]()
     force_box = qt["QCheckBox"]("Allow changed vault skill to overwrite repository copy")
     force_box.setFont(_summary_font(qt, 10))
-    chooser_row.addWidget(force_box)
-    layout.addLayout(chooser_row)
-
     archive_box = qt["QCheckBox"](
         "Archive vault-only target skills during repository -> vault update"
     )
     archive_box.setFont(_summary_font(qt, 10))
     archive_box.setStyleSheet("color: #baffdc;")
-    layout.addWidget(archive_box)
+    option_row.addWidget(force_box)
+    option_row.addWidget(archive_box)
+    option_row.addStretch(1)
+    layout.addLayout(option_row)
 
     buttons = qt["QHBoxLayout"]()
     refresh_button = qt["QPushButton"]("Refresh Comparison")
-    adopt_button = qt["QPushButton"]("Pull Selected Vault Skill Into Repository")
-    publish_button = qt["QPushButton"]("Update Vault From Repository")
+    adopt_button = qt["QPushButton"]("Pull Selected Skills Into Repository")
+    publish_button = qt["QPushButton"]("Update Selected Skills From Repository")
     close_button = qt["QPushButton"]("Close")
     for button, tone in [
         (refresh_button, "neutral"),
-        (adopt_button, "primary"),
+        (adopt_button, "warning"),
         (publish_button, "success"),
         (close_button, "muted"),
     ]:
@@ -4464,6 +4491,9 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
         )
 
     current_summary: dict[str, Any] = {}
+    current_rows: dict[str, dict[str, Any]] = {}
+    selected_skills: set[str] = set()
+    row_widgets: dict[str, dict[str, Any]] = {}
 
     def message(title: str, text: str) -> None:
         box = qt["QMessageBox"](dialog)
@@ -4482,6 +4512,111 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
         )
         _style_message_box(qt, box)
         return box.exec() == qt["QMessageBox"].StandardButton.Ok
+
+    def selected_rows() -> list[dict[str, Any]]:
+        return [current_rows[skill] for skill in selected_skills if skill in current_rows]
+
+    def selected_skill_names(*, pull: bool | None = None) -> list[str]:
+        rows = selected_rows()
+        if pull is True:
+            rows = [row for row in rows if _skill_sync_can_pull(row)]
+        elif pull is False:
+            rows = [row for row in rows if _skill_sync_can_update(row)]
+        return sorted(str(row["skill"]) for row in rows)
+
+    def update_action_state() -> None:
+        pull_count = len(selected_skill_names(pull=True))
+        publish_count = len(selected_skill_names(pull=False))
+        selected_count = len(selected_skills)
+        skill_label.setText(
+            f"Skill differences - {selected_count} selected"
+            if selected_count
+            else "Skill differences - none selected"
+        )
+        adopt_button.setEnabled(bool(pull_count))
+        publish_button.setEnabled(bool(publish_count))
+        adopt_button.setText(
+            f"Pull Selected Skills Into Repository ({pull_count})"
+            if pull_count
+            else "Pull Selected Skills Into Repository"
+        )
+        publish_button.setText(
+            f"Update Selected Skills From Repository ({publish_count})"
+            if publish_count
+            else "Update Selected Skills From Repository"
+        )
+
+    def paint_skill_row(skill: str) -> None:
+        widgets = row_widgets.get(skill)
+        row = current_rows.get(skill)
+        if not widgets or not row:
+            return
+        selected = skill in selected_skills
+        color = _skill_sync_color(row)
+        background = "#083f2a" if selected else "#07100b"
+        border = color if selected else "#26553b"
+        widgets["frame"].setStyleSheet(
+            f"QFrame {{ background: {background}; border: 1px solid {border}; }}"
+        )
+        widgets["rail"].setStyleSheet(f"QFrame {{ background: {color}; border: none; }}")
+        widgets["badge"].setText("SELECTED" if selected else "CLICK TO SELECT")
+        widgets["badge"].setStyleSheet(
+            "color: #021007; "
+            f"background: {color if selected else '#426b58'}; "
+            "border: none; padding: 3px 8px;"
+        )
+
+    def toggle_skill(skill: str) -> None:
+        if skill in selected_skills:
+            selected_skills.remove(skill)
+        else:
+            selected_skills.add(skill)
+        paint_skill_row(skill)
+        update_action_state()
+
+    def add_skill_row(row: dict[str, Any]) -> None:
+        skill = str(row["skill"])
+        item = qt["QListWidgetItem"]()
+        item.setData(qt["Qt"].ItemDataRole.UserRole, skill)
+        frame = qt["QFrame"]()
+        frame.setMinimumHeight(48)
+        frame.setToolTip(
+            f"Status: {row.get('status')}; newer hint: {row.get('newer')}; "
+            f"source modified: {row.get('source_modified') or '-'}; "
+            f"vault modified: {row.get('target_modified') or '-'}"
+        )
+        item_layout = qt["QHBoxLayout"](frame)
+        item_layout.setContentsMargins(0, 0, 10, 0)
+        item_layout.setSpacing(12)
+
+        rail = qt["QFrame"]()
+        rail.setFixedWidth(5)
+        item_layout.addWidget(rail)
+
+        text_block = qt["QVBoxLayout"]()
+        title = qt["QLabel"](skill)
+        title.setFont(_summary_font(qt, 11, bold=True))
+        title.setStyleSheet("color: #f3fff7; border: none;")
+        meta = qt["QLabel"](_skill_sync_row_text(row))
+        meta.setFont(_summary_font(qt, 9, mono=True))
+        meta.setStyleSheet("color: #baffdc; border: none;")
+        meta.setWordWrap(True)
+        text_block.addWidget(title)
+        text_block.addWidget(meta)
+        item_layout.addLayout(text_block, 1)
+
+        badge = qt["QLabel"]()
+        badge.setFont(_summary_font(qt, 9, mono=True, bold=True))
+        item_layout.addWidget(badge, 0)
+
+        frame.mousePressEvent = lambda _event, selected_skill=skill: toggle_skill(
+            selected_skill
+        )
+        skill_list.addItem(item)
+        skill_list.setItemWidget(item, frame)
+        item.setSizeHint(frame.sizeHint())
+        row_widgets[skill] = {"frame": frame, "rail": rail, "badge": badge}
+        paint_skill_row(skill)
 
     def refresh() -> None:
         source_path, target_path = paths()
@@ -4506,60 +4641,71 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
         )
         metric_values["source_only"].setText(str(summary["counts"]["source_only"]))
         metric_values["target_only"].setText(str(summary["counts"]["target_only"]))
-        pull_list.clear()
-        for row in summary["skills"]:
-            if row["status"] in {"target-only", "changed"}:
-                item = qt["QListWidgetItem"](_skill_sync_row_text(row, pull=True))
-                item.setData(qt["Qt"].ItemDataRole.UserRole, row["skill"])
-                item.setForeground(qt["QBrush"](qt["QColor"](_skill_sync_color(row))))
-                item.setToolTip(
-                    f"Status: {row.get('status')}; newer hint: {row.get('newer')}; "
-                    f"source modified: {row.get('source_modified') or '-'}; "
-                    f"vault modified: {row.get('target_modified') or '-'}"
-                )
-                pull_list.addItem(item)
-        if pull_list.count():
-            pull_list.setCurrentRow(0)
-        adopt_button.setEnabled(pull_list.count() > 0)
-        publish_button.setEnabled(
-            summary["counts"]["changed"] > 0
-            or summary["counts"]["source_only"] > 0
-            or summary["counts"]["target_only"] > 0
+        rows = [row for row in summary["skills"] if row["status"] != "identical"]
+        current_rows.clear()
+        current_rows.update({str(row["skill"]): row for row in rows})
+        selected_skills.clear()
+        selected_skills.update(
+            str(row["skill"]) for row in rows if _skill_sync_default_selected(row)
         )
+        row_widgets.clear()
+        skill_list.clear()
+        for row in rows:
+            add_skill_row(row)
+        update_action_state()
+        if not rows:
+            item = qt["QListWidgetItem"]("No skill differences found.")
+            item.setForeground(qt["QBrush"](qt["QColor"]("#426b58")))
+            skill_list.addItem(item)
 
     def adopt_selected() -> None:
-        current_item = pull_list.currentItem()
-        skill = current_item.data(qt["Qt"].ItemDataRole.UserRole) if current_item else None
-        if not skill:
+        skills = selected_skill_names(pull=True)
+        if not skills:
             return
         if not confirm(
-            "Pull Vault Skill Into Repository",
+            "Pull Vault Skills Into Repository",
             (
-                f"Copy vault target skill '{skill}' back into the repository source?\n\n"
+                "Copy selected vault target skills back into the repository source?\n\n"
+                f"Skills: {', '.join(skills)}\n\n"
                 "Use this only for vault-side edits you want to keep in the repo."
             ),
         ):
             return
         source_path, target_path = paths()
-        result = adopt_skill(
-            source_path,
-            target_path,
-            skill,
-            apply=True,
-            force=force_box.isChecked(),
-        )
-        if result.get("action") == "blocked":
-            message("Adopt Blocked", str(result.get("reason")))
+        pulled: list[str] = []
+        blocked: list[str] = []
+        for skill in skills:
+            result = adopt_skill(
+                source_path,
+                target_path,
+                skill,
+                apply=True,
+                force=force_box.isChecked(),
+            )
+            if result.get("action") == "blocked":
+                blocked.append(f"{skill}: {result.get('reason')}")
+            else:
+                pulled.append(skill)
+        if blocked:
+            message(
+                "Pull Partially Blocked" if pulled else "Pull Blocked",
+                f"Pulled: {', '.join(pulled) or 'none'}\nBlocked:\n" + "\n".join(blocked),
+            )
         else:
-            message("Pulled Into Repository", f"Pulled vault target skill into repo: {skill}.")
+            message("Pulled Into Repository", f"Pulled: {', '.join(pulled) or 'none'}")
         refresh()
 
     def publish() -> None:
         summary = current_summary.get("value") or {}
+        skills = selected_skill_names(pull=False)
+        if not skills:
+            return
         vault_newer = [
             row["skill"]
             for row in summary.get("skills", [])
-            if row.get("status") == "changed" and row.get("newer") == "target"
+            if row.get("skill") in skills
+            and row.get("status") == "changed"
+            and row.get("newer") == "target"
         ]
         warning = ""
         if vault_newer:
@@ -4571,7 +4717,8 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
         if not confirm(
             "Update Vault From Repository",
             (
-                "Copy repository source skills into the vault target skill folder?\n\n"
+                "Copy selected repository source skills into the vault target skill folder?\n\n"
+                f"Skills: {', '.join(skills)}\n\n"
                 "Changed vault copies are backed up before being overwritten. Vault-only "
                 "extras are kept unless the archive checkbox is enabled."
                 f"{warning}"
@@ -4584,6 +4731,7 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
             target_path,
             apply=True,
             archive_extra=archive_box.isChecked(),
+            skills=skills,
         )
         copied = ", ".join(result.get("copied") or []) or "none"
         archived = ", ".join(result.get("archived") or []) or "none"

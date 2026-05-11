@@ -399,6 +399,39 @@ def test_staging_match_model_formats_rows() -> None:
     assert model["rows"][0]["state"] == "selected / attached / already attached"
 
 
+def test_skill_sync_selection_helpers_keep_direction_on_buttons() -> None:
+    from scholar_vault.gui import (
+        _skill_sync_can_pull,
+        _skill_sync_can_update,
+        _skill_sync_default_selected,
+        _skill_sync_row_text,
+    )
+
+    source_newer = {"status": "changed", "newer": "source"}
+    target_newer = {"status": "changed", "newer": "target"}
+    source_only = {"status": "source-only"}
+    target_only = {"status": "target-only"}
+
+    assert _skill_sync_default_selected(source_newer) is True
+    assert _skill_sync_default_selected(source_only) is True
+    assert _skill_sync_can_update(source_newer) is True
+    assert _skill_sync_can_pull(source_newer) is True
+    assert _skill_sync_can_update(target_newer) is True
+    assert _skill_sync_can_pull(target_newer) is True
+    assert _skill_sync_can_update(source_only) is True
+    assert _skill_sync_can_pull(source_only) is False
+    assert _skill_sync_can_update(target_only) is False
+    assert _skill_sync_can_pull(target_only) is True
+
+    text = _skill_sync_row_text(
+        {"status": "changed", "newer": "source", "changed_files": 2}
+    )
+    assert "repository newer" in text
+    assert "2 files differ" in text
+    assert "update vault" not in text
+    assert "pull vault" not in text
+
+
 def test_move_staged_pdf_to_trash_uses_staging_trash_folder(tmp_path: Path) -> None:
     from scholar_vault.gui import _move_staged_pdf_to_trash
 

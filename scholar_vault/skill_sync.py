@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -330,17 +331,22 @@ def publish_skillset(
     apply: bool = False,
     archive_extra: bool = False,
     backup: bool = True,
+    skills: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     source_root = Path(source).expanduser().resolve()
     target_root = Path(target).expanduser().resolve()
     summary = compare_skillsets(source_root, target_root)
+    selected = set(skills) if skills is not None else None
     skills_to_copy = [
         row["skill"]
         for row in summary["skills"]
         if row["status"] in {"source-only", "changed"}
+        and (selected is None or row["skill"] in selected)
     ]
     target_only = [
-        row["skill"] for row in summary["skills"] if row["status"] == "target-only"
+        row["skill"]
+        for row in summary["skills"]
+        if row["status"] == "target-only" and (selected is None or row["skill"] in selected)
     ]
     result: dict[str, Any] = {
         "action": "publish",

@@ -910,9 +910,11 @@ scholar-vault skills publish --vault ~/Documents/Research/scholar-labs-vault --a
 want the vault to stop carrying target-only skills, use `--archive-extra`; this
 moves them into `.sync-backups/` instead of deleting them.
 
-In the UI, this is the `Update Vault From Repository` button. The selector and
-`Pull Selected Vault Skill Into Repository` button are only for the opposite
-direction: keeping a vault-side skill change by copying it back into this repo.
+In the UI, use the single `Skill differences` list. Select the skills you want
+to copy; the buttons decide the direction. `Update Selected Skills From
+Repository` copies selected repository-side changes into the vault, while `Pull
+Selected Skills Into Repository` copies selected vault-side changes back into
+this repo. Deselect all rows to disable both copy buttons.
 Changed-skill rows show modification-time hints such as repository newer or
 vault newer. Treat those as useful guidance, not proof of intent: publishing
 still explicitly updates the vault from this repository, while pulling still
