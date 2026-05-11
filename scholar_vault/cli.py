@@ -2719,7 +2719,7 @@ def skills_adopt_command(
         return
     _print_skill_action(summary)
     if not apply and summary.get("action") != "blocked":
-        console.print("Use --apply to copy the skill into the source skillset.")
+        console.print("Use --apply to copy the vault target skill into the repository source.")
 
 
 @skills_app.command("publish")
@@ -2745,7 +2745,7 @@ def skills_publish_command(
         return
     _print_skill_action(summary)
     if not apply:
-        console.print("Use --apply to publish source skills into the target skillset.")
+        console.print("Use --apply to update the vault target from the repository source.")
 
 
 @skills_app.command("ui")

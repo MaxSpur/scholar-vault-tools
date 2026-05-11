@@ -868,6 +868,12 @@ default; copy them into the vault when you want to start a Codex project there.
 
 The safer workflow is to compare first, adopt any useful vault-side changes
 back into this repository, then publish from the repository into the vault.
+In this workflow, **source** means this repository's canonical
+`.agents/skills/` folder and **target** means the vault's installed
+`.agents/skills/` folder. If you changed a skill in this repository and want
+the vault to use it, update the target by publishing source to target. If a
+Codex session inside the vault changed a skill and you want to preserve that
+change in this repository, adopt target to source.
 
 ```fish
 scholar-vault skills diff --vault ~/Documents/Research/scholar-labs-vault
@@ -903,6 +909,14 @@ scholar-vault skills publish --vault ~/Documents/Research/scholar-labs-vault --a
 `publish` does not remove vault-only skills by default. If you intentionally
 want the vault to stop carrying target-only skills, use `--archive-extra`; this
 moves them into `.sync-backups/` instead of deleting them.
+
+In the UI, this is the `Update Vault From Repository` button. The selector and
+`Pull Selected Vault Skill Into Repository` button are only for the opposite
+direction: keeping a vault-side skill change by copying it back into this repo.
+Changed-skill rows show modification-time hints such as repository newer or
+vault newer. Treat those as useful guidance, not proof of intent: publishing
+still explicitly updates the vault from this repository, while pulling still
+explicitly updates this repository from the vault.
 
 For shell-script wrappers, use:
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from scholar_vault.skill_sync import (
@@ -36,8 +37,29 @@ def test_compare_skillsets_reports_changed_and_target_only(tmp_path: Path) -> No
     rendered = format_skillset_summary(summary)
     assert "shared: changed" in rendered
     assert "vault-only: target-only" in rendered
+    assert "Repository source" in rendered
+    assert "Vault target" in rendered
+    assert "publish source -> target" in rendered
     assert ".DS_Store" not in rendered
     assert ".sync-backups" not in rendered
+
+
+def test_compare_skillsets_reports_newer_side_from_mtime(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    _write_skill(source, "shared", "repo\n")
+    _write_skill(target, "shared", "vault\n")
+    os.utime(source / "shared" / "SKILL.md", (2000, 2000))
+    os.utime(target / "shared" / "SKILL.md", (1000, 1000))
+
+    summary = compare_skillsets(source, target)
+    row = next(item for item in summary["skills"] if item["skill"] == "shared")
+    rendered = format_skillset_summary(summary)
+
+    assert row["newer"] == "source"
+    assert row["recommendation"] == "publish"
+    assert "source-newer=1" in rendered
+    assert "repository source appears newer" in rendered
 
 
 def test_adopt_skill_is_dry_run_by_default_and_copies_with_apply(tmp_path: Path) -> None:

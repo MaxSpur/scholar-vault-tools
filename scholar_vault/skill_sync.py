@@ -58,6 +58,33 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _mtime(path: Path | None) -> float | None:
+    if path is None:
+        return None
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def _format_mtime(value: float | None) -> str | None:
+    if value is None:
+        return None
+    return datetime.fromtimestamp(value).astimezone().isoformat(timespec="seconds")
+
+
+def _newer_side(source_mtime: float | None, target_mtime: float | None) -> str:
+    if source_mtime is None and target_mtime is None:
+        return "unknown"
+    if source_mtime is None:
+        return "target"
+    if target_mtime is None:
+        return "source"
+    if abs(source_mtime - target_mtime) < 1:
+        return "same-time"
+    return "source" if source_mtime > target_mtime else "target"
+
+
 def _timestamp() -> str:
     return datetime.now().astimezone().strftime("%Y%m%d-%H%M%S-%f")
 
@@ -102,6 +129,8 @@ def compare_skillsets(source: Path | str, target: Path | str) -> dict[str, Any]:
     for relative in sorted(set(source_files) | set(target_files)):
         source_path = source_files.get(relative)
         target_path = target_files.get(relative)
+        source_mtime = _mtime(source_path)
+        target_mtime = _mtime(target_path)
         if source_path is None:
             status = "target-only"
         elif target_path is None:
@@ -110,7 +139,16 @@ def compare_skillsets(source: Path | str, target: Path | str) -> dict[str, Any]:
             status = "identical" if _sha256(source_path) == _sha256(target_path) else "changed"
         if status != "identical":
             file_rows.append(
-                {"path": relative, "skill": relative.split("/", 1)[0], "status": status}
+                {
+                    "path": relative,
+                    "skill": relative.split("/", 1)[0],
+                    "status": status,
+                    "source_mtime": source_mtime,
+                    "target_mtime": target_mtime,
+                    "source_modified": _format_mtime(source_mtime),
+                    "target_modified": _format_mtime(target_mtime),
+                    "newer": _newer_side(source_mtime, target_mtime),
+                }
             )
 
     skills: list[dict[str, Any]] = []
@@ -124,12 +162,37 @@ def compare_skillsets(source: Path | str, target: Path | str) -> dict[str, Any]:
         else:
             status = "identical"
         changed_files = [row for row in file_rows if row["skill"] == skill]
+        source_mtimes = [
+            row["source_mtime"] for row in changed_files if row.get("source_mtime") is not None
+        ]
+        target_mtimes = [
+            row["target_mtime"] for row in changed_files if row.get("target_mtime") is not None
+        ]
+        source_mtime = max(source_mtimes) if source_mtimes else None
+        target_mtime = max(target_mtimes) if target_mtimes else None
+        newer = _newer_side(source_mtime, target_mtime) if changed_files else "same-time"
+        if status == "source-only":
+            recommendation = "publish"
+        elif status == "target-only":
+            recommendation = "adopt"
+        elif status == "changed" and newer == "source":
+            recommendation = "publish"
+        elif status == "changed" and newer == "target":
+            recommendation = "adopt"
+        elif status == "changed":
+            recommendation = "review"
+        else:
+            recommendation = "none"
         skills.append(
             {
                 "skill": skill,
                 "status": status,
                 "changed_files": len(changed_files),
                 "files": changed_files,
+                "source_modified": _format_mtime(source_mtime),
+                "target_modified": _format_mtime(target_mtime),
+                "newer": newer,
+                "recommendation": recommendation,
             }
         )
 
@@ -149,9 +212,28 @@ def compare_skillsets(source: Path | str, target: Path | str) -> dict[str, Any]:
 
 
 def format_skillset_summary(summary: dict[str, Any]) -> str:
+    source_newer = sum(
+        1 for row in summary["skills"] if row["status"] == "changed" and row["newer"] == "source"
+    )
+    target_newer = sum(
+        1 for row in summary["skills"] if row["status"] == "changed" and row["newer"] == "target"
+    )
+    unclear_newer = sum(
+        1
+        for row in summary["skills"]
+        if row["status"] == "changed" and row["newer"] not in {"source", "target"}
+    )
     lines = [
-        f"Source: {summary['source']}",
-        f"Target: {summary['target']}",
+        "Roles:",
+        f"- Repository source (canonical skills): {summary['source']}",
+        f"- Vault target (installed skills): {summary['target']}",
+        "Actions:",
+        "- Update vault from repository: publish source -> target.",
+        "- Keep vault-side edits: adopt selected target skill -> source.",
+        (
+            "- Newer-side hints use file modification times; they are guidance, not proof "
+            "of intent."
+        ),
         (
             "Counts: "
             f"identical={summary['counts']['identical']}, "
@@ -159,16 +241,38 @@ def format_skillset_summary(summary: dict[str, Any]) -> str:
             f"source-only={summary['counts']['source_only']}, "
             f"target-only={summary['counts']['target_only']}"
         ),
+        (
+            "Changed mtimes: "
+            f"source-newer={source_newer}, "
+            f"target-newer={target_newer}, "
+            f"unclear={unclear_newer}"
+        ),
     ]
     for row in summary["skills"]:
         if row["status"] == "identical":
             continue
-        lines.append(f"- {row['skill']}: {row['status']}")
+        status = str(row["status"])
+        if status == "changed":
+            newer = row.get("newer")
+            if newer == "source":
+                hint = "repository source appears newer; publish updates vault target"
+            elif newer == "target":
+                hint = "vault target appears newer; adopt pulls vault copy into repo"
+            else:
+                hint = "mtime unclear; inspect before choosing a direction"
+            description = f"changed; {hint}"
+        elif status == "source-only":
+            description = "source-only; publish adds it to the vault target"
+        elif status == "target-only":
+            description = "target-only; adopt pulls it into the repo source"
+        else:
+            description = status
+        lines.append(f"- {row['skill']}: {description}")
         for file_row in row["files"][:8]:
             lines.append(f"  - {file_row['status']}: {file_row['path']}")
         if len(row["files"]) > 8:
             lines.append(f"  - ... {len(row['files']) - 8} more file(s)")
-    if len(lines) == 3:
+    if len(lines) == 9:
         lines.append("- No content differences.")
     return "\n".join(lines)
 
