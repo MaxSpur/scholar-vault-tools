@@ -40,6 +40,7 @@ from .importer import (
     import_doi,
     import_pdf_dropins,
     import_scholar_labs_run,
+    import_staged_pdf_match,
     initialize_vault,
     latest_run_id,
     list_unmatched,
@@ -315,8 +316,8 @@ AutoEnrichArg = Annotated[
     typer.Option(
         "--enrich/--no-enrich",
         help=(
-            "Run citation, abstract, and keyword enrichment after accepted "
-            "Scholar Labs matches."
+            "Run citation, abstract, and keyword enrichment after accepted or direct "
+            "PDF imports."
         ),
     ),
 ]
@@ -860,7 +861,7 @@ def _choose_staging_match_run_id(
     min_score: int,
     limit: int,
     unselected_only: bool,
-    run_callback=None,
+    import_callback=None,
 ) -> str | None:
     try:
         from .gui import GuiUnavailable, choose_staging_match
@@ -898,12 +899,49 @@ def _choose_staging_match_run_id(
                 min_score=min_score,
                 limit=limit,
                 unselected_only=unselected_only,
-                run_callback=run_callback,
+                import_callback=import_callback,
             )
         )
     except GuiUnavailable as exc:
         console.print(f"Staging match UI unavailable ({exc}). Falling back to terminal output.")
         return None
+
+
+def _import_selected_staging_match(vault: Path, row: dict[str, Any]) -> None:
+    pdf_path = str(row.get("pdf_path") or "")
+    run_id = str(row.get("run_id") or "")
+    if not pdf_path:
+        raise ValueError("Choose a PDF before importing a staging match.")
+    if not run_id:
+        raise ValueError("Selected match does not include a run id.")
+
+    progress_ui = _make_gui_progress(True, "Scholar Vault Targeted PDF Import")
+    if progress_ui is not None:
+        progress_ui(f"Importing {Path(pdf_path).name}", None, None)
+    summary = _with_progress(
+        f"Importing {Path(pdf_path).name} into {run_id}",
+        lambda report: import_staged_pdf_match(
+            vault,
+            run_id,
+            pdf_path,
+            rank=int(row["rank"]) if str(row.get("rank") or "").strip() else None,
+            scholar_cid=str(row.get("scholar_cid") or "") or None,
+            result_title=str(row.get("result_title") or "") or None,
+            score=int(row["score"]) if str(row.get("score") or "").strip() else None,
+            match_reason=str(row.get("reason") or "") or None,
+            auto_enrich=True,
+            archive_matched=True,
+            progress=report,
+        ),
+        interactive=True,
+        gui_progress=progress_ui,
+    )
+    _finish_import_workflow(
+        summary,
+        ui=True,
+        progress_ui=progress_ui,
+        allow_leftovers=False,
+    )
 
 
 def _rerun_selected_match(vault: Path, run_id: str) -> None:
@@ -1152,7 +1190,11 @@ def _print_staged_match_table(summary: dict[str, Any]) -> None:
             str(row.get("rank") or ""),
             escape(state),
             escape(_shorten(row.get("result_title"), 70)),
-            escape(f"scholar-vault rerun --run {run_id} --ui"),
+            escape(
+                "open --ui to import this specific PDF"
+                if row.get("pdf_path")
+                else "add --pdf, then open --ui"
+            ),
         )
     console.print(table)
 
@@ -1639,6 +1681,7 @@ def _show_import_summary_ui(
     *,
     ui: bool,
     followup_pending: bool = False,
+    leftover_pending: bool | None = None,
 ) -> str | None:
     if not ui:
         return None
@@ -1653,7 +1696,11 @@ def _show_import_summary_ui(
                 summary,
                 _import_summary_lines(summary),
                 followup_pending=followup_pending,
-                leftover_pending=_has_leftover_staging_pdfs(summary),
+                leftover_pending=(
+                    _has_leftover_staging_pdfs(summary)
+                    if leftover_pending is None
+                    else leftover_pending
+                ),
             )
         )
     except GuiUnavailable as exc:
@@ -1734,7 +1781,7 @@ def _run_staging_match_from_summary(summary: dict[str, Any]) -> None:
         min_score=60,
         limit=50,
         unselected_only=True,
-        run_callback=lambda run_id: _rerun_selected_match(vault, run_id),
+        import_callback=lambda row: _import_selected_staging_match(vault, row),
     )
 
 
@@ -1743,6 +1790,7 @@ def _finish_import_workflow(
     *,
     ui: bool,
     progress_ui=None,
+    allow_leftovers: bool = True,
 ) -> None:
     try:
         _print_run_summary(summary)
@@ -1750,6 +1798,7 @@ def _finish_import_workflow(
             summary,
             ui=ui,
             followup_pending=_has_import_followup(summary),
+            leftover_pending=_has_leftover_staging_pdfs(summary) if allow_leftovers else False,
         )
         if action == "leftovers":
             _close_gui_progress(progress_ui)
@@ -1757,6 +1806,134 @@ def _finish_import_workflow(
             _run_staging_match_from_summary(summary)
             return
         _show_import_enrichment_followup(summary, ui=ui)
+    finally:
+        _close_gui_progress(progress_ui)
+
+
+def _pdf_import_summary_lines(summary: dict[str, Any]) -> list[str]:
+    citations = summary.get("citation_enrichment") or {}
+    abstracts = summary.get("abstract_enrichment") or {}
+    keywords = summary.get("keyword_enrichment") or {}
+    lines = [
+        f"Imported {int(summary.get('imported') or 0)} PDF file(s).",
+        (
+            f"- Cards: {int(summary.get('created') or 0)} created, "
+            f"{int(summary.get('updated_existing') or 0)} matched to existing cards."
+        ),
+    ]
+    if summary.get("vault"):
+        lines.append(f"- Vault: {summary['vault']}")
+    if summary.get("staging_folder"):
+        lines.append(f"- Staging folder: {summary['staging_folder']}")
+    citation_processed = int(citations.get("processed") or 0)
+    abstract_processed = int(abstracts.get("processed") or 0)
+    keyword_processed = int(keywords.get("processed") or 0)
+    if citation_processed or abstract_processed or keyword_processed:
+        lines.append(
+            "- Enrichment: "
+            f"citations checked {citation_processed} card(s) "
+            f"({int(citations.get('changed') or 0)} updated); "
+            f"abstracts checked {abstract_processed} card(s) "
+            f"({int(abstracts.get('changed') or 0)} updated); "
+            f"keywords checked {keyword_processed} card(s) "
+            f"({int(keywords.get('changed') or 0)} updated)."
+        )
+    pdf_rows = summary.get("pdfs") or []
+    for row in pdf_rows[:20]:
+        state = "created" if row.get("created") else "matched existing"
+        citekey = row.get("citekey") or "-"
+        title = _shorten(row.get("title"), 90)
+        lines.append(f"- {citekey}: {state}; {title}")
+    if len(pdf_rows) > 20:
+        lines.append(f"- ... {len(pdf_rows) - 20} more PDF row(s).")
+    return lines
+
+
+def _print_pdf_import_summary(summary: dict[str, Any]) -> None:
+    for line in _pdf_import_summary_lines(summary):
+        console.print(line)
+
+
+def _choose_pdf_import_ui(
+    vault: Path,
+    staging: Path | None,
+    *,
+    auto_enrich: bool,
+) -> dict[str, Any] | None:
+    try:
+        from .gui import GuiUnavailable, choose_pdf_import_files
+    except Exception as exc:  # pragma: no cover - defensive optional import path
+        console.print(f"PDF import UI unavailable ({exc}). Falling back to terminal input.")
+        return None
+    try:
+        return _call_gui(
+            lambda: choose_pdf_import_files(
+                vault,
+                staging,
+                auto_enrich=auto_enrich,
+            )
+        )
+    except GuiUnavailable as exc:
+        console.print(f"PDF import UI unavailable ({exc}). Falling back to terminal input.")
+        return None
+
+
+def _show_pdf_import_summary_ui(
+    summary: dict[str, Any],
+    *,
+    ui: bool,
+    followup_pending: bool,
+) -> bool:
+    if not ui:
+        return followup_pending
+    try:
+        from .gui import GuiUnavailable, show_pdf_import_summary
+    except Exception as exc:  # pragma: no cover - defensive optional import path
+        console.print(f"PDF import summary UI unavailable ({exc}).")
+        return followup_pending
+    try:
+        return bool(
+            _call_gui(
+                lambda: show_pdf_import_summary(
+                    summary,
+                    _pdf_import_summary_lines(summary),
+                    followup_pending=followup_pending,
+                )
+            )
+        )
+    except GuiUnavailable as exc:
+        console.print(f"PDF import summary UI unavailable ({exc}).")
+        return followup_pending
+
+
+def _finish_pdf_import_workflow(
+    summary: dict[str, Any],
+    *,
+    ui: bool,
+    open_followup: bool,
+    progress_ui=None,
+) -> None:
+    try:
+        _print_pdf_import_summary(summary)
+        followup_pending = bool(_problem_rows(_detail_rows(summary)))
+        summary_followup_pending = followup_pending and open_followup
+        open_from_summary = _show_pdf_import_summary_ui(
+            summary,
+            ui=ui,
+            followup_pending=summary_followup_pending,
+        )
+        should_open_followup = open_followup and ui and open_from_summary
+        if should_open_followup:
+            shown = _show_enrichment_ui(
+                summary,
+                abstracts=False,
+                title="Scholar Vault PDF Import Follow-Up",
+                close_label="Close Follow-Up Issues",
+            )
+            if not shown and followup_pending:
+                _print_enrichment_details({"details": _problem_rows(_detail_rows(summary))})
+        elif followup_pending and not ui:
+            _print_enrichment_details({"details": _problem_rows(_detail_rows(summary))})
     finally:
         _close_gui_progress(progress_ui)
 
@@ -1882,6 +2059,15 @@ def _import_summary_lines(summary: dict[str, Any]) -> list[str]:
             f"{int(summary.get('archived') or 0)} matched staging PDFs archived."
         ),
     ]
+    if decisions.get("targeted_import"):
+        lines.append(
+            "- Targeted leftover import: accepted the chosen PDF for the selected "
+            "Scholar Labs result without rerunning the whole run."
+        )
+        if summary.get("paper_card"):
+            lines.append(f"- Paper card: {summary['paper_card']}")
+        if summary.get("note"):
+            lines.append(f"- Note: {summary['note']}")
     if unselected:
         lines.append(
             "- Unselected reasons: "
@@ -2289,9 +2475,47 @@ def import_alias_command(
 def import_pdf_command(
     vault: VaultArg = None,
     staging: StagingArg = None,
+    auto_enrich: AutoEnrichArg = True,
+    ui: UiArg = False,
 ) -> None:
-    summary = import_pdf_dropins(_resolve_vault(vault), _resolve_staging(staging), confirm=_confirm)
-    console.print(f"Imported {summary['imported']} PDF files.")
+    resolved_vault = _resolve_vault(vault)
+    selected_pdfs: list[str] | None = None
+    open_followup = ui
+    resolved_staging = _optional_staging_path(staging) if ui else _resolve_staging(staging)
+    if ui:
+        selection = _choose_pdf_import_ui(
+            resolved_vault,
+            resolved_staging,
+            auto_enrich=auto_enrich,
+        )
+        if selection is None:
+            console.print("PDF import canceled.")
+            return
+        selected_pdfs = list(selection.get("pdfs") or [])
+        auto_enrich = bool(selection.get("auto_enrich"))
+        open_followup = bool(selection.get("open_followup"))
+        if not selected_pdfs:
+            console.print("PDF import canceled: no PDFs selected.")
+            return
+    progress_ui = _make_gui_progress(ui, "Scholar Vault PDF Import")
+    summary = _with_progress(
+        "Importing PDF files",
+        lambda report: import_pdf_dropins(
+            resolved_vault,
+            resolved_staging,
+            pdf_paths=selected_pdfs,
+            auto_enrich=auto_enrich,
+            confirm=_confirm,
+            progress=report,
+        ),
+        gui_progress=progress_ui,
+    )
+    _finish_pdf_import_workflow(
+        summary,
+        ui=ui,
+        open_followup=open_followup,
+        progress_ui=progress_ui,
+    )
 
 
 @app.command("import-bibtex")
@@ -3087,9 +3311,9 @@ def match_staging_command(
             min_score=min_score,
             limit=limit,
             unselected_only=unselected_only,
-            run_callback=lambda selected_run: _rerun_selected_match(
+            import_callback=lambda selected_row: _import_selected_staging_match(
                 resolved_vault,
-                selected_run,
+                selected_row,
             ),
         )
         if run_id:

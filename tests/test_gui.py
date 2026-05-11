@@ -150,6 +150,11 @@ def test_progress_parts_name_import_substages() -> None:
         "Extracting PDF title, DOI, year, and first-page text",
         "example.pdf",
     )
+    assert _progress_parts("Importing PDF direct-paper.pdf") == (
+        "PDF IMPORT",
+        "Extracting title, DOI, year, keywords, and matching existing cards",
+        "direct-paper.pdf",
+    )
     assert _progress_parts("Using cached staged PDF scan example.pdf") == (
         "PDF SCAN",
         "Using cached PDF title, DOI, year, and first-page text",

@@ -909,7 +909,7 @@ def test_import_finish_keeps_progress_until_followup(monkeypatch) -> None:
     monkeypatch.setattr(
         cli,
         "_show_import_summary_ui",
-        lambda _summary, *, ui, followup_pending: events.append(
+        lambda _summary, *, ui, followup_pending, leftover_pending: events.append(
             f"report:{ui}:{followup_pending}"
         ),
     )
@@ -942,7 +942,9 @@ def test_import_finish_can_launch_leftover_staging_match(monkeypatch) -> None:
     monkeypatch.setattr(
         cli,
         "_show_import_summary_ui",
-        lambda _summary, *, ui, followup_pending: events.append("report") or "leftovers",
+        lambda _summary, *, ui, followup_pending, leftover_pending: (
+            events.append("report") or "leftovers"
+        ),
     )
     monkeypatch.setattr(
         cli,
@@ -1129,7 +1131,7 @@ def test_rerun_can_keep_existing_pdfs(tmp_path, monkeypatch) -> None:
     assert calls[0]["upgrade_pdfs"] is False
 
 
-def test_match_staging_ui_launches_selected_rerun(tmp_path, monkeypatch) -> None:
+def test_match_staging_ui_imports_selected_pdf_match(tmp_path, monkeypatch) -> None:
     vault = tmp_path / "vault"
     staging = tmp_path / "staging"
     staging.mkdir()
@@ -1137,13 +1139,20 @@ def test_match_staging_ui_launches_selected_rerun(tmp_path, monkeypatch) -> None
     launched = []
 
     def fake_choose(*_args, **kwargs):
-        kwargs["run_callback"]("2026-04-22_example-run")
+        kwargs["import_callback"](
+            {
+                "run_id": "2026-04-22_example-run",
+                "rank": 5,
+                "result_title": "Example Paper",
+                "pdf_path": str(staging / "example.pdf"),
+            }
+        )
         return None
 
     monkeypatch.setattr("scholar_vault.cli._choose_staging_match_run_id", fake_choose)
     monkeypatch.setattr(
-        "scholar_vault.cli._rerun_selected_match",
-        lambda selected_vault, run_id: launched.append((selected_vault, run_id)),
+        "scholar_vault.cli._import_selected_staging_match",
+        lambda selected_vault, row: launched.append((selected_vault, row)),
     )
 
     result = CliRunner().invoke(
@@ -1159,7 +1168,17 @@ def test_match_staging_ui_launches_selected_rerun(tmp_path, monkeypatch) -> None
     )
 
     assert result.exit_code == 0
-    assert launched == [(vault.resolve(), "2026-04-22_example-run")]
+    assert launched == [
+        (
+            vault.resolve(),
+            {
+                "run_id": "2026-04-22_example-run",
+                "rank": 5,
+                "result_title": "Example Paper",
+                "pdf_path": str(staging / "example.pdf"),
+            },
+        )
+    ]
 
 
 def test_import_labs_checks_for_pdf_upgrades_by_default(tmp_path, monkeypatch) -> None:
@@ -1248,6 +1267,89 @@ def test_import_labs_prompts_for_title_when_export_has_none(tmp_path, monkeypatc
     assert result.exit_code == 0
     assert prompt in result.output
     assert calls[0]["title"] == "Custom Prompted Run"
+
+
+def test_import_pdf_cli_passes_no_enrich(tmp_path, monkeypatch) -> None:
+    calls = []
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    initialize_vault(vault)
+    staging.mkdir()
+
+    def fake_import_pdf_dropins(*args, **kwargs):
+        calls.append((args, kwargs))
+        return {
+            "imported": 0,
+            "created": 0,
+            "updated_existing": 0,
+            "pdfs": [],
+            "citation_enrichment": {},
+            "abstract_enrichment": {},
+            "keyword_enrichment": {},
+            "details": [],
+        }
+
+    monkeypatch.setattr("scholar_vault.cli.import_pdf_dropins", fake_import_pdf_dropins)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "import-pdf",
+            "--vault",
+            str(vault),
+            "--staging",
+            str(staging),
+            "--no-enrich",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls[0][1]["auto_enrich"] is False
+    assert calls[0][1]["pdf_paths"] is None
+
+
+def test_import_pdf_ui_uses_selected_files(tmp_path, monkeypatch) -> None:
+    calls = []
+    vault = tmp_path / "vault"
+    initialize_vault(vault)
+    selected_pdf = tmp_path / "selected.pdf"
+    selected_pdf.write_bytes(b"%PDF-1.4\n")
+
+    def fake_choose_pdf_import_ui(_vault, _staging, *, auto_enrich):
+        assert auto_enrich is True
+        return {
+            "pdfs": [str(selected_pdf)],
+            "auto_enrich": True,
+            "open_followup": False,
+        }
+
+    def fake_import_pdf_dropins(*args, **kwargs):
+        calls.append((args, kwargs))
+        return {
+            "imported": 1,
+            "created": 1,
+            "updated_existing": 0,
+            "pdfs": [{"citekey": "selected", "title": "Selected", "created": True}],
+            "citation_enrichment": {"processed": 1, "changed": 1},
+            "abstract_enrichment": {"processed": 1, "changed": 0},
+            "keyword_enrichment": {"processed": 1, "changed": 0},
+            "details": [],
+        }
+
+    monkeypatch.setattr("scholar_vault.cli._choose_pdf_import_ui", fake_choose_pdf_import_ui)
+    monkeypatch.setattr("scholar_vault.cli.import_pdf_dropins", fake_import_pdf_dropins)
+    monkeypatch.setattr("scholar_vault.cli._make_gui_progress", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        "scholar_vault.cli._show_pdf_import_summary_ui",
+        lambda *_args, **_kwargs: False,
+    )
+
+    result = CliRunner().invoke(app, ["import-pdf", "--vault", str(vault), "--ui"])
+
+    assert result.exit_code == 0
+    assert calls[0][1]["pdf_paths"] == [str(selected_pdf)]
+    assert calls[0][1]["auto_enrich"] is True
+    assert "Imported 1 PDF file(s)." in result.output
 
 
 def test_rebuild_command_prints_summary(tmp_path) -> None:

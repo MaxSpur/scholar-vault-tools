@@ -19,8 +19,10 @@
 - Keep `browser/scholar_labs_json_exporter.js` Scholar-specific. It depends on Google Scholar `gs_*` selectors and should not be generalized without testing on a real Scholar Labs results page.
 - Keep raw failed Scholar Labs exports for debugging, but do not import them into runs or paper cards.
 - Keep Scholar Labs PDF handling non-destructive: prefer copy-and-verify into `pdfs/`, leave staging files in place unless the command explicitly archives them, and record decisions in the run manifest.
+- Keep direct `import-pdf --ui` handling non-destructive: dragged/chosen PDFs are copied into the vault, while the original downloaded files stay where they are.
 - `import-labs` is the explicit Scholar Labs convenience flow. It should archive matched PDFs out of staging only after the verified vault copy exists, while unmatched PDFs stay in staging.
-- `import-labs`, `import`, `resume`, and `rerun` should run citation and abstract enrichment for selected papers by default after committed matches. Keep `--no-enrich` available as the fast/offline escape hatch.
+- Use `match-staging --ui` for leftover staging PDFs that belong to previous Scholar Labs runs. Search by typed title plus chosen PDF path when automatic scanning is ambiguous, then import the chosen PDF into the selected run result instead of rerunning the whole run.
+- `import-labs`, `import`, `import-pdf`, `resume`, and `rerun` should run citation, abstract, and keyword enrichment for touched papers by default after committed/direct imports. Keep `--no-enrich` available as the fast/offline escape hatch.
 - Keep terminal progress feedback for import and enrichment workflows because provider lookups and PDF scans can take noticeable time.
 - After successful non-dry-run `import-labs`, move used browser-export JSON files into a sibling `used/` folder without renaming them and update run/manifest `export_file` paths. Do not move export JSON on dry-runs or invalid exports.
 - If the exporter changes, verify these browser diagnostics on a live Scholar Labs results page before accepting the change:
@@ -44,7 +46,7 @@
 - Preserve non-empty manual abstracts and `abstract_lock: true` records unless the user explicitly passes `--force`. Use `--refresh-abstracts` for deliberate provider upgrades such as replacing `pdf_extracted` with Crossref.
 - Keep raw citation provider responses under `raw/metadata/<citekey>/` and use cached responses before making repeated remote requests.
 - Keep generated Markdown Obsidian-safe: YAML frontmatter, plain links, no plugin-only syntax.
-- Use `resolve-citation` / `set-metadata`, `set-abstract`, `set-keywords`, `topic-map --apply`, `attach-pdf`, `rerun`, and `clean-staging` instead of hand-editing tool-managed metadata, topic batches, or PDF state.
+- Use `resolve-citation` / `set-metadata`, `set-abstract`, `set-keywords`, `topic-map --apply`, `attach-pdf`, `match-staging --ui`, `rerun`, and `clean-staging` instead of hand-editing tool-managed metadata, topic batches, run manifests, or PDF state.
 - Use `card-biblatex <citekey>` or `biblatex --citekey <citekey>` when exporting one card's BibLaTeX for Obsidian-side work. `card-bibtex` and `bibtex` remain compatibility aliases. The exporter should prefer cached provider BibTeX/CSL before card fallback, use `--cite` for quick `\cite{...}` snippets, and use `biblatex-doctor` when checking export quality.
 - Use `reference <citekey>` for one-card APA-style Markdown/RTF/plain references and `references` for a whole-vault formatted bibliography. Do not hand-format APA references when the CLI can generate them from the same provider-first metadata.
 - Use `scholar-vault skills diff`, `skills adopt`, `skills publish`, or `skills ui` to synchronize `.agents/skills/` between this repository and a vault. Do not use raw `rsync --delete` when either side may contain local skill changes; adopt vault-side improvements first, then publish from the repository source of truth.

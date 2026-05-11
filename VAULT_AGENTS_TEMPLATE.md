@@ -90,6 +90,7 @@ scholar-vault resolve-citation --citekey <citekey> \
 - `_indexes/missing-pdfs.md` is not an action queue unless explicitly revisiting Scholar Labs candidates.
 - Historical unmatched manifest entries are audit records. They matter only when non-duplicate PDFs still exist in staging.
 - Use `scholar-vault pdf-doctor --json` before treating PDF/staging issues as actionable.
+- For one-off leftover PDFs, use `scholar-vault match-staging --ui`: enter the likely title, choose the PDF path, inspect candidate run summaries, then click `Import PDF` for the matching run result instead of rerunning the whole run.
 
 ## Research Workflow
 

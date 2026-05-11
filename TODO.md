@@ -54,14 +54,15 @@
 - [x] Add a `rerun --ui` run picker for choosing previous Scholar Labs runs with counts and provenance details.
 - [x] Cache staged PDF scan metadata in the staging folder so mixed-run staging folders do not repeat expensive PDF text extraction on every import.
 - [x] Add read-only cross-run matching for leftover staging PDFs and typed title searches.
-- [x] Add a desktop UI for cross-run staging PDF/title matching that can launch reviewed reruns.
+- [x] Add a desktop UI for cross-run staging PDF/title matching.
 - [x] Offer leftover staging PDF search from GUI import reports and sync newly attached PDFs to matching prior runs.
-- [x] Keep the leftover staging PDF UI open after reviewed reruns and refresh it as a continuing work queue.
+- [x] Keep the leftover staging PDF UI open after targeted imports and refresh it as a continuing work queue.
 - [x] Add leftover staging PDF UI actions for opening PDFs/cards and moving already attached staging copies to staging trash.
+- [x] Replace leftover staging UI reruns with targeted `Import PDF` actions for one chosen PDF and one matched run result.
 - [x] Make `rebuild` repair stale run/card/PDF links for attached papers that previous runs requested.
 - [x] Let manual keyword follow-up confirm that a source has no publication keywords or index terms.
 - [x] Reject truncated abstract snippets and re-queue existing bad abstracts for manual follow-up when no complete source is found.
-- [x] Let staging-match reruns hide the parent picker so import reports and follow-up windows remain interactive.
+- [x] Let staging-match targeted imports hide the parent picker so import reports and follow-up windows remain interactive.
 - [x] Add editable metadata correction actions for papers whose citation enrichment state is `ambiguous`.
 - [x] Add read-only `status` / `doctor` diagnostics with JSON output for agent orientation.
 - [x] Add `pdf-doctor` for orphan, duplicate, missing, staged, and repeated-unmatched PDF triage.
@@ -80,3 +81,4 @@
 - [x] Add BibLaTeX validation, title capitalization protection, clipboard output, `--cite`, `--no-local-fields`, and provider-backed entry-type inference.
 - [x] Add APA-style Markdown/RTF/plain formatted reference commands for one-card and whole-vault bibliography workflows.
 - [x] Add safe Codex skillset diff/adopt/publish commands, wrapper scripts, and an optional UI so repository and vault skills can be synchronized without blind overwrites.
+- [x] Add `import-pdf --ui` for drag-and-drop multi-PDF import with automatic enrichment and follow-up field resolution.

@@ -1037,6 +1037,14 @@ def _record_pdf_metadata_from_candidate(card: SourceCard, candidate) -> None:
         card.enrichment_refresh = True
 
 
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
 def _build_match_review_request(
     result: ScholarLabsResult,
     proposal: MatchDecision,
@@ -2414,6 +2422,431 @@ def _sync_attached_card_to_matching_runs(
     return updated_results
 
 
+def _find_result_in_run(
+    run: RunRecord,
+    *,
+    rank: int | None = None,
+    scholar_cid: str | None = None,
+    title: str | None = None,
+) -> RunResultRecord:
+    normalized_title = normalize_title(title)
+    for result in run.results:
+        if scholar_cid and result.scholar_cid and result.scholar_cid == scholar_cid:
+            return result
+    for result in run.results:
+        if rank is not None and result.rank == rank:
+            if not normalized_title or normalize_title(result.title) == normalized_title:
+                return result
+    if normalized_title:
+        for result in run.results:
+            if normalize_title(result.title) == normalized_title:
+                return result
+    raise ValueError(f"No matching result found in run {run.slug}.")
+
+
+def _replace_manifest_entry(
+    manifest: ImportManifest,
+    result: RunResultRecord,
+    accepted_entry: ImportManifestEntry,
+    candidate: PdfCandidate,
+) -> None:
+    result_key = _result_key(result)
+    updated_entries: list[ImportManifestEntry] = []
+    replaced = False
+    for entry in manifest.entries:
+        entry_key = (
+            f"cid:{entry.scholar_cid}"
+            if entry.scholar_cid
+            else f"title:{normalize_title(entry.result_title)}"
+        )
+        if entry_key == result_key:
+            if not replaced:
+                updated_entries.append(accepted_entry)
+                replaced = True
+            continue
+        if (
+            candidate.path
+            and entry.original_path == candidate.path
+            and entry.decision != "accepted"
+        ):
+            continue
+        if (
+            candidate.sha256
+            and entry.original_sha256 == candidate.sha256
+            and entry.decision != "accepted"
+        ):
+            continue
+        updated_entries.append(entry)
+    if not replaced:
+        updated_entries.append(accepted_entry)
+    manifest.entries = updated_entries
+
+
+def _enrich_touched_cards(
+    paths: VaultPaths,
+    cards: list[SourceCard],
+    *,
+    progress: ProgressCallback | None = None,
+) -> tuple[
+    list[EnrichmentResult],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    unique_cards = list({card.slug: card for card in cards}.values())
+    enrichment_results: list[EnrichmentResult] = []
+    enrichment_details: list[dict[str, Any]] = []
+    abstract_details: list[dict[str, Any]] = []
+    keyword_details: list[dict[str, Any]] = []
+    if not unique_cards:
+        return enrichment_results, enrichment_details, abstract_details, keyword_details
+
+    def report_citation_progress(
+        card: SourceCard,
+        index: int,
+        total: int,
+        status: str,
+    ) -> None:
+        if progress:
+            progress(
+                _enrichment_progress_message(card, status, abstracts=False),
+                index,
+                total,
+            )
+
+    def report_abstract_progress(
+        card: SourceCard,
+        index: int,
+        total: int,
+        status: str,
+    ) -> None:
+        if progress:
+            progress(
+                _enrichment_progress_message(card, status, abstracts=True),
+                index,
+                total,
+            )
+
+    def report_keyword_progress(
+        card: SourceCard,
+        index: int,
+        total: int,
+        status: str,
+    ) -> None:
+        if progress:
+            progress(
+                _enrichment_progress_message(card, status, keywords=True),
+                index,
+                total,
+            )
+
+    citation_results = enrich_cards(
+        paths,
+        unique_cards,
+        EnrichmentOptions(),
+        progress=report_citation_progress,
+    )
+    enrichment_results.extend(citation_results)
+    enrichment_details.extend(
+        _enrichment_detail(paths, card, result, abstracts=False)
+        for card, result in zip(unique_cards, citation_results, strict=False)
+    )
+    abstract_results = enrich_cards(
+        paths,
+        unique_cards,
+        EnrichmentOptions(abstracts=True),
+        progress=report_abstract_progress,
+    )
+    enrichment_results.extend(abstract_results)
+    abstract_details.extend(
+        _enrichment_detail(paths, card, result, abstracts=True)
+        for card, result in zip(unique_cards, abstract_results, strict=False)
+    )
+    keyword_results = enrich_cards(
+        paths,
+        unique_cards,
+        EnrichmentOptions(only="missing-keywords"),
+        progress=report_keyword_progress,
+    )
+    enrichment_results.extend(keyword_results)
+    keyword_details.extend(
+        _enrichment_detail(paths, card, result, abstracts=False, keywords=True)
+        for card, result in zip(unique_cards, keyword_results, strict=False)
+    )
+    for card in unique_cards:
+        _save_card(paths, card)
+    return enrichment_results, enrichment_details, abstract_details, keyword_details
+
+
+def import_staged_pdf_match(
+    vault: Path | str,
+    run_id: str,
+    pdf_path: Path | str,
+    *,
+    rank: int | None = None,
+    scholar_cid: str | None = None,
+    result_title: str | None = None,
+    score: int | None = None,
+    match_reason: str | None = None,
+    auto_enrich: bool = True,
+    archive_matched: bool = True,
+    progress: ProgressCallback | None = None,
+) -> dict[str, Any]:
+    paths = initialize_vault(vault)
+    run = _load_run_record(paths, run_id)
+    if run is None:
+        raise ValueError(f"Run does not exist: {run_id}")
+
+    source_pdf = Path(pdf_path).expanduser().resolve()
+    if not source_pdf.exists():
+        raise ValueError(f"PDF does not exist: {source_pdf}")
+    if source_pdf.suffix.casefold() != ".pdf":
+        raise ValueError(f"Expected a PDF file: {source_pdf}")
+
+    if progress:
+        progress(f"Scanning targeted PDF {source_pdf.name}", 1, 1)
+    candidate = build_pdf_candidate(source_pdf)
+    run_ref = _run_ref(run)
+    cards = load_source_cards(paths)
+    result = _find_result_in_run(
+        run,
+        rank=rank,
+        scholar_cid=scholar_cid,
+        title=result_title,
+    )
+
+    existing_card = _find_card_for_run_result(paths, cards, result, run_ref)
+    if existing_card and _card_has_valid_pdf(paths, existing_card):
+        paper_card = f"papers/{existing_card.slug}.md"
+        return {
+            "papers": 1,
+            "selected": 1,
+            "matched": 1,
+            "unmatched": len(set(run.unmatched_files)),
+            "archived": 0,
+            "unselected_results": len([item for item in run.results if item.status != "selected"]),
+            "decision_summary": {
+                "existing_run": True,
+                "export_results": len(run.results),
+                "staged_pdfs_scanned": 1,
+                "staged_pdf_cache_hits": 0,
+                "prior_selected_reused": 1,
+                "existing_cards_linked": 0,
+                "new_staged_pdf_matches": 0,
+                "review_prompts": 0,
+                "review_accepted": 0,
+                "review_rejected": 0,
+                "commit_auto_accepted": 0,
+                "commit_proposals_skipped": 0,
+                "proposed_not_committed": 0,
+                "results_without_candidate": 0,
+                "pdf_upgrade_candidates": 0,
+                "pdf_upgrades": 0,
+                "pdf_upgrade_skipped": 0,
+                "other_runs_synced": 0,
+                "targeted_import": True,
+            },
+            "export_archived": "",
+            "enriched": 0,
+            "citation_enrichment": {"processed": 0, "changed": 0},
+            "abstract_enrichment": {"processed": 0, "changed": 0},
+            "keyword_enrichment": {"processed": 0, "changed": 0},
+            "enrichment_details": [],
+            "abstract_details": [],
+            "keyword_details": [],
+            "run": run.slug,
+            "vault": str(paths.vault),
+            "staging_folder": run.staging_folder,
+            "staging_pdfs_remaining": (
+                len(sorted(Path(run.staging_folder).expanduser().glob("*.pdf")))
+                if run.staging_folder
+                else 0
+            ),
+            "paper_card": paper_card,
+            "note": "Run result already has an attached vault PDF.",
+        }
+
+    proposal = MatchDecision(
+        candidate=candidate,
+        score=(
+            score
+            if score is not None
+            else score_title_match(result.title, candidate.title or source_pdf.stem)
+        ),
+        decision="auto",
+        reason=match_reason or "targeted-staging-match",
+    )
+
+    if progress:
+        progress(f"Creating or updating card for {result.title}", 1, 1)
+    card, card_created, card_before = _prepare_card_for_result(
+        cards,
+        result,
+        run_ref=run_ref,
+        prompt=run.prompt,
+    )
+    destination_path, copied, verified = _copy_pdf_to_vault(
+        paths,
+        source_pdf,
+        card,
+        original_sha256=candidate.sha256 or _file_sha256(source_pdf),
+    )
+    card.pdf = destination_path
+    card.pdf_status = "attached"
+    card.status = "active"
+    card.keywords = _merge_unique(card.keywords, extract_pdf_keywords(candidate.text_excerpt))
+    if card.keywords:
+        card.publication_keywords_status = "present"
+        card.publication_keywords_source = card.publication_keywords_source or "pdf_extracted"
+    _record_pdf_metadata_from_candidate(card, candidate)
+
+    archived_original_path = None
+    moved = False
+    archived_files: list[str] = []
+    note = "Copied targeted staging PDF into the vault."
+    staging_dir = Path(run.staging_folder).expanduser().resolve() if run.staging_folder else None
+    if (
+        archive_matched
+        and source_pdf.exists()
+        and staging_dir is not None
+        and _is_relative_to(source_pdf, staging_dir)
+    ):
+        archived_original_path = _archive_matched_pdf(paths, run.slug, source_pdf)
+        moved = True
+        archived_files.append(Path(archived_original_path).name)
+        note = f"Archived targeted staging PDF to {archived_original_path}."
+
+    _save_card(paths, card)
+    paper_card = f"papers/{card.slug}.md"
+    result.status = "selected"
+    result.pdf_status = "attached"
+    result.paper_card = paper_card
+    result.proposed_pdf = candidate.path
+    result.proposed_sha256 = candidate.sha256
+    result.score = proposal.score
+    result.decision = "accepted"
+
+    original_name = source_pdf.name
+    run.matched_files = sorted(set([*run.matched_files, original_name]))
+    run.unmatched_files = sorted(name for name in set(run.unmatched_files) if name != original_name)
+
+    manifest = _load_manifest(paths, run.slug) or ImportManifest(
+        run_id=run.slug,
+        export_file=run.export_file,
+        staging_folder=run.staging_folder,
+        created_at=_now_iso(),
+        entries=[],
+    )
+    accepted_entry = _build_manifest_entry(
+        result,
+        proposal,
+        decision="accepted",
+        paper_card=paper_card,
+        card_created=card_created,
+        card_preexisting=not card_created,
+        card_before=card_before,
+        destination_path=destination_path,
+        copied=copied,
+        moved=moved,
+        archived_original_path=archived_original_path,
+        verified=verified,
+        note=note,
+    )
+    _replace_manifest_entry(manifest, result, accepted_entry, candidate)
+    _write_manifest(paths, manifest)
+
+    synced = _sync_attached_card_to_matching_runs(paths, card, exclude_run_id=run.slug)
+    _write_run(paths, run, load_source_cards(paths))
+    _write_log(
+        paths,
+        "match-staging",
+        [
+            ImportLogEntry(
+                source_path=candidate.path,
+                destination_path=destination_path,
+                status="accepted",
+                score=proposal.score,
+                note=note,
+            )
+        ],
+    )
+
+    enrichment_results: list[EnrichmentResult] = []
+    enrichment_details: list[dict[str, Any]] = []
+    abstract_details: list[dict[str, Any]] = []
+    keyword_details: list[dict[str, Any]] = []
+    if auto_enrich:
+        enrichment_results, enrichment_details, abstract_details, keyword_details = (
+            _enrich_touched_cards(paths, [card], progress=progress)
+        )
+
+    if progress:
+        progress("Rebuilding indexes and exports", None, None)
+    _rebuild_indexes(paths)
+
+    citation_processed = len(enrichment_details)
+    abstract_processed = len(abstract_details)
+    keyword_processed = len(keyword_details)
+    citation_changed = sum(1 for row in enrichment_details if row.get("changed"))
+    abstract_changed = sum(1 for row in abstract_details if row.get("changed"))
+    keyword_changed = sum(1 for row in keyword_details if row.get("changed"))
+    return {
+        "papers": 1,
+        "selected": len([item for item in run.results if item.status == "selected"]),
+        "matched": len([item for item in run.results if item.pdf_status == "attached"]),
+        "unmatched": len(sorted(set(run.unmatched_files))),
+        "archived": len(sorted(set(archived_files))),
+        "unselected_results": len([item for item in run.results if item.status != "selected"]),
+        "decision_summary": {
+            "existing_run": True,
+            "export_results": len(run.results),
+            "staged_pdfs_scanned": 1,
+            "staged_pdf_cache_hits": 0,
+            "prior_selected_reused": 0,
+            "existing_cards_linked": 0,
+            "new_staged_pdf_matches": 1,
+            "review_prompts": 0,
+            "review_accepted": 0,
+            "review_rejected": 0,
+            "commit_auto_accepted": 0,
+            "commit_proposals_skipped": 0,
+            "proposed_not_committed": 0,
+            "results_without_candidate": 0,
+            "pdf_upgrade_candidates": 0,
+            "pdf_upgrades": 0,
+            "pdf_upgrade_skipped": 0,
+            "other_runs_synced": synced,
+            "targeted_import": True,
+        },
+        "export_archived": "",
+        "enriched": len([result for result in enrichment_results if result.changed]),
+        "citation_enrichment": {
+            "processed": citation_processed,
+            "changed": citation_changed,
+        },
+        "abstract_enrichment": {
+            "processed": abstract_processed,
+            "changed": abstract_changed,
+        },
+        "keyword_enrichment": {
+            "processed": keyword_processed,
+            "changed": keyword_changed,
+        },
+        "enrichment_details": enrichment_details,
+        "abstract_details": abstract_details,
+        "keyword_details": keyword_details,
+        "run": run.slug,
+        "vault": str(paths.vault),
+        "staging_folder": str(staging_dir) if staging_dir else run.staging_folder,
+        "staging_pdfs_remaining": (
+            len(sorted(staging_dir.glob("*.pdf"))) if staging_dir and staging_dir.exists() else 0
+        ),
+        "paper_card": paper_card,
+        "pdf": destination_path,
+        "note": note,
+    }
+
+
 def attach_pdf(vault: Path | str, citekey: str, pdf_path: Path | str) -> dict[str, str | bool]:
     paths = initialize_vault(vault)
     cards = load_source_cards(paths)
@@ -2494,11 +2927,14 @@ def find_staged_run_matches(
     cards_by_path = {f"papers/{card.slug}.md": card for card in load_source_cards(paths)}
 
     candidates: list[PdfCandidate] = []
+    query_pdf_candidate: PdfCandidate | None = None
     cache_hits = 0
     if query_pdf is not None:
         if progress:
             progress(f"Scanning PDF {query_pdf.name}", 1, 1)
-        candidates = [build_pdf_candidate(query_pdf)]
+        query_pdf_candidate = build_pdf_candidate(query_pdf)
+        if not query_title:
+            candidates = [query_pdf_candidate]
     elif not query_title:
         staged_pdf_paths = sorted(staging_dir.glob("*.pdf"))
         if progress:
@@ -2531,9 +2967,15 @@ def find_staged_run_matches(
                 "run_title": run.title or infer_run_title(run.prompt),
                 "exported_at": run.exported_at,
                 "rank": result.rank,
+                "scholar_cid": result.scholar_cid,
                 "result_title": result.title,
                 "authors_preview": result.authors_preview,
                 "year": result.year,
+                "venue": result.venue,
+                "summary": result.summary,
+                "rationale_points": [
+                    point.model_dump(exclude_none=True) for point in result.rationale_points
+                ],
                 "status": result.status,
                 "pdf_status": result.pdf_status,
                 "paper_card": result.paper_card,
@@ -2548,11 +2990,11 @@ def find_staged_run_matches(
                             **row_base,
                             "score": score,
                             "decision": "query",
-                            "reason": "typed-title",
+                            "reason": "typed-title+pdf" if query_pdf_candidate else "typed-title",
                             "query_title": query_title,
                             "pdf_path": str(query_pdf) if query_pdf else None,
                             "pdf_filename": query_pdf.name if query_pdf else None,
-                            "pdf_title": None,
+                            "pdf_title": query_pdf_candidate.title if query_pdf_candidate else None,
                         }
                     )
 
@@ -2583,9 +3025,10 @@ def find_staged_run_matches(
     )
     if limit:
         rows = rows[:limit]
+    scanned_count = len(candidates) + (1 if query_pdf_candidate and query_title else 0)
     return {
         "runs": len(runs),
-        "staged_pdfs_scanned": len(candidates),
+        "staged_pdfs_scanned": scanned_count,
         "staged_pdf_cache_hits": cache_hits,
         "query_title": query_title or None,
         "query_pdf": str(query_pdf) if query_pdf else None,
@@ -2659,23 +3102,50 @@ def cleanup_run_selected_only(vault: Path | str, run_id: str) -> dict[str, int]:
 
 def import_pdf_dropins(
     vault: Path | str,
-    staging_path: Path | str,
+    staging_path: Path | str | None = None,
     *,
+    pdf_paths: Iterable[Path | str] | None = None,
+    auto_enrich: bool = False,
     confirm: ConfirmCallback | None = None,
-) -> dict[str, int]:
+    progress: ProgressCallback | None = None,
+) -> dict[str, Any]:
     del confirm
     paths = initialize_vault(vault)
-    staging_dir = Path(staging_path).expanduser().resolve()
+    staging_dir = Path(staging_path).expanduser().resolve() if staging_path else None
+    if pdf_paths is None:
+        if staging_dir is None:
+            raise ValueError("import-pdf needs a staging folder or explicit PDF paths.")
+        pdf_files = sorted(staging_dir.glob("*.pdf"))
+    else:
+        pdf_files = sorted(
+            {
+                Path(pdf_path).expanduser().resolve()
+                for pdf_path in pdf_paths
+                if str(pdf_path).strip()
+                and Path(pdf_path).expanduser().resolve().suffix.casefold() == ".pdf"
+            }
+        )
     cards = load_source_cards(paths)
     log_entries: list[ImportLogEntry] = []
     imported = 0
+    created = 0
+    updated_existing = 0
+    imported_cards: list[SourceCard] = []
+    imported_rows: list[dict[str, Any]] = []
 
-    for pdf_path in sorted(staging_dir.glob("*.pdf")):
+    if progress:
+        progress(f"Importing {len(pdf_files)} PDF files", None, None)
+
+    for index, pdf_path in enumerate(pdf_files, start=1):
+        if progress:
+            progress(f"Importing PDF {pdf_path.name}", index, len(pdf_files))
         candidate = build_pdf_candidate(pdf_path)
         existing, score = match_candidate_to_cards(candidate, cards)
+        card_created = False
 
         if existing and score >= 90:
             card = existing
+            updated_existing += 1
         else:
             title = candidate.title or pdf_path.stem.replace("_", " ").replace("-", " ")
             authors: list[str] = []
@@ -2710,6 +3180,8 @@ def import_pdf_dropins(
                 card.publication_keywords_status = "present"
                 card.publication_keywords_source = "pdf_extracted"
             cards.append(card)
+            card_created = True
+            created += 1
 
         if candidate.doi and not card.doi:
             card.doi = normalize_doi(candidate.doi)
@@ -2738,6 +3210,21 @@ def import_pdf_dropins(
             card.citation_status = "missing"
         _save_card(paths, card)
         imported += 1
+        imported_cards.append(card)
+        imported_rows.append(
+            {
+                "source": str(pdf_path),
+                "citekey": card.citekey or card.slug,
+                "title": card.title,
+                "paper": f"papers/{card.slug}.md",
+                "paper_file": str(paths.papers / f"{card.slug}.md"),
+                "pdf": card.pdf,
+                "pdf_file": str(paths.vault / card.pdf) if card.pdf else None,
+                "matched_existing": bool(existing and score >= 90),
+                "created": card_created,
+                "score": score if existing else None,
+            }
+        )
         log_entries.append(
             ImportLogEntry(
                 source_path=str(pdf_path),
@@ -2747,10 +3234,110 @@ def import_pdf_dropins(
             )
         )
 
+    enrichment_results: list[EnrichmentResult] = []
+    enrichment_details: list[dict[str, Any]] = []
+    abstract_details: list[dict[str, Any]] = []
+    keyword_details: list[dict[str, Any]] = []
+    if auto_enrich and imported_cards:
+        unique_cards = list({card.slug: card for card in imported_cards}.values())
+
+        def report_citation_progress(
+            card: SourceCard,
+            index: int,
+            total: int,
+            status: str,
+        ) -> None:
+            if progress:
+                progress(
+                    _enrichment_progress_message(card, status, abstracts=False),
+                    index,
+                    total,
+                )
+
+        def report_abstract_progress(
+            card: SourceCard,
+            index: int,
+            total: int,
+            status: str,
+        ) -> None:
+            if progress:
+                progress(
+                    _enrichment_progress_message(card, status, abstracts=True),
+                    index,
+                    total,
+                )
+
+        def report_keyword_progress(
+            card: SourceCard,
+            index: int,
+            total: int,
+            status: str,
+        ) -> None:
+            if progress:
+                progress(
+                    _enrichment_progress_message(card, status, keywords=True),
+                    index,
+                    total,
+                )
+
+        citation_results = enrich_cards(
+            paths,
+            unique_cards,
+            EnrichmentOptions(),
+            progress=report_citation_progress,
+        )
+        enrichment_results.extend(citation_results)
+        enrichment_details.extend(
+            _enrichment_detail(paths, card, result, abstracts=False)
+            for card, result in zip(unique_cards, citation_results, strict=False)
+        )
+        abstract_results = enrich_cards(
+            paths,
+            unique_cards,
+            EnrichmentOptions(abstracts=True),
+            progress=report_abstract_progress,
+        )
+        enrichment_results.extend(abstract_results)
+        abstract_details.extend(
+            _enrichment_detail(paths, card, result, abstracts=True)
+            for card, result in zip(unique_cards, abstract_results, strict=False)
+        )
+        keyword_results = enrich_cards(
+            paths,
+            unique_cards,
+            EnrichmentOptions(only="missing-keywords"),
+            progress=report_keyword_progress,
+        )
+        enrichment_results.extend(keyword_results)
+        keyword_details.extend(
+            _enrichment_detail(paths, card, result, abstracts=False, keywords=True)
+            for card, result in zip(unique_cards, keyword_results, strict=False)
+        )
+        for card in unique_cards:
+            _save_card(paths, card)
+
     if log_entries:
         _write_log(paths, "import-pdf", log_entries)
+    if progress:
+        progress("Rebuilding indexes and exports", None, None)
     _rebuild_indexes(paths)
-    return {"imported": imported}
+    details = [*enrichment_details, *abstract_details, *keyword_details]
+    return {
+        "imported": imported,
+        "created": created,
+        "updated_existing": updated_existing,
+        "pdfs": imported_rows,
+        "enriched": len([result for result in enrichment_results if result.changed]),
+        "citation_enrichment": _enrichment_counts(enrichment_details),
+        "abstract_enrichment": _enrichment_counts(abstract_details),
+        "keyword_enrichment": _enrichment_counts(keyword_details),
+        "enrichment_details": enrichment_details,
+        "abstract_details": abstract_details,
+        "keyword_details": keyword_details,
+        "details": details,
+        "vault": str(paths.vault),
+        "staging_folder": str(staging_dir) if staging_dir else None,
+    }
 
 
 def import_bibtex(vault: Path | str, bib_path: Path | str) -> dict[str, int]:

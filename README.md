@@ -128,6 +128,7 @@ With defaults configured, commands can be shorter:
 ```fish
 scholar-vault import-labs --commit
 scholar-vault import-pdf
+scholar-vault import-pdf --ui
 scholar-vault rerun --commit
 scholar-vault status
 scholar-vault rebuild
@@ -242,8 +243,11 @@ unless you later decide to fetch those papers.
 
 ```fish
 scholar-vault match-staging --ui
-scholar-vault rerun --ui
 ```
+
+In the staging matcher, combine a typed paper title with a chosen PDF path when
+automatic scanning is ambiguous, then click `Import PDF` on the matching run
+result.
 
 6. Resolve metadata, abstract, and keyword issues:
 
@@ -304,7 +308,10 @@ Default Scholar Labs behavior is now selected-only:
 - `import-labs` copies accepted PDFs into `pdfs/`, verifies them, and then archives the matched originals out of staging into `raw/imported/`, leaving only unmatched PDFs in staging.
 - `_indexes/missing-pdfs.md` is an optional candidate discovery backlog, not a maintenance defect list. In the normal workflow it mostly means "Scholar Labs suggested these, but you did not download/import them."
 - `_indexes/unmatched.md` is a historical manifest audit of staged PDFs that were not accepted during specific imports. Rows may repeat across runs and are actionable only when the file still exists in staging and is not already a duplicate of a vault PDF.
-- After committed matches, `import-labs`, `import`, `resume`, and `rerun` run citation, abstract, and PDF keyword enrichment for selected paper cards by default. Use `--no-enrich` when you want a faster import that skips provider lookups.
+- After committed matches or direct PDF imports, `import-labs`, `import`,
+  `import-pdf`, `resume`, and `rerun` run citation, abstract, and PDF keyword
+  enrichment for touched paper cards by default. Use `--no-enrich` when you
+  want a faster import that skips provider lookups.
 - Paper-provided keywords from BibTeX, provider metadata, and local PDF text are stored separately from prompt-derived `topics`. If a paper has no publication keywords or index terms, the follow-up UI can mark that absence explicitly so the card no longer looks unfinished.
 - When a PDF is attached to a canonical card, matching previous run results with the same Scholar CID or exact normalized title are linked to that same card. `rebuild` also repairs missing run/card/PDF links for older stale records.
 - After a successful non-dry-run import, `import-labs` moves the used JSON export into a sibling `used/` folder without renaming it, for example `~/Downloads/scholar-labs-staging/used/example.json`. The run metadata is updated so `resume` and `rerun` still know where the export went.
@@ -313,7 +320,7 @@ Default Scholar Labs behavior is now selected-only:
 - Most commands that accept `--vault`, and commands that accept `--staging`, can use configured defaults when those options are omitted.
 - Import and enrichment commands show terminal progress while scanning PDFs, matching results, querying metadata providers, and rebuilding derived files. Enrichment logs include per-pass attempt/result/skip lines for local DOI/PDF scans and provider lookups.
 - Staged PDF scan results are cached in `.scholar-vault-pdf-scan-cache` inside the staging folder. Repeated imports reuse cached title, DOI, year, text, and hash data when a PDF's size and modification time are unchanged.
-- `match-staging --ui` rows can open the staged PDF directly. Rows already attached to a vault card can also open the card or move the redundant staging copy into `staging/trash/`.
+- `match-staging --ui` can import one chosen leftover PDF into one selected run result. Rows already attached to a vault card can also open the card or move the redundant staging copy into `staging/trash/`.
 
 Run notes are written as `runs/<run_id>/<Short Title.md>` instead of
 `index.md`. This gives Obsidian Graph and the file sidebar meaningful run/prompt
@@ -395,14 +402,32 @@ The first command should return a positive number, and the second should return 
 
 ## Direct PDF Workflow
 
-1. Drop PDFs into `~/Downloads/scholar-labs-staging`.
-2. Run:
+Use this when you found or downloaded a paper yourself and do not have a
+Scholar Labs JSON export or prompt summary.
+
+For the desktop workflow, run:
+
+```fish
+scholar-vault import-pdf --ui
+```
+
+The UI accepts multiple PDFs by drag-and-drop or file picker. It copies the
+PDFs into `pdfs/`, creates or updates canonical `papers/*.md` cards, runs
+citation, abstract, and publication-keyword enrichment by default, then opens a
+follow-up editor for unresolved metadata, missing abstracts, or missing
+keywords. The original downloaded PDFs stay where they are.
+
+For the terminal workflow, drop PDFs into the configured staging folder or pass
+the folder explicitly:
 
 ```fish
 scholar-vault import-pdf --vault ~/Documents/Research/scholar-labs-vault --staging ~/Downloads/scholar-labs-staging
 ```
 
-The importer extracts metadata where possible, renames and moves PDFs into `pdfs/`, creates source cards, and flags incomplete metadata in `_indexes/unmatched.md`.
+Use `--no-enrich` when you only want to copy PDFs and create cards quickly.
+The importer extracts metadata where possible, renames and copies PDFs into
+`pdfs/`, creates source cards, and leaves any unresolved citation, abstract, or
+keyword fields for `scholar-vault enrich --ui`.
 
 ## Other Commands
 
@@ -715,8 +740,8 @@ scholar-vault rerun --vault ~/Documents/Research/scholar-labs-vault --run 2026-0
 ```
 
 If your staging folder has leftover PDFs and you are not sure which Scholar
-Labs run they came from, search all previous run results before choosing a run
-to rerun:
+Labs run requested them, search all previous run results and attach the exact
+PDF to the matching result:
 
 ```fish
 scholar-vault pdf-doctor --vault ~/Documents/Research/scholar-labs-vault --staging ~/Downloads/scholar-labs-staging
@@ -733,15 +758,17 @@ unmatched files in import manifests, and staged files already present in the
 vault by hash. If staging is empty, or every staged PDF is already a vault
 duplicate, the historical unmatched entries do not require more matching work.
 The `match-staging` terminal form is also read-only. It shows the best
-run/result candidates and the `rerun --run ... --ui` command to use when you
-want the normal match-review workflow to import a remaining non-duplicate
-staged PDF. With `--ui`, the staging matcher opens a desktop search window
-where you can scan all staged PDFs, choose a single PDF, or type a title;
-clicking `Rerun` starts the normal reviewed import workflow for that run. If a
-GUI import finishes with PDFs still in staging, the run report offers the same
-leftover-PDF search directly. Once a PDF is accepted for a paper card, other
-previous runs that mention the same Scholar CID or normalized title are updated
-to point at the attached card.
+run/result candidates. With `--ui`, the staging matcher opens a desktop search
+window where you can scan all staged PDFs, choose a single PDF, type a title,
+or combine a typed title with a chosen PDF path. In that combined mode, the
+title searches previous Scholar Labs run results and the PDF path is the file
+to import. Click `Import PDF` on the correct row to create/update the paper
+card, copy the PDF into `pdfs/`, archive the staging original after verifying
+the copy, update the run manifest, and run citation, abstract, and keyword
+enrichment for the touched card. If a GUI import finishes with PDFs still in
+staging, the run report offers the same leftover-PDF search directly. Once a
+PDF is accepted for a paper card, other previous runs that mention the same
+Scholar CID or normalized title are updated to point at the attached card.
 
 If a selected paper already has a PDF but you later download a better
 publisher/full-text version into staging, `import-labs`, `resume`, and `rerun`

@@ -19,6 +19,7 @@ from scholar_vault.importer import (
     import_bibtex,
     import_pdf_dropins,
     import_scholar_labs_run,
+    import_staged_pdf_match,
     initialize_vault,
     latest_run_id,
     notes_missing,
@@ -1686,6 +1687,105 @@ def test_find_staged_run_matches_accepts_typed_title_query(tmp_path: Path) -> No
     assert summary["matches"][0]["score"] >= 90
 
 
+def test_find_staged_run_matches_uses_title_to_search_and_pdf_to_import(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    export = tmp_path / "run.json"
+    title = "Focus Glue Context: An Improved Fisheye Approach for Web Map Services"
+    staging.mkdir()
+    _rewrite_export(
+        _write_export(export, 1, title="Residual PDF Search"),
+        result_updates={"title": title},
+    )
+    import_scholar_labs_run(vault, export, staging, commit=True)
+    pdf_path = staging / "1653771.1653788.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    def fake_build(path: Path) -> PdfCandidate:
+        return PdfCandidate(
+            path=str(path),
+            title="Focus+Glue+Context: an improved fisheye approach for web map services",
+            text_excerpt=title,
+            sha256="sha-focus",
+            size=path.stat().st_size,
+        )
+
+    monkeypatch.setattr("scholar_vault.importer.build_pdf_candidate", fake_build)
+
+    summary = find_staged_run_matches(
+        vault,
+        staging,
+        title=title,
+        pdf_path=pdf_path,
+        min_score=90,
+    )
+
+    assert summary["staged_pdfs_scanned"] == 1
+    assert summary["matches"][0]["reason"] == "typed-title+pdf"
+    assert summary["matches"][0]["pdf_path"] == str(pdf_path.resolve())
+    assert summary["matches"][0]["pdf_title"].startswith("Focus+Glue+Context")
+    assert summary["matches"][0]["summary"]
+
+
+def test_import_staged_pdf_match_attaches_one_pdf_to_one_run_result(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    export = tmp_path / "run.json"
+    title = "Focus Glue Context: An Improved Fisheye Approach for Web Map Services"
+    staging.mkdir()
+    _rewrite_export(
+        _write_export(export, 1, title="Residual PDF Search"),
+        result_updates={"title": title},
+    )
+    run_summary = import_scholar_labs_run(vault, export, staging, commit=True)
+    pdf_path = staging / "1653771.1653788.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n")
+
+    def fake_build(path: Path) -> PdfCandidate:
+        return PdfCandidate(
+            path=str(path),
+            title=title,
+            text_excerpt=f"{title}\nKeywords: web maps, fisheye",
+            sha256=None,
+            size=path.stat().st_size,
+        )
+
+    monkeypatch.setattr("scholar_vault.importer.build_pdf_candidate", fake_build)
+
+    summary = import_staged_pdf_match(
+        vault,
+        run_summary["run"],
+        pdf_path,
+        rank=1,
+        result_title=title,
+        score=100,
+        auto_enrich=False,
+    )
+    run_yaml = _run_yaml(vault, run_summary["run"])
+    manifest = _manifest_yaml(vault, run_summary["run"])
+    cards = load_source_cards(initialize_vault(vault))
+
+    assert summary["decision_summary"]["targeted_import"] is True
+    assert summary["decision_summary"]["new_staged_pdf_matches"] == 1
+    assert summary["archived"] == 1
+    assert not pdf_path.exists()
+    assert run_yaml["results"][0]["status"] == "selected"
+    assert run_yaml["results"][0]["pdf_status"] == "attached"
+    assert run_yaml["results"][0]["paper_card"].startswith("papers/")
+    assert manifest["entries"][0]["decision"] == "accepted"
+    assert manifest["entries"][0]["paper_card"] == run_yaml["results"][0]["paper_card"]
+    assert cards[0].pdf
+    assert (vault / cards[0].pdf).exists()
+    assert cards[0].summary
+    assert "web maps" in cards[0].keywords
+
+
 def test_imported_pdf_syncs_matching_previous_runs(tmp_path: Path, monkeypatch) -> None:
     vault = tmp_path / "vault"
     staging = tmp_path / "staging"
@@ -2042,6 +2142,49 @@ def test_import_pdf_creates_stub_card_and_copies_pdf(tmp_path: Path) -> None:
     assert cards[0].pdf_status == "attached"
     assert cards[0].pdf is not None
     assert (vault / cards[0].pdf).exists()
+
+
+def test_import_pdf_accepts_explicit_files_and_auto_enriches_touched_cards(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from scholar_vault import importer
+
+    vault = tmp_path / "vault"
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    initialize_vault(vault)
+    pdf_path = downloads / "direct-paper.pdf"
+    _write_pdf_with_title(pdf_path, "Direct Paper Import")
+    calls: list[tuple[str, bool, list[str]]] = []
+
+    def fake_enrich_cards(_paths, cards, options, **_kwargs):
+        calls.append((options.only, options.abstracts, [card.slug for card in cards]))
+        status = (
+            "resolved"
+            if options.abstracts or options.only == "missing-keywords"
+            else "verified"
+        )
+        return [
+            EnrichmentResult(card.citekey or card.slug, status, "ok", changed=True)
+            for card in cards
+        ]
+
+    monkeypatch.setattr(importer, "enrich_cards", fake_enrich_cards)
+
+    summary = import_pdf_dropins(vault, pdf_paths=[pdf_path], auto_enrich=True)
+
+    assert summary["imported"] == 1
+    assert summary["created"] == 1
+    assert summary["citation_enrichment"]["processed"] == 1
+    assert summary["abstract_enrichment"]["processed"] == 1
+    assert summary["keyword_enrichment"]["processed"] == 1
+    slug = calls[0][2][0]
+    assert calls == [
+        ("all", False, [slug]),
+        ("all", True, [slug]),
+        ("missing-keywords", False, [slug]),
+    ]
 
 
 def test_import_bibtex_stores_paper_keywords_separately_from_topics(tmp_path: Path) -> None:

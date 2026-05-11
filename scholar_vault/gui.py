@@ -903,21 +903,30 @@ def _staging_match_model(summary: dict[str, Any]) -> dict[str, Any]:
         score = int(row.get("score") or 0)
         pdf_label = row.get("pdf_filename") or row.get("query_title") or "(title query)"
         pdf_title = row.get("pdf_title")
+        rationale_points = row.get("rationale_points") or []
+        rationale_text = "; ".join(
+            str(point.get("text") or point.get("label") or "").strip()
+            for point in rationale_points
+            if isinstance(point, dict)
+        )
         rows.append(
             {
                 "run_id": str(row.get("run_id") or ""),
-                "run_title": _clip_text(row.get("run_title") or row.get("run_id"), 90),
+                "run_title": str(row.get("run_title") or row.get("run_id") or ""),
                 "rank": row.get("rank") or "",
+                "scholar_cid": str(row.get("scholar_cid") or ""),
                 "score": score,
                 "score_color": _staging_match_color(score),
-                "result_title": _clip_text(row.get("result_title"), 120),
-                "pdf_label": _clip_text(pdf_label, 90),
+                "result_title": str(row.get("result_title") or ""),
+                "pdf_label": str(pdf_label or ""),
                 "pdf_path": str(row.get("pdf_path") or ""),
-                "pdf_title": _clip_text(pdf_title, 120) if pdf_title else "",
+                "pdf_title": str(pdf_title or ""),
                 "paper_card": str(row.get("paper_card") or ""),
                 "attached": bool(row.get("attached")),
                 "reason": str(row.get("reason") or ""),
                 "decision": str(row.get("decision") or ""),
+                "summary": str(row.get("summary") or ""),
+                "rationale": rationale_text,
                 "state": (
                     f"{row.get('status') or '-'} / {row.get('pdf_status') or '-'}"
                     f"{' / already attached' if row.get('attached') else ''}"
@@ -939,7 +948,6 @@ def _build_staging_match_row(
     row: dict[str, Any],
     choose: Any,
     *,
-    open_pdf: Any,
     open_card: Any,
     remove_pdf: Any,
 ) -> Any:
@@ -964,22 +972,36 @@ def _build_staging_match_row(
     layout.addLayout(score_box, 0)
 
     detail = qt["QVBoxLayout"]()
-    title = qt["QLabel"](row["result_title"])
+    title = qt["QLabel"](_clip_text(row["result_title"], 140))
     title.setWordWrap(True)
     title.setFont(_summary_font(qt, 14, bold=True))
     title.setStyleSheet("color: #f3fff7; border: none;")
     detail.addWidget(title)
-    pdf = qt["QLabel"](f"PDF/query: {row['pdf_label']}")
+    pdf = qt["QLabel"](f"PDF/query: {_clip_text(row['pdf_label'], 110)}")
     pdf.setWordWrap(True)
     pdf.setFont(_summary_font(qt, 10, mono=True))
     pdf.setStyleSheet("color: #8ce7b8; border: none;")
     detail.addWidget(pdf)
     if row["pdf_title"]:
-        inferred = qt["QLabel"](f"PDF title: {row['pdf_title']}")
+        inferred = qt["QLabel"](f"PDF title: {_clip_text(row['pdf_title'], 140)}")
         inferred.setWordWrap(True)
         inferred.setFont(_summary_font(qt, 10))
         inferred.setStyleSheet("color: #baffdc; border: none;")
         detail.addWidget(inferred)
+    if row.get("summary"):
+        summary = qt["QLabel"](f"Scholar Labs summary: {_clip_text(row['summary'], 260)}")
+        summary.setWordWrap(True)
+        summary.setFont(_summary_font(qt, 10))
+        summary.setStyleSheet("color: #d4fbe4; border: none;")
+        summary.setTextInteractionFlags(qt["Qt"].TextInteractionFlag.TextSelectableByMouse)
+        detail.addWidget(summary)
+    if row.get("rationale"):
+        rationale = qt["QLabel"](f"Rationale: {_clip_text(row['rationale'], 220)}")
+        rationale.setWordWrap(True)
+        rationale.setFont(_summary_font(qt, 9))
+        rationale.setStyleSheet("color: #9be7bd; border: none;")
+        rationale.setTextInteractionFlags(qt["Qt"].TextInteractionFlag.TextSelectableByMouse)
+        detail.addWidget(rationale)
     meta = qt["QLabel"](
         f"run: {row['run_title']}  //  rank {row['rank']}  //  "
         f"{row['state']}  //  {row['reason']} {row['decision']}"
@@ -997,22 +1019,27 @@ def _build_staging_match_row(
 
     actions = qt["QVBoxLayout"]()
     actions.setSpacing(8)
-    rerun = qt["QPushButton"]("Rerun")
-    rerun.setMinimumWidth(118)
-    rerun.setMinimumHeight(34)
-    _style_button(rerun, "primary" if row["score"] >= 90 else "neutral")
-    rerun.clicked.connect(lambda _checked=False, run_id=row["run_id"]: choose(run_id))
-    actions.addWidget(rerun)
-
-    if row.get("pdf_path"):
-        open_pdf_button = qt["QPushButton"]("Open PDF")
-        open_pdf_button.setMinimumWidth(118)
-        open_pdf_button.setMinimumHeight(32)
-        _style_button(open_pdf_button, "neutral")
-        open_pdf_button.clicked.connect(
-            lambda _checked=False, selected=row: open_pdf(selected)
-        )
-        actions.addWidget(open_pdf_button)
+    if row.get("attached"):
+        attached = qt["QPushButton"]("Attached")
+        attached.setEnabled(False)
+        attached.setMinimumWidth(118)
+        attached.setMinimumHeight(34)
+        _style_button(attached, "muted")
+        actions.addWidget(attached)
+    elif row.get("pdf_path"):
+        import_button = qt["QPushButton"]("Import PDF")
+        import_button.setMinimumWidth(118)
+        import_button.setMinimumHeight(34)
+        _style_button(import_button, "primary" if row["score"] >= 75 else "neutral")
+        import_button.clicked.connect(lambda _checked=False, selected=row: choose(selected))
+        actions.addWidget(import_button)
+    else:
+        needs_pdf = qt["QPushButton"]("Choose PDF")
+        needs_pdf.setEnabled(False)
+        needs_pdf.setMinimumWidth(118)
+        needs_pdf.setMinimumHeight(34)
+        _style_button(needs_pdf, "muted")
+        actions.addWidget(needs_pdf)
 
     if row.get("attached") and row.get("paper_card"):
         open_card_button = qt["QPushButton"]("Open Card")
@@ -1049,7 +1076,7 @@ def choose_staging_match(
     min_score: int = 60,
     limit: int = 50,
     unselected_only: bool = False,
-    run_callback: Any | None = None,
+    import_callback: Any | None = None,
 ) -> str | None:
     qt = _load_qt_modules(require_fitz=False)
     app = _application(qt)
@@ -1073,8 +1100,8 @@ def choose_staging_match(
     heading.setFont(_summary_font(qt, 30, bold=True))
     heading.setStyleSheet("color: #f3fff7;")
     subheading = qt["QLabel"](
-        "Search previous Scholar Labs runs by staged PDF text, one chosen PDF, or a "
-        "typed title. Rerun opens the normal reviewed import workflow."
+        "Search previous Scholar Labs runs by staged PDF text, one chosen PDF, or a typed "
+        "title. Import PDF attaches the chosen file to that specific run result."
     )
     subheading.setFont(_summary_font(qt, 12))
     subheading.setStyleSheet("color: #8ce7b8;")
@@ -1110,13 +1137,13 @@ def choose_staging_match(
 
     title_field = qt["QLineEdit"]()
     title_field.setText(title or "")
-    title_field.setPlaceholderText("Type a paper title to search previous run results")
+    title_field.setPlaceholderText("Paper title to find in previous Scholar Labs run results")
     controls_layout.addWidget(title_field)
 
     pdf_row = qt["QHBoxLayout"]()
     pdf_field = qt["QLineEdit"]()
     pdf_field.setText(pdf or "")
-    pdf_field.setPlaceholderText("Optional single PDF path; leave empty to scan staging PDFs")
+    pdf_field.setPlaceholderText("PDF path to import for the selected matching result")
     browse = qt["QPushButton"]("Choose PDF")
     clear_pdf = qt["QPushButton"]("Clear")
     _style_button(browse, "neutral")
@@ -1168,11 +1195,17 @@ def choose_staging_match(
     scroll.setWidget(container)
     layout.addWidget(scroll, 1)
 
-    def choose(run_id: str) -> None:
-        selected["run_id"] = run_id
-        status.setText(f"Starting reviewed rerun for {run_id}...")
+    def choose(row: dict[str, Any]) -> None:
+        selected["run_id"] = str(row.get("run_id") or "")
+        pdf_path = str(row.get("pdf_path") or "")
+        if not pdf_path:
+            status.setText("Choose a PDF path before importing this match.")
+            return
+        status.setText(
+            f"Importing {Path(pdf_path).name} for run {selected['run_id']}..."
+        )
         app.processEvents()
-        if run_callback is None:
+        if import_callback is None:
             dialog.accept()
             return
 
@@ -1186,13 +1219,13 @@ def choose_staging_match(
         dialog.hide()
         app.processEvents()
         try:
-            run_callback(run_id)
+            import_callback(row)
         except Exception as exc:  # pragma: no cover - defensive UI error handling
             dialog.show()
             dialog.raise_()
             dialog.activateWindow()
             box = qt["QMessageBox"](dialog)
-            box.setWindowTitle("Reviewed Rerun Failed")
+            box.setWindowTitle("Targeted Import Failed")
             box.setIcon(qt["QMessageBox"].Icon.Warning)
             box.setText(str(exc))
             box.setStandardButtons(qt["QMessageBox"].StandardButton.Ok)
@@ -1208,16 +1241,13 @@ def choose_staging_match(
             cancel.setEnabled(True)
             if pdf_field.text().strip() and not Path(pdf_field.text().strip()).exists():
                 pdf_field.clear()
-            status.setText("Reviewed rerun finished; refreshing leftover matches...")
+            status.setText("Targeted import finished; refreshing leftover matches...")
             if not dialog.isVisible():
                 dialog.show()
             dialog.raise_()
             dialog.activateWindow()
             app.processEvents()
             run_search(clear_query=False)
-
-    def open_row_pdf(row: dict[str, Any]) -> None:
-        _open_path(qt, str(row.get("pdf_path") or ""))
 
     def open_row_card(row: dict[str, Any]) -> None:
         paper_card = str(row.get("paper_card") or "")
@@ -1279,7 +1309,6 @@ def choose_staging_match(
                         qt,
                         row,
                         choose,
-                        open_pdf=open_row_pdf,
                         open_card=open_row_card,
                         remove_pdf=remove_row_pdf,
                     )
@@ -1357,7 +1386,6 @@ def choose_staging_match(
         )
         if chosen:
             pdf_field.setText(chosen)
-            title_field.clear()
 
     browse.clicked.connect(browse_pdf)
     clear_pdf.clicked.connect(lambda _checked=False: pdf_field.clear())
@@ -1367,7 +1395,8 @@ def choose_staging_match(
 
     buttons = qt["QHBoxLayout"]()
     hint = qt["QLabel"](
-        "Esc closes. Rerun opens match review, then returns here for the next leftover PDF."
+        "Esc closes. Import PDF accepts the chosen file for one matched run result, "
+        "then refreshes this queue."
     )
     hint.setFont(_summary_font(qt, 10))
     hint.setStyleSheet("color: #68c792;")
@@ -1381,7 +1410,7 @@ def choose_staging_match(
 
     qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.reject)
     qt["QTimer"].singleShot(0, lambda: run_search(clear_query=False))
-    if run_callback is None:
+    if import_callback is None:
         result = dialog.exec()
     else:
         _exec_modeless_dialog(qt, app, dialog)
@@ -1883,6 +1912,16 @@ def _progress_parts(message: str) -> tuple[str, str, str]:
         return "PROCESSING", "Waiting for the next update", ""
     if text == "Complete":
         return "COMPLETE", "Workflow finished", ""
+    match = re.fullmatch(r"Importing (\d+) PDF files", text)
+    if match:
+        count = match.group(1)
+        return "PDF IMPORT", "Preparing direct PDF ingestion", f"{count} PDFs selected"
+    if text.startswith("Importing PDF "):
+        return (
+            "PDF IMPORT",
+            "Extracting title, DOI, year, keywords, and matching existing cards",
+            text.removeprefix("Importing PDF "),
+        )
     if text.startswith("Reading Scholar Labs export "):
         return (
             "READING EXPORT",
@@ -2577,6 +2616,307 @@ def show_import_summary(
     qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.accept)
     _exec_modeless_dialog(qt, app, dialog)
     return action["value"]
+
+
+def choose_pdf_import_files(
+    vault: Path | str,
+    staging: Path | str | None = None,
+    *,
+    auto_enrich: bool = True,
+) -> dict[str, Any] | None:
+    qt = _load_qt_modules(require_fitz=False)
+    app = _application(qt)
+    dialog = qt["QDialog"]()
+    dialog.setWindowTitle("Scholar Vault PDF Import")
+    dialog.resize(900, 680)
+    dialog.setStyleSheet(_dark_dialog_stylesheet())
+
+    selected: list[Path] = []
+    result: dict[str, Any] | None = None
+
+    layout = qt["QVBoxLayout"](dialog)
+    layout.setContentsMargins(28, 24, 28, 22)
+    layout.setSpacing(14)
+
+    kicker = qt["QLabel"]("SCHOLAR VAULT // PDF IMPORT")
+    kicker.setFont(_summary_font(qt, 12, mono=True, bold=True))
+    kicker.setStyleSheet("color: #69ffad;")
+    layout.addWidget(kicker)
+
+    heading = qt["QLabel"]("DROP PAPERS")
+    heading.setFont(_summary_font(qt, 30, bold=True))
+    heading.setStyleSheet("color: #f3fff7;")
+    layout.addWidget(heading)
+
+    vault_label = qt["QLabel"](f"Vault: {Path(vault).expanduser().resolve()}")
+    vault_label.setWordWrap(True)
+    vault_label.setFont(_summary_font(qt, 11, mono=True))
+    vault_label.setStyleSheet("color: #8ce7b8;")
+    layout.addWidget(vault_label)
+
+    class PdfDropFrame(qt["QFrame"]):
+        def dragEnterEvent(self, event) -> None:  # noqa: N802 - Qt API
+            if _event_pdf_paths(event):
+                event.acceptProposedAction()
+            else:
+                event.ignore()
+
+        def dropEvent(self, event) -> None:  # noqa: N802 - Qt API
+            paths = _event_pdf_paths(event)
+            if paths:
+                add_paths(paths)
+                event.acceptProposedAction()
+            else:
+                event.ignore()
+
+    drop = PdfDropFrame()
+    drop.setAcceptDrops(True)
+    drop.setMinimumHeight(150)
+    drop.setStyleSheet(
+        "QFrame { background: #07100b; border: 2px dashed #45ffb0; }"
+        "QLabel { border: none; }"
+    )
+    drop_layout = qt["QVBoxLayout"](drop)
+    drop_layout.setContentsMargins(18, 18, 18, 18)
+    drop_label = qt["QLabel"]("Drop one or more PDF files here")
+    drop_label.setAlignment(qt["Qt"].AlignmentFlag.AlignCenter)
+    drop_label.setFont(_summary_font(qt, 20, bold=True))
+    drop_label.setStyleSheet("color: #f3fff7;")
+    drop_layout.addWidget(drop_label, 1)
+    drop_hint = qt["QLabel"]("The originals stay where they are; vault copies are created.")
+    drop_hint.setAlignment(qt["Qt"].AlignmentFlag.AlignCenter)
+    drop_hint.setFont(_summary_font(qt, 11))
+    drop_hint.setStyleSheet("color: #8ce7b8;")
+    drop_layout.addWidget(drop_hint)
+    layout.addWidget(drop)
+
+    selected_label = qt["QLabel"]("SELECTED PDFS")
+    selected_label.setFont(_summary_font(qt, 10, mono=True, bold=True))
+    selected_label.setStyleSheet("color: #69ffad;")
+    layout.addWidget(selected_label)
+
+    selected_list = qt["QTextEdit"]()
+    selected_list.setReadOnly(True)
+    selected_list.setMinimumHeight(150)
+    selected_list.setFont(_summary_font(qt, 10, mono=True))
+    selected_list.setStyleSheet(
+        "QTextEdit { color: #d7ffe8; background: #00120b; border: 1px solid #006b45; "
+        "padding: 10px; }"
+    )
+    layout.addWidget(selected_list, 1)
+
+    option_row = qt["QHBoxLayout"]()
+    enrich_box = qt["QCheckBox"]("Run automatic citation, abstract, and keyword enrichment")
+    enrich_box.setChecked(auto_enrich)
+    enrich_box.setFont(_summary_font(qt, 11))
+    option_row.addWidget(enrich_box, 1)
+    followup_box = qt["QCheckBox"]("Open follow-up editor for unresolved fields")
+    followup_box.setChecked(True)
+    followup_box.setFont(_summary_font(qt, 11))
+    option_row.addWidget(followup_box, 1)
+    layout.addLayout(option_row)
+
+    action_row = qt["QHBoxLayout"]()
+    add_button = qt["QPushButton"]("Choose PDFs")
+    staging_button = qt["QPushButton"]("Add Staging PDFs")
+    clear_button = qt["QPushButton"]("Clear")
+    for button, tone in [
+        (add_button, "primary"),
+        (staging_button, "neutral"),
+        (clear_button, "muted"),
+    ]:
+        _style_button(button, tone)
+        action_row.addWidget(button)
+    action_row.addStretch(1)
+    layout.addLayout(action_row)
+
+    buttons = qt["QDialogButtonBox"](
+        qt["QDialogButtonBox"].StandardButton.Ok
+        | qt["QDialogButtonBox"].StandardButton.Cancel
+    )
+    ok_button = buttons.button(qt["QDialogButtonBox"].StandardButton.Ok)
+    if ok_button is not None:
+        ok_button.setText("Import & Enrich" if enrich_box.isChecked() else "Import PDFs")
+        _style_button(ok_button, "success")
+        ok_button.setEnabled(False)
+    cancel_button = buttons.button(qt["QDialogButtonBox"].StandardButton.Cancel)
+    if cancel_button is not None:
+        _style_button(cancel_button, "muted")
+    layout.addWidget(buttons)
+
+    staging_path = Path(staging).expanduser().resolve() if staging else None
+    staging_button.setEnabled(bool(staging_path and staging_path.is_dir()))
+
+    def _event_pdf_paths(event) -> list[Path]:
+        mime = event.mimeData()
+        if not mime.hasUrls():
+            return []
+        paths: list[Path] = []
+        for url in mime.urls():
+            if url.isLocalFile():
+                path = Path(url.toLocalFile()).expanduser().resolve()
+                if path.is_file() and path.suffix.casefold() == ".pdf":
+                    paths.append(path)
+        return paths
+
+    def render_selected() -> None:
+        if not selected:
+            selected_list.setPlainText("No PDFs selected yet.")
+            drop_label.setText("Drop one or more PDF files here")
+        else:
+            selected_list.setPlainText(
+                "\n".join(f"{index:02d}. {path}" for index, path in enumerate(selected, 1))
+            )
+            noun = "PDF" if len(selected) == 1 else "PDFs"
+            drop_label.setText(f"{len(selected)} {noun} ready to import")
+        if ok_button is not None:
+            ok_button.setEnabled(bool(selected))
+
+    def add_paths(paths: list[Path]) -> None:
+        existing = {path for path in selected}
+        for path in paths:
+            if path not in existing:
+                selected.append(path)
+                existing.add(path)
+        selected.sort(key=lambda path: path.name.casefold())
+        render_selected()
+
+    def choose_files() -> None:
+        start_dir = str(staging_path or Path.home())
+        files, _selected_filter = qt["QFileDialog"].getOpenFileNames(
+            dialog,
+            "Choose PDF Files",
+            start_dir,
+            "PDF files (*.pdf)",
+        )
+        add_paths([Path(file).expanduser().resolve() for file in files])
+
+    def add_staging() -> None:
+        if staging_path and staging_path.is_dir():
+            add_paths(sorted(staging_path.glob("*.pdf")))
+
+    def clear() -> None:
+        selected.clear()
+        render_selected()
+
+    def accept() -> None:
+        nonlocal result
+        if not selected:
+            box = qt["QMessageBox"](dialog)
+            box.setWindowTitle("No PDFs Selected")
+            box.setText("Drop or choose at least one PDF before importing.")
+            box.setStandardButtons(qt["QMessageBox"].StandardButton.Ok)
+            _style_message_box(qt, box)
+            box.exec()
+            return
+        result = {
+            "pdfs": [str(path) for path in selected],
+            "auto_enrich": enrich_box.isChecked(),
+            "open_followup": followup_box.isChecked(),
+        }
+        dialog.accept()
+
+    def update_ok_label() -> None:
+        if ok_button is not None:
+            ok_button.setText("Import & Enrich" if enrich_box.isChecked() else "Import PDFs")
+
+    add_button.clicked.connect(choose_files)
+    staging_button.clicked.connect(add_staging)
+    clear_button.clicked.connect(clear)
+    enrich_box.toggled.connect(update_ok_label)
+    buttons.accepted.connect(accept)
+    buttons.rejected.connect(dialog.reject)
+    qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.reject)
+    render_selected()
+    dialog.exec()
+    app.processEvents()
+    return result
+
+
+def show_pdf_import_summary(
+    summary: dict[str, Any],
+    lines: list[str],
+    *,
+    followup_pending: bool = False,
+) -> bool:
+    qt = _load_qt_modules(require_fitz=False)
+    app = _application(qt)
+    dialog = qt["QDialog"]()
+    dialog.setWindowTitle("Scholar Vault PDF Import Summary")
+    dialog.resize(920, 620)
+    dialog.setStyleSheet(_dark_dialog_stylesheet())
+
+    layout = qt["QVBoxLayout"](dialog)
+    layout.setContentsMargins(28, 24, 28, 22)
+    layout.setSpacing(14)
+
+    kicker = qt["QLabel"]("SCHOLAR VAULT // PDF IMPORT")
+    kicker.setFont(_summary_font(qt, 12, mono=True, bold=True))
+    kicker.setStyleSheet("color: #69ffad;")
+    layout.addWidget(kicker)
+
+    heading = qt["QLabel"]("IMPORT REPORT")
+    heading.setFont(_summary_font(qt, 30, bold=True))
+    heading.setStyleSheet("color: #f3fff7;")
+    layout.addWidget(heading)
+
+    metrics = qt["QGridLayout"]()
+    metric_rows = [
+        {
+            "label": "PDFS",
+            "value": int(summary.get("imported") or 0),
+            "detail": "imported or matched",
+            "color": "#45ffb0",
+        },
+        {
+            "label": "NEW CARDS",
+            "value": int(summary.get("created") or 0),
+            "detail": "created",
+            "color": "#8bffd0",
+        },
+        {
+            "label": "EXISTING",
+            "value": int(summary.get("updated_existing") or 0),
+            "detail": "matched",
+            "color": "#8ce7b8",
+        },
+        {
+            "label": "FOLLOW-UP",
+            "value": _pending_issue_count(list(summary.get("details") or [])),
+            "detail": "issues",
+            "color": "#ff3b4f" if followup_pending else "#45ffb0",
+        },
+    ]
+    for index, metric in enumerate(metric_rows):
+        metrics.addWidget(_summary_metric_card(qt, metric), index // 2, index % 2)
+    layout.addLayout(metrics)
+
+    log = qt["QLabel"]("\n".join(lines))
+    log.setWordWrap(True)
+    log.setFont(_summary_font(qt, 10, mono=True))
+    log.setTextInteractionFlags(qt["Qt"].TextInteractionFlag.TextSelectableByMouse)
+    log.setStyleSheet(
+        "QLabel { color: #8ce7b8; background: #07100b; "
+        "border: 1px solid #26553b; padding: 10px; }"
+    )
+    layout.addWidget(log, 1)
+
+    action = {"followup": False}
+    buttons = qt["QDialogButtonBox"](qt["QDialogButtonBox"].StandardButton.Ok)
+    ok_button = buttons.button(qt["QDialogButtonBox"].StandardButton.Ok)
+    if ok_button is not None:
+        ok_button.setText("Open Follow-Up Issues" if followup_pending else "Close Report")
+        _style_button(ok_button, "primary" if followup_pending else "neutral")
+
+    def accept() -> None:
+        action["followup"] = followup_pending
+        dialog.accept()
+
+    buttons.accepted.connect(accept)
+    layout.addWidget(buttons)
+    qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.accept)
+    _exec_modeless_dialog(qt, app, dialog)
+    return bool(action["followup"])
 
 
 def _summary_font(qt: dict[str, Any], size: int, *, mono: bool = False, bold: bool = False):
