@@ -1582,12 +1582,12 @@ def _print_project_list(summary: dict[str, Any]) -> None:
 
 def _print_project_scaffold(summary: dict[str, Any]) -> None:
     console.print(f"Project scaffold: {summary.get('project')} [{summary.get('state')}]")
-    rebuild = summary.get("rebuild") or {}
-    if rebuild:
+    refresh = summary.get("refresh") or summary.get("rebuild") or {}
+    if refresh:
         console.print(
-            "- Rebuilt derived outputs: "
-            f"{rebuild.get('index_files_written')} indexes, "
-            f"{rebuild.get('llm_files_written')} LLM files."
+            "- Refreshed project navigation: "
+            f"{refresh.get('index_files_written')} index, "
+            f"{refresh.get('llm_files_written')} LLM files."
         )
 
 
@@ -2541,35 +2541,19 @@ def import_labs_command(
     title: TitleArg = None,
     ui: UiArg = False,
 ) -> None:
-    review_match = _match_reviewer(ui) if not dry_run and not commit else None
-    confirm = _confirm_callback(ui)
-    progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
-    resolved_vault = _resolve_vault(vault)
-    resolved_staging = _resolve_staging(staging)
-    resolved_export = _resolve_latest_export(export, fallback_dir=resolved_staging)
-    resolved_title = _resolve_import_title(title, resolved_export, ui=ui)
-    summary = _with_progress(
-        "Importing Scholar Labs run",
-        lambda report: import_scholar_labs_run(
-            resolved_vault,
-            resolved_export,
-            resolved_staging,
-            dry_run=dry_run,
-            commit=commit,
-            include_without_pdf=include_without_pdf,
-            archive_matched=True,
-            archive_export=archive_export,
-            auto_enrich=auto_enrich,
-            upgrade_pdfs=upgrade_pdfs,
-            title=resolved_title,
-            confirm=confirm,
-            review_match=review_match,
-            progress=report,
-        ),
-        interactive=review_match is not None,
-        gui_progress=progress_ui,
+    _run_import_labs_workflow(
+        vault=vault,
+        export=export,
+        staging=staging,
+        dry_run=dry_run,
+        commit=commit,
+        include_without_pdf=include_without_pdf,
+        auto_enrich=auto_enrich,
+        upgrade_pdfs=upgrade_pdfs,
+        archive_export=archive_export,
+        title=title,
+        ui=ui,
     )
-    _finish_import_workflow(summary, ui=ui, progress_ui=progress_ui)
 
 
 @app.command("import")
@@ -2585,6 +2569,35 @@ def import_alias_command(
     archive_export: ArchiveExportArg = True,
     title: TitleArg = None,
     ui: UiArg = False,
+) -> None:
+    _run_import_labs_workflow(
+        vault=vault,
+        export=export,
+        staging=staging,
+        dry_run=dry_run,
+        commit=commit,
+        include_without_pdf=include_without_pdf,
+        auto_enrich=auto_enrich,
+        upgrade_pdfs=upgrade_pdfs,
+        archive_export=archive_export,
+        title=title,
+        ui=ui,
+    )
+
+
+def _run_import_labs_workflow(
+    *,
+    vault: Path | None,
+    export: Path | None,
+    staging: Path | None,
+    dry_run: bool,
+    commit: bool,
+    include_without_pdf: bool,
+    auto_enrich: bool,
+    upgrade_pdfs: bool,
+    archive_export: bool,
+    title: str | None,
+    ui: bool,
 ) -> None:
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
     confirm = _confirm_callback(ui)
@@ -3352,28 +3365,15 @@ def rerun_command(
     upgrade_pdfs: UpgradePdfsArg = True,
     ui: UiArg = False,
 ) -> None:
-    resolved_vault = _resolve_vault(vault)
-    run_id = _select_rerun_run_id(resolved_vault, run, ui=ui)
-    review_match = _match_reviewer(ui) if not dry_run and not commit else None
-    confirm = _confirm_callback(ui)
-    progress_ui = _make_gui_progress(ui and not dry_run, "Scholar Vault Import")
-    summary = _with_progress(
-        f"Rerunning {run_id}",
-        lambda report: resume_run(
-            resolved_vault,
-            run_id,
-            dry_run=dry_run,
-            commit=commit,
-            auto_enrich=auto_enrich,
-            upgrade_pdfs=upgrade_pdfs,
-            confirm=confirm,
-            review_match=review_match,
-            progress=report,
-        ),
-        interactive=review_match is not None,
-        gui_progress=progress_ui,
+    _run_rerun_workflow(
+        vault=vault,
+        run=run,
+        dry_run=dry_run,
+        commit=commit,
+        auto_enrich=auto_enrich,
+        upgrade_pdfs=upgrade_pdfs,
+        ui=ui,
     )
-    _finish_import_workflow(summary, ui=ui, progress_ui=progress_ui)
 
 
 @app.command("re-run")
@@ -3385,6 +3385,27 @@ def re_run_command(
     auto_enrich: AutoEnrichArg = True,
     upgrade_pdfs: UpgradePdfsArg = True,
     ui: UiArg = False,
+) -> None:
+    _run_rerun_workflow(
+        vault=vault,
+        run=run,
+        dry_run=dry_run,
+        commit=commit,
+        auto_enrich=auto_enrich,
+        upgrade_pdfs=upgrade_pdfs,
+        ui=ui,
+    )
+
+
+def _run_rerun_workflow(
+    *,
+    vault: Path | None,
+    run: str | None,
+    dry_run: bool,
+    commit: bool,
+    auto_enrich: bool,
+    upgrade_pdfs: bool,
+    ui: bool,
 ) -> None:
     resolved_vault = _resolve_vault(vault)
     run_id = _select_rerun_run_id(resolved_vault, run, ui=ui)

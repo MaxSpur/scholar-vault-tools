@@ -40,6 +40,15 @@
 - No linked tasks yet.
 {% endif %}
 
+## Linked proposals
+{% if project.related_proposals %}
+{% for proposal in project.related_proposals -%}
+- [{{ proposal }}](../../{{ proposal }})
+{% endfor %}
+{% else %}
+- No linked proposals yet.
+{% endif %}
+
 ## Outputs
 {% if project.outputs %}
 {% for output in project.outputs -%}

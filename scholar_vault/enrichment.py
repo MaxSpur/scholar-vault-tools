@@ -14,6 +14,7 @@ from .citations import (
     card_fingerprint,
     refresh_metadata_completeness,
 )
+from .citations import enrich_cards as enrich_source_cards
 from .models import SourceCard
 from .rebuild import _rebuild_indexes
 from .render import render_paper_markdown
@@ -66,9 +67,7 @@ def _save_card(paths: VaultPaths, card: SourceCard) -> None:
 
 
 def enrich_cards(paths: VaultPaths, cards: list[SourceCard], options: EnrichmentOptions, **kwargs):
-    from . import importer
-
-    return importer.enrich_cards(paths, cards, options, **kwargs)
+    return enrich_source_cards(paths, cards, options, **kwargs)
 
 
 def _enrichment_progress_message(

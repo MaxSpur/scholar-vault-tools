@@ -54,6 +54,16 @@ No linked papers.
 - No linked runs.
 {% endif %}
 
+## Linked proposals
+
+{% if map.proposals %}
+{% for proposal in map.proposals -%}
+- [{{ proposal.title }}](../../{{ proposal.path }}){% if not proposal.exists %} (missing){% endif %}
+{% endfor %}
+{% else %}
+- No linked proposals.
+{% endif %}
+
 ## Gaps
 
 {% if map.gaps %}

@@ -78,7 +78,6 @@ def _write_pdf_with_title(path: Path, title: str) -> None:
 
 
 def test_enrich_vault_runs_all_enrichment_queues_by_default(tmp_path, monkeypatch) -> None:
-    from scholar_vault import importer
     from scholar_vault.importer import _save_card  # noqa: PLC0415
 
     vault = tmp_path / "vault"
@@ -102,7 +101,7 @@ def test_enrich_vault_runs_all_enrichment_queues_by_default(tmp_path, monkeypatc
             for card in cards
         ]
 
-    monkeypatch.setattr(importer, "enrich_cards", fake_enrich_cards)
+    monkeypatch.setattr("scholar_vault.enrichment.enrich_cards", fake_enrich_cards)
 
     summary = enrich_vault(vault, refresh=True, refresh_abstracts=True, dry_run=True)
 
@@ -117,7 +116,6 @@ def test_enrich_vault_runs_all_enrichment_queues_by_default(tmp_path, monkeypatc
 
 
 def test_enrich_vault_only_filters_to_keyword_queue(tmp_path, monkeypatch) -> None:
-    from scholar_vault import importer
     from scholar_vault.importer import _save_card  # noqa: PLC0415
 
     vault = tmp_path / "vault"
@@ -137,7 +135,7 @@ def test_enrich_vault_only_filters_to_keyword_queue(tmp_path, monkeypatch) -> No
             for card in cards
         ]
 
-    monkeypatch.setattr(importer, "enrich_cards", fake_enrich_cards)
+    monkeypatch.setattr("scholar_vault.enrichment.enrich_cards", fake_enrich_cards)
 
     summary = enrich_vault(vault, citekey="source", only="missing-keywords", dry_run=True)
 
@@ -990,9 +988,33 @@ def test_project_scaffold_creates_valid_workspace(tmp_path: Path) -> None:
     assert frontmatter["slug"] == "map-lens-deformation"
     assert frontmatter["status"] == "active"
     assert frontmatter["related_papers"] == []
+    assert frontmatter["related_proposals"] == []
     assert "## Goal" in body
     assert "## Linked sources" in body
     assert "[Map Lens Deformation](../projects/map-lens-deformation/index.md)" in projects_index
+
+
+def test_project_scaffold_and_link_do_not_rewrite_paper_cards(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    paper = SourceCard(
+        slug="side-effect-paper",
+        citekey="SideEffect2026",
+        title="Side Effect Paper",
+    )
+    paper_path = paths.papers / "side-effect-paper.md"
+    original_text = (
+        f"---\n{dump_frontmatter(paper.frontmatter()).strip()}\n---\n\n"
+        "# Side Effect Paper\n\n"
+        "## Notes\n\n"
+        "Custom body that should not be normalized by project commands.\n"
+    )
+    paper_path.write_text(original_text, encoding="utf-8")
+
+    project_scaffold(vault, "map-lens-deformation")
+    project_link_paper(vault, "map-lens-deformation", "SideEffect2026")
+
+    assert paper_path.read_text(encoding="utf-8") == original_text
 
 
 def test_project_link_paper_is_idempotent(tmp_path: Path) -> None:
@@ -1093,6 +1115,34 @@ def test_project_map_renders_linked_records(tmp_path: Path) -> None:
     assert "Flow Task" in text
 
 
+def test_project_map_renders_related_proposals(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    proposal = paths.proposals / "pepr-mobidec"
+    proposal.mkdir(parents=True)
+    (proposal / "index.md").write_text(
+        "---\ntype: proposal\ntitle: PEPR Mobidec\n---\n\n# PEPR Mobidec\n",
+        encoding="utf-8",
+    )
+    project_scaffold(vault, "map-lens-deformation")
+    project_path = paths.projects / "map-lens-deformation" / "index.md"
+    frontmatter, body = read_frontmatter_markdown(project_path)
+    frontmatter["related_proposals"] = ["proposals/pepr-mobidec"]
+    project_path.write_text(
+        f"---\n{dump_frontmatter(frontmatter).strip()}\n---\n\n{body}",
+        encoding="utf-8",
+    )
+
+    project_map(vault, "map-lens-deformation")
+    text = (paths.projects / "map-lens-deformation" / "project-map.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "## Linked proposals" in text
+    assert "PEPR Mobidec" in text
+    assert "../../proposals/pepr-mobidec" in text
+
+
 def test_project_audit_detects_missing_linked_paper(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     paths = initialize_vault(vault)
@@ -1111,6 +1161,27 @@ def test_project_audit_detects_missing_linked_paper(tmp_path: Path) -> None:
     assert summary["ok"] is False
     assert summary["issue_counts"]["missing_linked_papers"] == 1
     assert summary["issues"]["missing_linked_papers"][0]["paper"] == "papers/missing.md"
+
+
+def test_project_audit_detects_missing_related_proposal(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    project_scaffold(vault, "map-lens-deformation")
+    project_path = paths.projects / "map-lens-deformation" / "index.md"
+    frontmatter, body = read_frontmatter_markdown(project_path)
+    frontmatter["related_proposals"] = ["proposals/missing-proposal"]
+    project_path.write_text(
+        f"---\n{dump_frontmatter(frontmatter).strip()}\n---\n\n{body}",
+        encoding="utf-8",
+    )
+
+    summary = project_audit(vault, "map-lens-deformation")
+
+    assert summary["ok"] is False
+    assert summary["issue_counts"]["missing_linked_proposals"] == 1
+    assert summary["issues"]["missing_linked_proposals"][0]["target"] == (
+        "proposals/missing-proposal"
+    )
 
 
 def test_maintenance_report_writes_index_and_task(tmp_path: Path) -> None:

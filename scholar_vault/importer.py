@@ -504,13 +504,6 @@ def _write_log(paths: VaultPaths, command: str, entries: list[ImportLogEntry]) -
     )
 
 
-def _read_run_yaml(path: Path) -> RunRecord:
-    import yaml
-
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return RunRecord.model_validate(data)
-
-
 def _load_run_record(paths: VaultPaths, run_id: str) -> RunRecord | None:
     for run in load_run_records(paths):
         if run.slug == run_id:

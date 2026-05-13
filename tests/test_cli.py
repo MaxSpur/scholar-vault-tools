@@ -1242,20 +1242,21 @@ def test_rerun_checks_for_pdf_upgrades_by_default(tmp_path, monkeypatch) -> None
         lambda *_args, **_kwargs: None,
     )
 
-    result = CliRunner().invoke(
-        app,
-        [
-            "rerun",
-            "--vault",
-            str(vault),
-            "--run",
-            "2026-04-22_example-run",
-            "--dry-run",
-        ],
-    )
+    for command in ("rerun", "re-run"):
+        result = CliRunner().invoke(
+            app,
+            [
+                command,
+                "--vault",
+                str(vault),
+                "--run",
+                "2026-04-22_example-run",
+                "--dry-run",
+            ],
+        )
 
-    assert result.exit_code == 0
-    assert calls[0]["upgrade_pdfs"] is True
+        assert result.exit_code == 0
+    assert [call["upgrade_pdfs"] for call in calls] == [True, True]
 
 
 def test_rerun_can_keep_existing_pdfs(tmp_path, monkeypatch) -> None:
@@ -1273,21 +1274,22 @@ def test_rerun_can_keep_existing_pdfs(tmp_path, monkeypatch) -> None:
         lambda *_args, **_kwargs: None,
     )
 
-    result = CliRunner().invoke(
-        app,
-        [
-            "rerun",
-            "--vault",
-            str(vault),
-            "--run",
-            "2026-04-22_example-run",
-            "--dry-run",
-            "--keep-existing-pdfs",
-        ],
-    )
+    for command in ("rerun", "re-run"):
+        result = CliRunner().invoke(
+            app,
+            [
+                command,
+                "--vault",
+                str(vault),
+                "--run",
+                "2026-04-22_example-run",
+                "--dry-run",
+                "--keep-existing-pdfs",
+            ],
+        )
 
-    assert result.exit_code == 0
-    assert calls[0]["upgrade_pdfs"] is False
+        assert result.exit_code == 0
+    assert [call["upgrade_pdfs"] for call in calls] == [False, False]
 
 
 def test_match_staging_ui_imports_selected_pdf_match(tmp_path, monkeypatch) -> None:
@@ -1362,23 +1364,27 @@ def test_import_labs_checks_for_pdf_upgrades_by_default(tmp_path, monkeypatch) -
         lambda *_args, **_kwargs: None,
     )
 
-    result = CliRunner().invoke(
-        app,
-        [
-            "import-labs",
-            "--vault",
-            str(vault),
-            "--staging",
-            str(staging),
-            "--export",
-            str(export),
-            "--dry-run",
-        ],
-    )
+    for command in ("import-labs", "import"):
+        result = CliRunner().invoke(
+            app,
+            [
+                command,
+                "--vault",
+                str(vault),
+                "--staging",
+                str(staging),
+                "--export",
+                str(export),
+                "--dry-run",
+            ],
+        )
 
-    assert result.exit_code == 0
-    assert calls[0]["upgrade_pdfs"] is True
-    assert calls[0]["title"] == "CLI Export Title"
+        assert result.exit_code == 0
+    assert [call["upgrade_pdfs"] for call in calls] == [True, True]
+    assert [call["archive_matched"] for call in calls] == [True, True]
+    assert [call["archive_export"] for call in calls] == [True, True]
+    assert [call["auto_enrich"] for call in calls] == [True, True]
+    assert [call["title"] for call in calls] == ["CLI Export Title", "CLI Export Title"]
 
 
 def test_import_labs_prompts_for_title_when_export_has_none(tmp_path, monkeypatch) -> None:

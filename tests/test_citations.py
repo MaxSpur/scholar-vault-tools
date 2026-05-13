@@ -1224,7 +1224,7 @@ def test_enrich_citations_returns_itemized_details(tmp_path: Path, monkeypatch) 
         }
         return [results[card.slug] for card in cards_arg]
 
-    monkeypatch.setattr("scholar_vault.importer.enrich_cards", fake_enrich_cards)
+    monkeypatch.setattr("scholar_vault.enrichment.enrich_cards", fake_enrich_cards)
 
     summary = enrich_citations(vault, dry_run=True)
     details = {row["citekey"]: row for row in summary["details"]}

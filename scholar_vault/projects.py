@@ -7,23 +7,31 @@ from typing import Any
 
 from .models import RunRecord, SourceCard
 from .obsidian import (
+    ARTIFACT_INDEXES,
     PDF_READING_NOTES_RE,
     _artifact_title,
     _as_string_list,
     _card_has_valid_pdf,
     _card_id,
     _card_ref,
+    _collect_research_artifacts,
     _display_path,
     _extract_markdown_targets,
     _markdown_files,
     _resolve_markdown_target,
 )
-from .rebuild import _rebuild_indexes
-from .render import render_project_map_markdown, render_project_markdown
+from .render import (
+    render_artifact_index,
+    render_llms_full,
+    render_llms_txt,
+    render_project_map_markdown,
+    render_project_markdown,
+)
 from .sources import (
     VaultPaths,
     dump_frontmatter,
     ensure_relative,
+    load_import_manifests,
     load_run_records,
     load_source_cards,
     read_frontmatter_markdown,
@@ -134,6 +142,32 @@ def _write_project_preserving_body(path: Path, project: dict[str, Any], body: st
     write_text(path, f"---\n{dump_frontmatter(project).strip()}\n---\n\n{body.strip()}\n")
 
 
+def _refresh_project_navigation(paths: VaultPaths) -> dict[str, int | bool]:
+    artifacts = _collect_research_artifacts(paths)
+    title, empty_message = ARTIFACT_INDEXES["projects"]
+    write_text(
+        paths.indexes / "projects.md",
+        render_artifact_index(
+            title,
+            artifacts.get("projects") or [],
+            empty_message=empty_message,
+        ),
+    )
+    cards = load_source_cards(paths)
+    runs = load_run_records(paths)
+    manifests = load_import_manifests(paths)
+    write_text(paths.vault / "llms.txt", render_llms_txt())
+    write_text(
+        paths.vault / "llms-full.txt",
+        render_llms_full(cards, runs, manifests, artifacts),
+    )
+    return {
+        "index_files_written": 1,
+        "llm_files_written": 2,
+        "full_rebuild": False,
+    }
+
+
 def _project_list(paths: VaultPaths) -> list[dict[str, Any]]:
     if not paths.projects.exists():
         return []
@@ -193,13 +227,14 @@ def project_scaffold(
             project["updated"] = _now_iso()
             _write_project_preserving_body(project_path, project, body)
             state = "updated"
-    rebuild_summary = _rebuild_indexes(paths)
+    rebuild_summary = _refresh_project_navigation(paths)
     return {
         "vault": str(paths.vault),
         "project": ensure_relative(project_path, paths.vault),
         "slug": normalized_slug,
         "title": _project_title(normalized_slug, title),
         "state": state,
+        "refresh": rebuild_summary,
         "rebuild": rebuild_summary,
     }
 
@@ -293,7 +328,7 @@ def _update_project_link(
         body = _append_project_section_item(body, section, bullet)
     if changed:
         _write_project_preserving_body(project_path, project, body)
-        rebuild_summary = _rebuild_indexes(paths)
+        rebuild_summary = _refresh_project_navigation(paths)
     else:
         rebuild_summary = None
     return {
@@ -302,6 +337,7 @@ def _update_project_link(
         "field": field,
         "ref": ref,
         "changed": changed,
+        "refresh": rebuild_summary,
         "rebuild": rebuild_summary,
     }
 
@@ -396,6 +432,41 @@ def _artifact_row(paths: VaultPaths, ref: str) -> dict[str, Any]:
     }
 
 
+def _proposal_row(paths: VaultPaths, ref: str) -> dict[str, Any]:
+    cleaned = (ref or "").strip().strip("/")
+    candidate = Path(cleaned)
+    if (
+        not cleaned
+        or candidate.is_absolute()
+        or any(part in {"", ".", ".."} for part in candidate.parts)
+        or not candidate.parts
+        or candidate.parts[0] != "proposals"
+    ):
+        return {"path": ref, "title": ref, "exists": False}
+    path = paths.vault / candidate
+    if not path.exists():
+        return {"path": cleaned, "title": cleaned, "exists": False}
+    if path.is_dir():
+        markdown_files = sorted(
+            child for child in path.glob("*.md") if not child.name.startswith(".")
+        )
+        title_path = path / "index.md"
+        if not title_path.exists() and markdown_files:
+            title_path = markdown_files[0]
+        if title_path.exists():
+            frontmatter, body = read_frontmatter_markdown(title_path)
+            title = _artifact_title(title_path, frontmatter, body)
+        else:
+            title = path.name.replace("-", " ").replace("_", " ").title()
+        return {"path": ensure_relative(path, paths.vault), "title": title, "exists": True}
+    if path.suffix.casefold() == ".md":
+        frontmatter, body = read_frontmatter_markdown(path)
+        title = _artifact_title(path, frontmatter, body)
+    else:
+        title = path.name
+    return {"path": ensure_relative(path, paths.vault), "title": title, "exists": True}
+
+
 def _run_row(paths: VaultPaths, run_id: str, runs: list[RunRecord]) -> dict[str, Any]:
     for run in runs:
         if run.slug == run_id:
@@ -457,10 +528,14 @@ def _project_map_data(paths: VaultPaths, project: dict[str, Any]) -> dict[str, A
     ]
     task_rows = [_artifact_row(paths, ref) for ref in project.get("related_tasks") or []]
     run_rows = [_run_row(paths, ref, runs) for ref in project.get("related_runs") or []]
+    proposal_rows = [
+        _proposal_row(paths, ref) for ref in project.get("related_proposals") or []
+    ]
     for label, rows in [
         ("concept", concept_rows),
         ("synthesis", synthesis_rows),
         ("task", task_rows),
+        ("proposal", proposal_rows),
         ("run", run_rows),
     ]:
         for row in rows:
@@ -483,6 +558,7 @@ def _project_map_data(paths: VaultPaths, project: dict[str, Any]) -> dict[str, A
         "syntheses": synthesis_rows,
         "tasks": task_rows,
         "runs": run_rows,
+        "proposals": proposal_rows,
         "gaps": sorted(set(gaps), key=str.casefold),
         "recommended_next_actions": actions,
     }
@@ -538,6 +614,7 @@ def project_audit(vault: Path | str, slug: str) -> dict[str, Any]:
         "missing_linked_concepts": [],
         "missing_linked_syntheses": [],
         "missing_linked_tasks": [],
+        "missing_linked_proposals": [],
         "missing_linked_runs": [],
         "broken_links": [],
         "stale_project_map": [],
@@ -565,6 +642,12 @@ def project_audit(vault: Path | str, slug: str) -> dict[str, Any]:
         for ref in project.get(field) or []:
             if not (paths.vault / ref).exists():
                 issues[key].append(_project_issue("Linked file does not exist", target=ref))
+    for ref in project.get("related_proposals") or []:
+        row = _proposal_row(paths, ref)
+        if not row.get("exists"):
+            issues["missing_linked_proposals"].append(
+                _project_issue("Linked proposal does not exist", target=ref)
+            )
     run_ids = {run.slug for run in load_run_records(paths)}
     for run_id in project.get("related_runs") or []:
         if run_id not in run_ids:
@@ -596,6 +679,7 @@ def project_audit(vault: Path | str, slug: str) -> dict[str, Any]:
             "linked_concepts": len(project.get("related_concepts") or []),
             "linked_syntheses": len(project.get("related_syntheses") or []),
             "linked_tasks": len(project.get("related_tasks") or []),
+            "linked_proposals": len(project.get("related_proposals") or []),
             "linked_runs": len(project.get("related_runs") or []),
         },
         "issue_counts": issue_counts,

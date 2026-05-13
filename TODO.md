@@ -84,6 +84,7 @@
 - [x] Add `import-pdf --ui` for drag-and-drop multi-PDF import with automatic enrichment and follow-up field resolution.
 - [x] Add lightweight `projects/` workspaces with scaffold/link/map/audit commands and generated project indexes.
 - [x] Refactor non-import feature families out of `importer.py` into focused rebuild, diagnostics, dashboard, topic, search, neighbor, maintenance, bibliography, enrichment, project, and proposal modules.
+- [x] Run the post-refactor cleanup pass: remove dead importer run-YAML loading code, collapse duplicated CLI alias bodies into shared helpers, route enrichment through its owning implementation, and make project scaffold/link use focused project navigation refreshes instead of full vault rebuilds.
 
 ## Obsidian usability and vault navigation
 
