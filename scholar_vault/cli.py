@@ -66,6 +66,7 @@ from .projects import (
     project_audit,
     project_link_concept,
     project_link_paper,
+    project_link_proposal,
     project_link_run,
     project_link_synthesis,
     project_link_task,
@@ -574,6 +575,10 @@ ProjectRunIdArg = Annotated[
 ProjectTaskPathArg = Annotated[
     str,
     typer.Argument(help="Task path, with or without the leading tasks/ folder."),
+]
+ProjectProposalPathArg = Annotated[
+    str,
+    typer.Argument(help="Proposal path, with or without the leading proposals/ folder."),
 ]
 ProposalSlugArg = Annotated[
     str,
@@ -3187,6 +3192,20 @@ def project_link_task_command(
     json_output: JsonOutputArg = False,
 ) -> None:
     summary = project_link_task(_resolve_vault(vault), slug, task_path)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_project_link(summary)
+
+
+@project_app.command("link-proposal")
+def project_link_proposal_command(
+    slug: ProjectSlugArg,
+    proposal_path: ProjectProposalPathArg,
+    vault: VaultArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = project_link_proposal(_resolve_vault(vault), slug, proposal_path)
     if json_output:
         _print_json(summary)
     else:

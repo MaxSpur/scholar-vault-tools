@@ -178,8 +178,8 @@ link commands refresh project navigation only; they should not normalize paper
 cards, repair PDFs, or rewrite unrelated run links.
 
 Use `scholar-vault project ui` when a desktop picker is faster for scaffolding
-or updating a project, selecting a paper card, linking it, generating the
-project map, or running the project audit.
+or updating a project, selecting and linking papers, runs, concepts, syntheses,
+tasks, or proposals, generating the project map, or running the project audit.
 
 Project notes may contain goals, plans, and work-specific synthesis, but factual claims should link to paper cards or syntheses.
 

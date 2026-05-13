@@ -3479,6 +3479,12 @@ def project_link_task(vault: Path | str, slug: str, task_path: str) -> dict[str,
     return link_task(vault, slug, task_path)
 
 
+def project_link_proposal(vault: Path | str, slug: str, proposal_path: str) -> dict[str, Any]:
+    from .projects import project_link_proposal as link_proposal
+
+    return link_proposal(vault, slug, proposal_path)
+
+
 def project_map(vault: Path | str, slug: str) -> dict[str, Any]:
     from .projects import project_map as map_project
 

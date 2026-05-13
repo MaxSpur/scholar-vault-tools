@@ -534,6 +534,7 @@ scholar-vault concept-index --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault project ui --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault project scaffold --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation
 scholar-vault project link-paper --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation Schottler2021_GeospatialNetworks
+scholar-vault project link-proposal --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation pepr-mobidec
 scholar-vault project map --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation
 scholar-vault project audit --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation
 scholar-vault proposal-sprint scaffold --vault ~/Documents/Research/scholar-labs-vault pepr-mobidec
@@ -567,17 +568,20 @@ lightweight lens over shared papers, runs, concepts, syntheses, tasks, and
 optional proposals. It does not create a separate vault and it should link to
 paper cards instead of duplicating source content. Use `project link-paper`,
 `project link-concept`, `project link-synthesis`, `project link-run`, and
-`project link-task` to maintain the project frontmatter. `project map <slug>`
-writes `projects/<slug>/project-map.md` with linked paper PDF, metadata, and
-reading-note status plus gaps and next actions. `project audit <slug>` is
-read-only and checks missing linked records, missing PDFs, missing PDF reading
-notes, broken links, and stale project maps.
+`project link-task` to maintain the project frontmatter. Use `project
+link-proposal` for proposal workspace links. `project map <slug>` writes
+`projects/<slug>/project-map.md` with linked paper PDF, metadata, and
+reading-note status, linked proposal paths, gaps, and next actions. `project
+audit <slug>` is read-only and checks missing linked records, missing PDFs,
+missing PDF reading notes, broken links, missing linked proposals, and stale
+project maps.
 
-Use `project ui` for a desktop workflow that lists existing projects and paper
-cards, scaffolds or updates a project, links a selected paper, generates the
-project map, runs the project audit, and opens the project note. `project
-scaffold --ui ...` and `project link-paper --ui ...` open the same UI with the
-project and paper fields prefilled.
+Use `project ui` for a desktop workflow that lists existing projects and linkable
+papers, runs, concepts, syntheses, tasks, and proposals with colored status
+badges. It scaffolds or updates a project, links the selected resource,
+generates the project map, runs the project audit, and opens the project note.
+`project scaffold --ui ...` and `project link-paper --ui ...` open the same UI
+with the project and target fields prefilled.
 
 Use `projects/` for ongoing research workspaces, implementation planning, and
 topic-specific lenses that need to gather shared vault records without copying

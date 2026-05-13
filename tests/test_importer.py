@@ -28,6 +28,7 @@ from scholar_vault.importer import (
     project_audit,
     project_link_concept,
     project_link_paper,
+    project_link_proposal,
     project_link_synthesis,
     project_link_task,
     project_map,
@@ -1147,6 +1148,29 @@ def test_project_map_renders_related_proposals(tmp_path: Path) -> None:
     assert "## Linked proposals" in text
     assert "PEPR Mobidec" in text
     assert "../../proposals/pepr-mobidec" in text
+
+
+def test_project_link_proposal_is_idempotent(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    proposal = paths.proposals / "pepr-mobidec"
+    proposal.mkdir(parents=True)
+    (proposal / "index.md").write_text(
+        "---\ntype: proposal\ntitle: PEPR Mobidec\n---\n\n# PEPR Mobidec\n",
+        encoding="utf-8",
+    )
+    project_scaffold(vault, "map-lens-deformation")
+
+    first = project_link_proposal(vault, "map-lens-deformation", "pepr-mobidec")
+    second = project_link_proposal(vault, "map-lens-deformation", "proposals/pepr-mobidec")
+    frontmatter, body = read_frontmatter_markdown(
+        paths.projects / "map-lens-deformation" / "index.md"
+    )
+
+    assert first["changed"] is True
+    assert second["changed"] is False
+    assert frontmatter["related_proposals"] == ["proposals/pepr-mobidec"]
+    assert body.count("- [proposals/pepr-mobidec](../../proposals/pepr-mobidec)") == 1
 
 
 def test_project_audit_detects_missing_linked_paper(tmp_path: Path) -> None:

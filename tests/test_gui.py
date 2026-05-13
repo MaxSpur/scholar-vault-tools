@@ -60,6 +60,7 @@ def test_project_workspace_model_lists_projects_and_papers(tmp_path: Path) -> No
     from scholar_vault.importer import _save_card, initialize_vault
     from scholar_vault.models import SourceCard
     from scholar_vault.projects import project_scaffold
+    from scholar_vault.sources import write_yaml
 
     vault = tmp_path / "vault"
     paths = initialize_vault(vault)
@@ -71,6 +72,40 @@ def test_project_workspace_model_lists_projects_and_papers(tmp_path: Path) -> No
             title="Geospatial Networks",
         ),
     )
+    (paths.concepts / "map-lenses.md").write_text(
+        "---\ntype: concept\ntitle: Map Lenses\n---\n\n# Map Lenses\n",
+        encoding="utf-8",
+    )
+    (paths.syntheses / "deformation-survey.md").write_text(
+        "---\ntype: synthesis\ntitle: Deformation Survey\n---\n\n# Deformation Survey\n",
+        encoding="utf-8",
+    )
+    (paths.tasks / "read-lenses.md").write_text(
+        "---\ntype: task\ntitle: Read Lenses\n---\n\n# Read Lenses\n",
+        encoding="utf-8",
+    )
+    run_id = "2026-04-22_map-lens-run"
+    write_yaml(
+        paths.runs / run_id / "index.yaml",
+        {
+            "slug": run_id,
+            "date": "2026-04-22",
+            "prompt": "map lens papers",
+            "title": "Map Lens Run",
+            "exported_at": "2026-04-22T10:00:00+02:00",
+            "export_file": "/tmp/export.json",
+            "raw_export_file": "raw/scholar-labs/export.json",
+            "staging_folder": "/tmp/staging",
+            "result_count": 0,
+            "results": [],
+        },
+    )
+    proposal = paths.proposals / "pepr-mobidec"
+    proposal.mkdir(parents=True)
+    (proposal / "index.md").write_text(
+        "---\ntype: proposal\ntitle: PEPR Mobidec\n---\n\n# PEPR Mobidec\n",
+        encoding="utf-8",
+    )
     project_scaffold(vault, "map-lens-deformation")
 
     model = _project_workspace_model(vault)
@@ -78,6 +113,60 @@ def test_project_workspace_model_lists_projects_and_papers(tmp_path: Path) -> No
     assert model["projects"][0]["slug"] == "map-lens-deformation"
     assert model["papers"][0]["key"] == "Schottler2021_GeospatialNetworks"
     assert model["papers"][0]["title"] == "Geospatial Networks"
+    assert model["resources"]["Paper"][0]["target"] == "Schottler2021_GeospatialNetworks"
+    assert model["resources"]["Run"][0]["target"] == run_id
+    assert model["resources"]["Concept"][0]["target"] == "concepts/map-lenses.md"
+    assert model["resources"]["Synthesis"][0]["target"] == "syntheses/deformation-survey.md"
+    assert model["resources"]["Task"][0]["target"] == "tasks/read-lenses.md"
+    assert model["resources"]["Proposal"][0]["target"] == "proposals/pepr-mobidec"
+
+
+def test_project_workspace_rows_have_readable_size_and_compact_badges() -> None:
+    from scholar_vault.gui import (
+        _application,
+        _load_qt_modules,
+        _project_list_item_widget,
+        _project_resource_badges,
+    )
+
+    modules = _load_qt_modules(require_fitz=False)
+    _application(modules)
+    paper_row = {
+        "kind": "Paper",
+        "key": "LongPaperKey",
+        "title": "A very long paper title that must not be vertically squashed",
+        "path": "papers/long-paper.md",
+        "pdf": "attached",
+        "status": "complete",
+    }
+    project_row = {
+        "kind": "Project",
+        "key": "map-lens-deformation",
+        "title": "Map deformation techniques for web tile maps",
+        "path": "projects/map-lens-deformation/index.md",
+    }
+
+    item, _widget = _project_list_item_widget(
+        modules,
+        paper_row,
+        selected_callback=lambda _item: None,
+        row_height=48,
+    )
+    _project_item, project_widget = _project_list_item_widget(
+        modules,
+        project_row,
+        selected_callback=lambda _item: None,
+        show_badges=False,
+        row_height=50,
+    )
+    project_labels = [label.text() for label in project_widget.findChildren(modules["QLabel"])]
+
+    assert item.sizeHint().height() == 48
+    assert _project_resource_badges(paper_row) == [
+        ("PDF", "#45ffb0", "#021007"),
+        ("OK", "#69ffad", "#021007"),
+    ]
+    assert "PROJ" not in project_labels
 
 
 def test_confidence_color_thresholds() -> None:

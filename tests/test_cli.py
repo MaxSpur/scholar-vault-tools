@@ -498,6 +498,12 @@ def test_project_commands_scaffold_list_link_map_and_audit(tmp_path) -> None:
             title="Geospatial Networks",
         ),
     )
+    proposal = paths.proposals / "pepr-mobidec"
+    proposal.mkdir(parents=True)
+    (proposal / "index.md").write_text(
+        "---\ntype: proposal\ntitle: PEPR Mobidec\n---\n\n# PEPR Mobidec\n",
+        encoding="utf-8",
+    )
 
     scaffold = CliRunner().invoke(
         app,
@@ -515,6 +521,18 @@ def test_project_commands_scaffold_list_link_map_and_audit(tmp_path) -> None:
             "--json",
         ],
     )
+    linked_proposal = CliRunner().invoke(
+        app,
+        [
+            "project",
+            "link-proposal",
+            "map-lens-deformation",
+            "pepr-mobidec",
+            "--vault",
+            str(vault),
+            "--json",
+        ],
+    )
     listed = CliRunner().invoke(app, ["project", "list", "--vault", str(vault), "--json"])
     mapped = CliRunner().invoke(
         app,
@@ -527,11 +545,13 @@ def test_project_commands_scaffold_list_link_map_and_audit(tmp_path) -> None:
 
     assert scaffold.exit_code == 0
     assert linked.exit_code == 0
+    assert linked_proposal.exit_code == 0
     assert listed.exit_code == 0
     assert mapped.exit_code == 0
     assert audited.exit_code == 0
     assert json.loads(scaffold.output)["project"] == "projects/map-lens-deformation/index.md"
     assert json.loads(linked.output)["changed"] is True
+    assert json.loads(linked_proposal.output)["ref"] == "proposals/pepr-mobidec"
     assert json.loads(listed.output)["projects"][0]["slug"] == "map-lens-deformation"
     assert json.loads(mapped.output)["project_map"] == (
         "projects/map-lens-deformation/project-map.md"

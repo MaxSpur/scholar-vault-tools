@@ -284,6 +284,31 @@ def _resolve_project_task_ref(paths: VaultPaths, task_path: str) -> str:
     return _normalize_artifact_ref(paths, "tasks", task_path)
 
 
+def _resolve_project_proposal_ref(paths: VaultPaths, proposal_path: str) -> str:
+    raw = (proposal_path or "").strip().strip("/")
+    if not raw:
+        raise ValueError("Proposal reference must not be empty.")
+    if not raw.startswith("proposals/"):
+        raw = f"proposals/{raw}"
+    candidate = Path(raw)
+    if (
+        candidate.is_absolute()
+        or not candidate.parts
+        or candidate.parts[0] != "proposals"
+        or any(part in {"", ".", ".."} for part in candidate.parts)
+    ):
+        raise ValueError("Proposal reference must stay inside proposals/.")
+    path = paths.vault / candidate
+    if path.exists():
+        return ensure_relative(path, paths.vault)
+    if candidate.suffix:
+        raise ValueError(f"Linked proposal does not exist: {candidate}")
+    markdown_path = path.with_suffix(".md")
+    if markdown_path.exists():
+        return ensure_relative(markdown_path, paths.vault)
+    raise ValueError(f"Linked proposal does not exist: {candidate}")
+
+
 def _append_project_section_item(body: str, heading: str, bullet: str) -> str:
     if bullet in body:
         return body
@@ -407,6 +432,19 @@ def project_link_task(vault: Path | str, slug: str, task_path: str) -> dict[str,
         field="related_tasks",
         ref=ref,
         section="Open questions and tasks",
+        bullet=f"- [{ref}](../../{ref})",
+    )
+
+
+def project_link_proposal(vault: Path | str, slug: str, proposal_path: str) -> dict[str, Any]:
+    paths = initialize_vault(vault, rebuild=False)
+    ref = _resolve_project_proposal_ref(paths, proposal_path)
+    return _update_project_link(
+        paths.vault,
+        slug,
+        field="related_proposals",
+        ref=ref,
+        section="Linked proposals",
         bullet=f"- [{ref}](../../{ref})",
     )
 
