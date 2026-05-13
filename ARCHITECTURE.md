@@ -7,7 +7,19 @@
 - `scholar_vault/models.py`: typed records for exports, paper cards, runs, logs, and PDF candidates. Paper cards are the durable metadata/provenance/notes layer; linked PDFs are the canonical evidence artifacts.
 - `scholar_vault/sources.py`: vault path management, slug and citekey utilities, Markdown parsing, and frontmatter helpers.
 - `scholar_vault/matcher.py`: PDF extraction, metadata inference, and fuzzy matching helpers using DOI, extracted title, filename, and compact first-page text evidence.
-- `scholar_vault/importer.py`: end-to-end workflows for `init`, import commands, rebuilds, and derived exports.
+- `scholar_vault/importer.py`: import-focused workflows for `init`, Scholar Labs imports/reruns/resumes, direct PDF/BibTeX/DOI imports, run manifests, staging PDF matching and archive behavior, undo, PDF attachment, manual field corrections, and post-import enrichment coordination. It keeps compatibility wrappers for older imports, but new feature families should not be added here.
+- `scholar_vault/rebuild.py`: derived-view rebuild orchestration. It loads canonical cards/runs/manifests, normalizes generated records, repairs conservative run/card/PDF links, rerenders paper and run Markdown, and coordinates index/export regeneration.
+- `scholar_vault/diagnostics.py`: read-only status/doctor, `pdf-doctor`, and `notes-missing` reports.
+- `scholar_vault/dashboards.py`: generated Markdown dashboards under `_indexes/`, including paper status, reading queue, metadata issues, PDF issues, and synthesis dashboards.
+- `scholar_vault/maintenance.py`: `maintenance-report` composition and generated maintenance task notes.
+- `scholar_vault/topics.py`: topic-map reports, prompt-boilerplate cleanup presets, topic label normalization, and topic frontmatter mutation.
+- `scholar_vault/search_index.py`: `_indexes/search-index.md` generation for plain-text Obsidian/agent search.
+- `scholar_vault/neighbors.py`: deterministic `_exports/semantic-neighbors.json` generation.
+- `scholar_vault/obsidian.py`: shared Obsidian-facing helpers for generated links, Markdown tables, artifact discovery, card refs, and vault-note path resolution.
+- `scholar_vault/bibliography.py`: BibLaTeX and formatted reference export commands.
+- `scholar_vault/enrichment.py`: standalone `enrich` / `enrich-citations` orchestration plus safe manual citation, abstract, and keyword correction workflows. Import workflows still coordinate touched-card enrichment from `importer.py`.
+- `scholar_vault/projects.py`: lightweight project workspace scaffold/link/map/audit workflows.
+- `scholar_vault/proposals.py`: proposal sprint scaffolding and proposal evidence audits.
 - `scholar_vault/render.py`: Jinja-backed Markdown rendering for cards, run pages, indexes, topics, and LLM summary files.
 - `scholar_vault/bibtex.py`: BibTeX parsing plus BibLaTeX-oriented rendering, validation, and export helpers.
 - `scholar_vault/citations.py`: DOI detection, provider response caching, citation, abstract, and PDF keyword enrichment, candidate scoring, abstract provenance, and provider BibTeX normalization for BibLaTeX export.

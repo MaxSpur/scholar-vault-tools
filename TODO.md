@@ -83,6 +83,7 @@
 - [x] Add safe Codex skillset diff/adopt/publish commands, wrapper scripts, and an optional UI so repository and vault skills can be synchronized without blind overwrites.
 - [x] Add `import-pdf --ui` for drag-and-drop multi-PDF import with automatic enrichment and follow-up field resolution.
 - [x] Add lightweight `projects/` workspaces with scaffold/link/map/audit commands and generated project indexes.
+- [x] Refactor non-import feature families out of `importer.py` into focused rebuild, diagnostics, dashboard, topic, search, neighbor, maintenance, bibliography, enrichment, project, and proposal modules.
 
 ## Obsidian usability and vault navigation
 

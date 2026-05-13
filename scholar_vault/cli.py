@@ -19,22 +19,27 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 from typer.completion import get_completion_script
 
-from .config import configured_path, latest_export_json, load_user_config, save_user_config
-from .importer import (
-    apply_topic_map,
-    attach_pdf,
+from .bibliography import (
     bibtex_doctor,
-    clean_staging,
-    cleanup_run_selected_only,
-    concept_index,
-    confirm_no_publication_keywords,
-    doctor_vault,
-    enrich_citations,
-    enrich_vault,
     export_bibtex,
     export_card_bibtex,
     export_card_reference,
     export_references,
+)
+from .config import configured_path, latest_export_json, load_user_config, save_user_config
+from .diagnostics import doctor_vault, notes_missing, pdf_doctor
+from .enrichment import (
+    confirm_no_publication_keywords,
+    enrich_citations,
+    enrich_vault,
+    set_manual_abstract,
+    set_manual_keywords,
+    set_manual_metadata,
+)
+from .importer import (
+    attach_pdf,
+    clean_staging,
+    cleanup_run_selected_only,
     find_staged_run_matches,
     import_bibtex,
     import_doi,
@@ -44,9 +49,20 @@ from .importer import (
     initialize_vault,
     latest_run_id,
     list_unmatched,
-    maintenance_report,
-    notes_missing,
-    pdf_doctor,
+    rename_run,
+    reset_vault,
+    resume_run,
+    undo_run,
+)
+from .maintenance import maintenance_report
+from .models import (
+    ImportCanceled,
+    MatchReviewAbort,
+    MatchReviewRequest,
+    ScholarLabsExport,
+    SourceCard,
+)
+from .projects import (
     project_audit,
     project_link_concept,
     project_link_paper,
@@ -56,26 +72,9 @@ from .importer import (
     project_list,
     project_map,
     project_scaffold,
-    proposal_audit,
-    proposal_sprint_scaffold,
-    rebuild_vault,
-    rename_run,
-    reset_vault,
-    resume_run,
-    set_manual_abstract,
-    set_manual_keywords,
-    set_manual_metadata,
-    topic_map_report,
-    topic_preset_mapping,
-    undo_run,
 )
-from .models import (
-    ImportCanceled,
-    MatchReviewAbort,
-    MatchReviewRequest,
-    ScholarLabsExport,
-    SourceCard,
-)
+from .proposals import proposal_audit, proposal_sprint_scaffold
+from .rebuild import concept_index, rebuild_vault
 from .skill_sync import (
     adopt_skill,
     compare_skillsets,
@@ -85,6 +84,7 @@ from .skill_sync import (
     vault_skills_path,
 )
 from .sources import VaultPaths, infer_run_title, load_run_records, load_source_cards
+from .topics import apply_topic_map, topic_map_report, topic_preset_mapping
 
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
 project_app = typer.Typer(help="Project workspace helpers.")

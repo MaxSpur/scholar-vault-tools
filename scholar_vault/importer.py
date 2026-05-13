@@ -4,12 +4,9 @@ import hashlib
 import json
 import re
 import shutil
-import urllib.parse
-from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
-from textwrap import dedent
 from typing import Any
 
 from pydantic import ValidationError
@@ -17,20 +14,16 @@ from pydantic import ValidationError
 from .bibtex import (
     extract_pdf_paths,
     parse_bibtex_file,
-    render_card_bibtex,
     split_bibtex_authors,
-    write_library_bib,
 )
 from .citations import (
     EnrichmentOptions,
     EnrichmentProgress,
     EnrichmentResult,
-    abstract_fingerprint,
-    card_fingerprint,
     enrich_cards,
     extract_pdf_keywords,
-    refresh_metadata_completeness,
 )
+from .enrichment import _enrichment_counts, _enrichment_detail, _enrichment_progress_message
 from .matcher import (
     best_pdf_match,
     build_pdf_candidate,
@@ -55,25 +48,13 @@ from .models import (
     SourceCard,
     SummarySource,
 )
-from .references import REFERENCE_FORMATS, REFERENCE_STYLES, render_card_reference
+from .obsidian import _card_has_valid_pdf
+from .rebuild import _rebuild_indexes
 from .render import (
-    group_cards_by_topic,
-    render_artifact_index,
-    render_llms_full,
-    render_llms_txt,
-    render_missing_pdfs,
     render_paper_markdown,
-    render_papers_index,
-    render_project_map_markdown,
-    render_project_markdown,
-    render_prompts_index,
     render_run_markdown,
-    render_topic_page,
-    render_topics_index,
-    render_unmatched_index,
     render_vault_agents,
     render_vault_readme,
-    render_zotero_migration,
 )
 from .sources import (
     VaultPaths,
@@ -81,15 +62,12 @@ from .sources import (
     build_citekey,
     build_pdf_filename,
     clean_markdown_text,
-    dump_frontmatter,
     ensure_relative,
     infer_run_title,
     infer_topics,
-    infer_year,
     load_import_manifests,
     load_run_records,
     load_source_cards,
-    normalize_copied_abstract,
     normalize_doi,
     normalize_keywords,
     normalize_title,
@@ -99,7 +77,6 @@ from .sources import (
     run_note_filename,
     run_note_path,
     slugify_text,
-    topic_slug,
     write_json,
     write_text,
     write_yaml,
@@ -112,76 +89,6 @@ ManualSaveProgress = Callable[[str], None]
 
 PDF_SCAN_CACHE_FILENAME = ".scholar-vault-pdf-scan-cache"
 PDF_SCAN_CACHE_SCHEMA_VERSION = 1
-PROMPT_BOILERPLATE_TOPICS = (
-    "Find",
-    "Paper",
-    "Papers",
-    "Peer",
-    "Peer Reviewed",
-    "Reviewed",
-    "Important",
-    "That",
-    "Study",
-    "Studies",
-    "Proposal",
-    "Research",
-    "Current",
-    "Recent",
-)
-PROMPT_BOILERPLATE_TOPIC_MAP = {topic: None for topic in PROMPT_BOILERPLATE_TOPICS}
-NOISY_TOPIC_KEYS = {
-    normalize_title(topic)
-    for topic in PROMPT_BOILERPLATE_TOPICS
-} | {
-    "scholar",
-    "source",
-    "sources",
-}
-SEARCH_STOPWORDS = {
-    "about",
-    "after",
-    "also",
-    "among",
-    "based",
-    "between",
-    "could",
-    "from",
-    "have",
-    "into",
-    "more",
-    "paper",
-    "papers",
-    "research",
-    "results",
-    "show",
-    "shows",
-    "study",
-    "studies",
-    "that",
-    "their",
-    "these",
-    "this",
-    "through",
-    "using",
-    "were",
-    "with",
-}
-ARTIFACT_INDEXES = {
-    "concepts": ("Concepts", "No concept cards have been created yet."),
-    "syntheses": ("Syntheses", "No synthesis notes have been created yet."),
-    "tasks": ("Tasks", "No follow-up task notes have been created yet."),
-    "projects": ("Projects", "No project workspaces have been created yet."),
-    "proposals": ("Proposals", "No proposal workspaces have been created yet."),
-}
-ARTIFACT_DEFAULT_TYPES = {
-    "concepts": "concept",
-    "syntheses": "synthesis",
-    "tasks": "task",
-    "projects": "project",
-    "proposals": "proposal",
-}
-
-
 def _now_iso() -> str:
     return datetime.now().astimezone().replace(microsecond=0).isoformat()
 
@@ -649,1093 +556,6 @@ def _write_manifest(paths: VaultPaths, manifest: ImportManifest) -> None:
     write_yaml(run_dir / "import-manifest.yaml", manifest.model_dump(exclude_none=True))
 
 
-def _cards_to_library_json(cards: list[SourceCard]) -> list[dict]:
-    return [card.model_dump(exclude_none=True) for card in cards]
-
-
-def _cards_to_csl_json(cards: list[SourceCard]) -> list[dict]:
-    exported = []
-    for card in cards:
-        authors = card.authors or ([card.authors_preview] if card.authors_preview else [])
-        note = card.summary if card.summary and card.summary != "No summary yet." else None
-        exported.append(
-            {
-                "id": card.citekey or card.slug,
-                "type": "article-journal" if card.venue else "document",
-                "title": card.title,
-                "author": [{"literal": author} for author in authors],
-                "issued": {"date-parts": [[card.year]]} if card.year else None,
-                "container-title": card.venue,
-                "DOI": card.doi,
-                "URL": card.url,
-                "abstract": card.abstract,
-                "keyword": ", ".join(card.keywords) if card.keywords else None,
-                "note": note,
-            }
-        )
-    return exported
-
-
-def _compact_text(value: str | None, *, limit: int = 500) -> str:
-    cleaned = clean_markdown_text(value)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    if len(cleaned) <= limit:
-        return cleaned
-    return cleaned[: limit - 3].rstrip(" .,;:") + "..."
-
-
-def _markdown_cell(value: object) -> str:
-    text = _compact_text(str(value) if value is not None else "", limit=220)
-    return text.replace("|", r"\|") or "-"
-
-
-def _markdown_table(
-    headers: list[str],
-    rows: list[list[object]],
-    *,
-    empty: str = "No rows.",
-) -> list[str]:
-    if not rows:
-        return [empty]
-    lines = [
-        "| " + " | ".join(headers) + " |",
-        "| " + " | ".join("---" for _ in headers) + " |",
-    ]
-    for row in rows:
-        lines.append("| " + " | ".join(_markdown_cell(value) for value in row) + " |")
-    return lines
-
-
-def _paper_link(card: SourceCard) -> str:
-    return f"[{card.title}](../papers/{card.slug}.md)"
-
-
-def _artifact_link(artifact: dict[str, Any]) -> str:
-    return f"[{artifact.get('title') or artifact.get('path')}](../{artifact.get('path')})"
-
-
-def _reading_queue_rows(
-    paths: VaultPaths,
-    cards: list[SourceCard],
-    *,
-    heading: str = "PDF reading notes",
-) -> list[dict[str, Any]]:
-    heading_re = _markdown_heading_re(heading)
-    rows: list[dict[str, Any]] = []
-    for card in cards:
-        if card.status != "active" or not (card.pdf_status == "attached" or card.pdf):
-            continue
-        if heading_re.search(card.notes or ""):
-            continue
-        rows.append(
-            {
-                "paper": f"papers/{card.slug}.md",
-                "paper_link": _paper_link(card),
-                "citekey": _card_id(card),
-                "year": card.year,
-                "pdf": card.pdf or "missing",
-                "pdf_exists": _card_has_valid_pdf(paths, card),
-            }
-        )
-    return rows
-
-
-def _metadata_issue_label(card: SourceCard) -> list[str]:
-    issue_states = {"incomplete", "ambiguous", "unresolved"}
-    issues: list[str] = []
-    if card.enrichment_refresh:
-        issues.append("metadata refresh requested")
-    if card.enrichment_status in issue_states or card.enrichment_missing:
-        missing = ", ".join(card.enrichment_missing)
-        label = f"metadata {card.enrichment_status}"
-        issues.append(f"{label} ({missing})" if missing else label)
-    if card.citation_status in {"ambiguous", "unresolved"}:
-        issues.append(f"citation {card.citation_status}")
-    if card.doi_status in {"ambiguous", "unresolved"}:
-        issues.append(f"DOI {card.doi_status}")
-    if card.abstract_status in {"missing", "ambiguous", "unresolved"}:
-        issues.append(f"abstract {card.abstract_status}")
-    if card.pdf and not card.keywords and card.publication_keywords_status != "absent":
-        issues.append("missing publication keywords")
-    return issues
-
-
-def _metadata_issue_rows(cards: list[SourceCard]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for card in cards:
-        refresh_metadata_completeness(card)
-        issues = _metadata_issue_label(card)
-        if not issues:
-            continue
-        rows.append(
-            {
-                "paper": f"papers/{card.slug}.md",
-                "paper_link": _paper_link(card),
-                "citekey": _card_id(card),
-                "issues": issues,
-                "doi": card.doi or "",
-                "venue": card.venue or "",
-            }
-        )
-    return rows
-
-
-def _metadata_not_enriched_rows(cards: list[SourceCard]) -> list[dict[str, Any]]:
-    return [
-        {
-            "paper": f"papers/{card.slug}.md",
-            "paper_link": _paper_link(card),
-            "citekey": _card_id(card),
-            "title": card.title,
-        }
-        for card in cards
-        if card.enrichment_status == "missing"
-    ]
-
-
-def _pdf_issue_summary(
-    paths: VaultPaths,
-    cards: list[SourceCard],
-    manifests: list[ImportManifest],
-) -> dict[str, Any]:
-    referenced_pdf_paths: set[Path] = set()
-    cards_without_pdf: list[dict[str, Any]] = []
-    missing_card_pdfs: list[dict[str, Any]] = []
-    for card in cards:
-        if not card.pdf:
-            cards_without_pdf.append(
-                {
-                    "paper": f"papers/{card.slug}.md",
-                    "paper_link": _paper_link(card),
-                    "citekey": _card_id(card),
-                    "title": card.title,
-                }
-            )
-            continue
-        pdf_path = Path(card.pdf)
-        if not pdf_path.is_absolute():
-            pdf_path = paths.vault / pdf_path
-        if pdf_path.exists():
-            referenced_pdf_paths.add(pdf_path.resolve())
-        else:
-            missing_card_pdfs.append(
-                {
-                    "paper": f"papers/{card.slug}.md",
-                    "paper_link": _paper_link(card),
-                    "citekey": _card_id(card),
-                    "pdf": card.pdf,
-                }
-            )
-    pdf_files = sorted(paths.pdfs.glob("*.pdf"))
-    orphan_pdfs = [
-        _display_path(path, paths.vault)
-        for path in pdf_files
-        if path.resolve() not in referenced_pdf_paths
-    ]
-    duplicate_style = [
-        _display_path(path, paths.vault)
-        for path in pdf_files
-        if re.search(r"-\d+\.pdf$", path.name, flags=re.IGNORECASE)
-    ]
-    unmatched_rows = _unmatched_rows_from_manifests(manifests)
-    return {
-        "cards_without_pdf": cards_without_pdf,
-        "missing_card_pdfs": missing_card_pdfs,
-        "orphan_pdfs": orphan_pdfs,
-        "duplicate_style_filenames": duplicate_style,
-        "historical_unmatched_entries": len(unmatched_rows),
-        "repeated_unmatched_files": _repeated_unmatched_files(unmatched_rows),
-    }
-
-
-def _stale_topic_pages(paths: VaultPaths, topic_cards: dict[str, list[SourceCard]]) -> list[str]:
-    active_slugs = {topic_slug(topic) for topic in topic_cards}
-    return [
-        ensure_relative(path, paths.vault)
-        for path in sorted(paths.topics.glob("*.md"))
-        if path.stem not in active_slugs
-    ]
-
-
-def _artifacts_without_sources(artifacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [artifact for artifact in artifacts if not artifact.get("sources")]
-
-
-def _topic_opportunities(
-    topic_cards: dict[str, list[SourceCard]],
-    syntheses: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    synthesis_text = normalize_title(" ".join(str(item.get("title") or "") for item in syntheses))
-    rows = []
-    for topic, cards in sorted(topic_cards.items(), key=lambda item: (-len(item[1]), item[0])):
-        if len(cards) < 2:
-            continue
-        topic_key = normalize_title(topic)
-        if topic_key and topic_key in synthesis_text:
-            continue
-        rows.append(
-            {
-                "topic": topic,
-                "papers": len(cards),
-                "example_papers": ", ".join(card.title for card in cards[:3]),
-            }
-        )
-    return rows[:20]
-
-
-def _render_command_block(commands: list[str]) -> list[str]:
-    lines = ["## Useful CLI commands", ""]
-    for command in commands:
-        lines.extend(["```fish", command, "```", ""])
-    return lines
-
-
-def _render_dashboard_index(
-    paths: VaultPaths,
-    cards: list[SourceCard],
-    runs: list[RunRecord],
-    manifests: list[ImportManifest],
-    artifacts: dict[str, list[dict[str, Any]]],
-    topic_cards: dict[str, list[SourceCard]],
-) -> str:
-    reading_rows = _reading_queue_rows(paths, cards)
-    metadata_rows = _metadata_issue_rows(cards)
-    pdf_summary = _pdf_issue_summary(paths, cards, manifests)
-    topic_report = _topic_report(cards, limit=12)
-    stale_topics = _stale_topic_pages(paths, topic_cards)
-    concepts = artifacts.get("concepts") or []
-    syntheses = artifacts.get("syntheses") or []
-    tasks = artifacts.get("tasks") or []
-    projects = artifacts.get("projects") or []
-    issue_counts = {
-        "Reading queue": len(reading_rows),
-        "Metadata issues": len(metadata_rows),
-        "Orphan PDFs": len(pdf_summary["orphan_pdfs"]),
-        "Missing card PDFs": len(pdf_summary["missing_card_pdfs"]),
-        "Historical unmatched records": pdf_summary["historical_unmatched_entries"],
-        "Noisy topics": len(topic_report["noisy"]),
-        "Stale topic pages": len(stale_topics),
-        "Concepts": len(concepts),
-        "Syntheses": len(syntheses),
-        "Tasks": len(tasks),
-        "Projects": len(projects),
-    }
-    lines = [
-        "# Scholar Vault Dashboard",
-        "",
-        "Plain Markdown dashboard for Obsidian and CLI-oriented maintenance. No Obsidian "
-        "plugin is required for these views.",
-        "",
-        "Scholar Labs summaries, generated indexes, and topic pages are navigation aids, not "
-        "evidence. Read linked PDFs before factual synthesis.",
-        "",
-        "## Views",
-        "",
-        "- [Paper status](paper-status.md)",
-        "- [Reading queue](reading-queue.md)",
-        "- [Metadata issues](metadata-issues.md)",
-        "- [PDF issues](pdf-issues.md)",
-        "- [Synthesis dashboard](synthesis-dashboard.md)",
-        "- [Search index](search-index.md)",
-        "- [Projects](projects.md)",
-        "",
-        "## Open queues",
-        "",
-        *_markdown_table(
-            ["Queue", "Count"],
-            [[key, value] for key, value in issue_counts.items()],
-        ),
-        "",
-        "## Reading queue preview",
-        "",
-        *_markdown_table(
-            ["Paper", "Citekey", "PDF"],
-            [
-                [row["paper_link"], row["citekey"], row["pdf"]]
-                for row in reading_rows[:10]
-            ],
-            empty="No selected attached papers are missing PDF reading notes.",
-        ),
-        "",
-        "## Metadata issue preview",
-        "",
-        *_markdown_table(
-            ["Paper", "Citekey", "Issues"],
-            [
-                [row["paper_link"], row["citekey"], "; ".join(row["issues"])]
-                for row in metadata_rows[:10]
-            ],
-            empty="No actionable metadata, citation, abstract, or keyword issues found.",
-        ),
-        "",
-        "## Topic noise preview",
-        "",
-        *_markdown_table(
-            ["Topic", "Count"],
-            [[row["topic"], row["count"]] for row in topic_report["noisy"][:12]],
-            empty="No prompt-boilerplate topic labels detected.",
-        ),
-        "",
-    ]
-    lines.extend(
-        _render_command_block(
-            [
-                "scholar-vault maintenance-report --vault /path/to/vault",
-                'scholar-vault notes-missing --vault /path/to/vault --heading "PDF reading notes"',
-                "scholar-vault enrich --vault /path/to/vault --ui",
-                "scholar-vault pdf-doctor --vault /path/to/vault --json",
-                "scholar-vault topic-map --vault /path/to/vault --preset prompt-boilerplate",
-            ]
-        )
-    )
-    return "\n".join(lines)
-
-
-def _render_paper_status_index(
-    paths: VaultPaths,
-    cards: list[SourceCard],
-    reading_rows: list[dict[str, Any]],
-    metadata_rows: list[dict[str, Any]],
-) -> str:
-    attached = sum(1 for card in cards if _card_has_valid_pdf(paths, card))
-    counts = [
-        ["Paper cards", len(cards)],
-        ["Attached PDF cards", attached],
-        ["Missing PDF cards", len(cards) - attached],
-        ["Reading queue", len(reading_rows)],
-        ["Metadata issue cards", len(metadata_rows)],
-    ]
-    status_fields = [
-        ("PDF status", _status_counts(cards, "pdf_status")),
-        ("Enrichment status", _status_counts(cards, "enrichment_status")),
-        ("Citation status", _status_counts(cards, "citation_status")),
-        ("Abstract status", _status_counts(cards, "abstract_status")),
-        ("Publication keyword status", _status_counts(cards, "publication_keywords_status")),
-    ]
-    lines = [
-        "# Paper Status",
-        "",
-        *_markdown_table(["Metric", "Count"], counts),
-        "",
-    ]
-    for title, status_counts in status_fields:
-        lines.extend(
-            [
-                f"## {title}",
-                "",
-                *_markdown_table(
-                    ["Status", "Count"],
-                    [[key, value] for key, value in status_counts.items()],
-                ),
-                "",
-            ]
-        )
-    lines.extend(
-        _render_command_block(
-            [
-                "scholar-vault status --vault /path/to/vault --json",
-                "scholar-vault rebuild --vault /path/to/vault",
-            ]
-        )
-    )
-    return "\n".join(lines)
-
-
-def _render_reading_queue_index(reading_rows: list[dict[str, Any]]) -> str:
-    lines = [
-        "# Reading Queue",
-        "",
-        "Selected or attached paper cards missing a `PDF reading notes` heading under "
-        "`## Notes`.",
-        "",
-        *_markdown_table(
-            ["Paper", "Citekey", "Year", "PDF", "PDF exists"],
-            [
-                [
-                    row["paper_link"],
-                    row["citekey"],
-                    row["year"] or "",
-                    row["pdf"],
-                    row["pdf_exists"],
-                ]
-                for row in reading_rows
-            ],
-            empty="No selected attached papers are missing PDF reading notes.",
-        ),
-        "",
-    ]
-    lines.extend(
-        _render_command_block(
-            [
-                'scholar-vault notes-missing --vault /path/to/vault --heading "PDF reading notes"',
-                "scholar-vault rebuild --vault /path/to/vault",
-            ]
-        )
-    )
-    return "\n".join(lines)
-
-
-def _render_metadata_issues_index(
-    metadata_rows: list[dict[str, Any]],
-    diagnostic_rows: list[dict[str, Any]],
-) -> str:
-    lines = [
-        "# Metadata Issues",
-        "",
-        "Actionable citation, DOI, enrichment, abstract, and publication-keyword follow-up.",
-        "",
-        "## Actionable issues",
-        "",
-        *_markdown_table(
-            ["Paper", "Citekey", "Issues", "DOI", "Venue"],
-            [
-                [
-                    row["paper_link"],
-                    row["citekey"],
-                    "; ".join(row["issues"]),
-                    row["doi"],
-                    row["venue"],
-                ]
-                for row in metadata_rows
-            ],
-            empty="No actionable metadata issues found.",
-        ),
-        "",
-        "## Not-yet-enriched diagnostics",
-        "",
-        "These rows are diagnostics, not defects by themselves.",
-        "",
-        *_markdown_table(
-            ["Paper", "Citekey"],
-            [[row["paper_link"], row["citekey"]] for row in diagnostic_rows[:100]],
-            empty="No papers are marked with untouched metadata enrichment.",
-        ),
-        "",
-    ]
-    lines.extend(
-        _render_command_block(
-            [
-                "scholar-vault enrich --vault /path/to/vault --ui",
-                "scholar-vault resolve-citation --vault /path/to/vault --citekey <citekey>",
-                "scholar-vault set-abstract --vault /path/to/vault --citekey <citekey>",
-                "scholar-vault set-keywords --vault /path/to/vault --citekey <citekey>",
-            ]
-        )
-    )
-    return "\n".join(lines)
-
-
-def _render_pdf_issues_index(pdf_summary: dict[str, Any]) -> str:
-    lines = [
-        "# PDF Issues",
-        "",
-        "Vault PDF inventory view. Candidate results without cards are discovery context, not "
-        "missing canonical sources.",
-        "",
-        "## Cards without a PDF field",
-        "",
-        *_markdown_table(
-            ["Paper", "Citekey"],
-            [
-                [row["paper_link"], row["citekey"]]
-                for row in pdf_summary["cards_without_pdf"]
-            ],
-            empty="No cards are missing a PDF field.",
-        ),
-        "",
-        "## Card PDF files missing on disk",
-        "",
-        *_markdown_table(
-            ["Paper", "Citekey", "PDF"],
-            [
-                [row["paper_link"], row["citekey"], row["pdf"]]
-                for row in pdf_summary["missing_card_pdfs"]
-            ],
-            empty="No card PDF links point at missing files.",
-        ),
-        "",
-        "## Orphan vault PDFs",
-        "",
-        *_markdown_table(
-            ["PDF"],
-            [[path] for path in pdf_summary["orphan_pdfs"]],
-            empty="No orphan vault PDFs found.",
-        ),
-        "",
-        "## Duplicate-style filenames",
-        "",
-        *_markdown_table(
-            ["PDF"],
-            [[path] for path in pdf_summary["duplicate_style_filenames"]],
-            empty="No duplicate-style PDF filenames found.",
-        ),
-        "",
-        "## Historical unmatched records",
-        "",
-        f"- Historical unmatched entries: {pdf_summary['historical_unmatched_entries']}",
-        "",
-        *_markdown_table(
-            ["Filename", "Count", "Runs", "Best score"],
-            [
-                [
-                    row["filename"],
-                    row["count"],
-                    ", ".join(row["runs"]),
-                    row["best_score"],
-                ]
-                for row in pdf_summary["repeated_unmatched_files"]
-            ],
-            empty="No repeated historical unmatched files found.",
-        ),
-        "",
-    ]
-    lines.extend(
-        _render_command_block(
-            [
-                "scholar-vault pdf-doctor --vault /path/to/vault --json",
-                "scholar-vault match-staging --vault /path/to/vault --ui",
-            ]
-        )
-    )
-    return "\n".join(lines)
-
-
-def _render_synthesis_dashboard(
-    artifacts: dict[str, list[dict[str, Any]]],
-    topic_cards: dict[str, list[SourceCard]],
-    stale_topics: list[str],
-    topic_report: dict[str, Any],
-) -> str:
-    concepts = artifacts.get("concepts") or []
-    syntheses = artifacts.get("syntheses") or []
-    tasks = artifacts.get("tasks") or []
-    concept_needs = _artifacts_without_sources(concepts)
-    synthesis_needs = _artifacts_without_sources(syntheses)
-    opportunities = _topic_opportunities(topic_cards, syntheses)
-    lines = [
-        "# Synthesis Dashboard",
-        "",
-        "Concepts are reusable methods, algorithms, visual encodings, datasets, evaluation "
-        "protocols, and terminology. Syntheses are evidence-backed cross-paper answers. "
-        "Tasks are open questions, gaps, and next searches.",
-        "",
-        "## Research artifacts",
-        "",
-        *_markdown_table(
-            ["Type", "Count"],
-            [
-                ["Concepts", len(concepts)],
-                ["Syntheses", len(syntheses)],
-                ["Tasks", len(tasks)],
-            ],
-        ),
-        "",
-        "## Concepts without source links",
-        "",
-        *_markdown_table(
-            ["Concept", "Type"],
-            [[_artifact_link(row), row.get("type") or "concept"] for row in concept_needs],
-            empty="No concept cards are missing source links.",
-        ),
-        "",
-        "## Syntheses without source links",
-        "",
-        *_markdown_table(
-            ["Synthesis", "Type"],
-            [[_artifact_link(row), row.get("type") or "synthesis"] for row in synthesis_needs],
-            empty="No synthesis notes are missing source links.",
-        ),
-        "",
-        "## Synthesis opportunities by topic",
-        "",
-        *_markdown_table(
-            ["Topic", "Papers", "Example papers"],
-            [
-                [row["topic"], row["papers"], row["example_papers"]]
-                for row in opportunities
-            ],
-            empty="No multi-paper topic opportunities detected.",
-        ),
-        "",
-        "## Topic cleanup",
-        "",
-        *_markdown_table(
-            ["Noisy topic", "Count"],
-            [[row["topic"], row["count"]] for row in topic_report["noisy"]],
-            empty="No prompt-boilerplate topic labels detected.",
-        ),
-        "",
-        "## Stale generated topic pages",
-        "",
-        *_markdown_table(
-            ["Topic page"],
-            [[path] for path in stale_topics],
-            empty="No stale generated topic pages detected.",
-        ),
-        "",
-    ]
-    lines.extend(
-        _render_command_block(
-            [
-                "scholar-vault topic-map --vault /path/to/vault --preset prompt-boilerplate",
-                (
-                    "scholar-vault topic-map --vault /path/to/vault "
-                    "--preset prompt-boilerplate --apply"
-                ),
-                "scholar-vault concept-index --vault /path/to/vault",
-                "scholar-vault rebuild --vault /path/to/vault",
-            ]
-        )
-    )
-    return "\n".join(lines)
-
-
-def _write_dashboard_indexes(
-    paths: VaultPaths,
-    cards: list[SourceCard],
-    runs: list[RunRecord],
-    manifests: list[ImportManifest],
-    artifacts: dict[str, list[dict[str, Any]]],
-    topic_cards: dict[str, list[SourceCard]],
-) -> int:
-    reading_rows = _reading_queue_rows(paths, cards)
-    metadata_rows = _metadata_issue_rows(cards)
-    diagnostic_rows = _metadata_not_enriched_rows(cards)
-    pdf_summary = _pdf_issue_summary(paths, cards, manifests)
-    topic_report = _topic_report(cards, limit=30)
-    stale_topics = _stale_topic_pages(paths, topic_cards)
-    outputs = {
-        "dashboard.md": _render_dashboard_index(
-            paths,
-            cards,
-            runs,
-            manifests,
-            artifacts,
-            topic_cards,
-        ),
-        "paper-status.md": _render_paper_status_index(
-            paths,
-            cards,
-            reading_rows,
-            metadata_rows,
-        ),
-        "reading-queue.md": _render_reading_queue_index(reading_rows),
-        "metadata-issues.md": _render_metadata_issues_index(metadata_rows, diagnostic_rows),
-        "pdf-issues.md": _render_pdf_issues_index(pdf_summary),
-        "synthesis-dashboard.md": _render_synthesis_dashboard(
-            artifacts,
-            topic_cards,
-            stale_topics,
-            topic_report,
-        ),
-    }
-    for filename, content in outputs.items():
-        write_text(paths.indexes / filename, content)
-    return len(outputs)
-
-
-def _pdf_reading_notes_snippet(card: SourceCard) -> str:
-    match = re.search(
-        r"(?ims)^#{3,6}\s+PDF reading notes[^\n]*\n(?P<body>.*?)(?=^#{1,6}\s+|\Z)",
-        card.notes or "",
-    )
-    if not match:
-        return ""
-    return _compact_text(match.group("body"), limit=800)
-
-
-def _should_index_artifact_path(folder: str, path: Path) -> bool:
-    if folder == "projects":
-        return path.name == "index.md"
-    return True
-
-
-def _artifact_search_rows(paths: VaultPaths, folder: str) -> list[dict[str, str]]:
-    root = paths.vault / folder
-    if not root.exists():
-        return []
-    rows: list[dict[str, str]] = []
-    for path in sorted(root.rglob("*.md")):
-        if any(part.startswith(".") for part in path.relative_to(root).parts):
-            continue
-        if not _should_index_artifact_path(folder, path):
-            continue
-        frontmatter, body = read_frontmatter_markdown(path)
-        rows.append(
-            {
-                "path": ensure_relative(path, paths.vault),
-                "title": _artifact_title(path, frontmatter, body),
-                "type": str(frontmatter.get("type") or ARTIFACT_DEFAULT_TYPES.get(folder, "note")),
-                "sources": ", ".join(_as_string_list(frontmatter.get("sources"))),
-                "text": _compact_text(body, limit=900),
-            }
-        )
-    return rows
-
-
-def render_search_index(paths: VaultPaths, cards: list[SourceCard]) -> str:
-    lines = [
-        "# Search Index",
-        "",
-        "Compact plain-text search surface for Obsidian, shell tools, and agents. This file "
-        "does not include full PDF text.",
-        "",
-        "## Papers",
-        "",
-    ]
-    if not cards:
-        lines.extend(["No paper cards found.", ""])
-    for card in cards:
-        lines.extend(
-            [
-                f"### {_card_id(card)} - {card.title}",
-                "",
-                f"- path: papers/{card.slug}.md",
-                f"- citekey: {_card_id(card)}",
-                f"- year: {card.year or ''}",
-                f"- doi: {card.doi or ''}",
-                f"- topics: {', '.join(card.topics)}",
-                f"- publication_keywords: {', '.join(card.keywords)}",
-                f"- abstract: {_compact_text(card.abstract, limit=900)}",
-                f"- scholar_labs_summary: {_compact_text(card.summary, limit=900)}",
-            ]
-        )
-        summaries = [
-            _compact_text(source.summary, limit=500)
-            for source in card.summary_sources
-            if _compact_text(source.summary, limit=500)
-        ]
-        if summaries:
-            lines.append(f"- run_summaries: {' / '.join(summaries[:3])}")
-        reading_notes = _pdf_reading_notes_snippet(card)
-        if reading_notes:
-            lines.append(f"- pdf_reading_notes: {reading_notes}")
-        lines.append("")
-    for folder, title in [
-        ("concepts", "Concepts"),
-        ("syntheses", "Syntheses"),
-        ("tasks", "Tasks"),
-        ("projects", "Projects"),
-        ("proposals", "Proposals"),
-    ]:
-        lines.extend([f"## {title}", ""])
-        rows = _artifact_search_rows(paths, folder)
-        if not rows:
-            lines.extend([f"No {folder} notes found.", ""])
-            continue
-        for row in rows:
-            lines.extend(
-                [
-                    f"### {row['title']}",
-                    "",
-                    f"- path: {row['path']}",
-                    f"- type: {row['type']}",
-                    f"- sources: {row['sources']}",
-                    f"- text: {row['text']}",
-                    "",
-                ]
-            )
-    return "\n".join(lines)
-
-
-def _terms_from_text(text: str | None) -> set[str]:
-    normalized = normalize_title(text)
-    return {
-        token
-        for token in normalized.split()
-        if len(token) > 3 and token not in SEARCH_STOPWORDS
-    }
-
-
-def _value_map(values: list[str]) -> dict[str, str]:
-    mapped: dict[str, str] = {}
-    for value in values:
-        key = normalize_title(value)
-        if key and key not in mapped:
-            mapped[key] = value
-    return mapped
-
-
-def _semantic_neighbor_rows(cards: list[SourceCard], *, limit: int = 5) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    features: dict[str, dict[str, Any]] = {}
-    for card in cards:
-        card_key = _card_id(card)
-        features[card_key] = {
-            "topics": _value_map(card.topics),
-            "keywords": _value_map(card.keywords),
-            "runs": set(card.discovered_in),
-            "terms": _terms_from_text(f"{card.title} {card.abstract or ''}"),
-            "doi": normalize_doi(card.doi),
-        }
-    for card in cards:
-        card_key = _card_id(card)
-        neighbors: list[dict[str, Any]] = []
-        current = features[card_key]
-        for other in cards:
-            other_key = _card_id(other)
-            if other_key == card_key:
-                continue
-            candidate = features[other_key]
-            reasons: list[str] = []
-            score = 0
-            shared_topics = sorted(set(current["topics"]) & set(candidate["topics"]))
-            for topic_key in shared_topics[:5]:
-                reasons.append(f"shared topic: {current['topics'][topic_key]}")
-            score += len(shared_topics) * 4
-            shared_keywords = sorted(set(current["keywords"]) & set(candidate["keywords"]))
-            for keyword_key in shared_keywords[:5]:
-                reasons.append(f"shared keyword: {current['keywords'][keyword_key]}")
-            score += len(shared_keywords) * 5
-            shared_runs = sorted(current["runs"] & candidate["runs"])
-            for run in shared_runs[:3]:
-                reasons.append(f"same run: {run}")
-            score += len(shared_runs) * 3
-            shared_terms = sorted(current["terms"] & candidate["terms"])
-            if shared_terms:
-                reasons.append(
-                    "similar title/abstract terms: " + ", ".join(shared_terms[:8])
-                )
-            score += min(len(shared_terms), 8)
-            if current["doi"] and current["doi"] == candidate["doi"]:
-                reasons.append(f"same DOI: {current['doi']}")
-                score += 10
-            if score <= 0:
-                continue
-            neighbors.append(
-                {
-                    "citekey": other_key,
-                    "paper": f"papers/{other.slug}.md",
-                    "title": other.title,
-                    "score": score,
-                    "reasons": reasons,
-                }
-            )
-        neighbors.sort(key=lambda item: (-int(item["score"]), str(item["citekey"])))
-        rows.append(
-            {
-                "citekey": card_key,
-                "paper": f"papers/{card.slug}.md",
-                "title": card.title,
-                "neighbors": neighbors[:limit],
-            }
-        )
-    return rows
-
-
-def semantic_neighbors_export(cards: list[SourceCard]) -> dict[str, Any]:
-    return {
-        "schema_version": "0.1",
-        "kind": "deterministic_navigation_neighbors",
-        "evidence_warning": (
-            "Navigation only. Shared metadata and text overlap are not evidence; read PDFs "
-            "before factual synthesis."
-        ),
-        "method": [
-            "shared topics",
-            "shared publication keywords",
-            "same Scholar Labs run",
-            "title/abstract term overlap",
-            "matching DOI metadata when present",
-        ],
-        "papers": _semantic_neighbor_rows(cards),
-    }
-
-
-def _normalize_attached_pdf_filename(paths: VaultPaths, card: SourceCard) -> bool:
-    if not card.pdf:
-        return False
-    pdf_path = paths.vault / card.pdf
-    if not pdf_path.exists() or pdf_path.suffix == ".pdf":
-        return False
-    match = re.match(r"(.+)\.pdf-(\d+)$", pdf_path.name, flags=re.IGNORECASE)
-    if not match:
-        return False
-    destination = pdf_path.with_name(f"{match.group(1)}-{match.group(2)}.pdf")
-    if destination.exists():
-        return False
-    pdf_path.rename(destination)
-    card.pdf = ensure_relative(destination, paths.vault)
-    return True
-
-
-def _first_markdown_heading(body: str) -> str | None:
-    match = re.search(r"^#\s+(.+?)\s*$", body, flags=re.MULTILINE)
-    return clean_markdown_text(match.group(1)) if match else None
-
-
-def _artifact_title(path: Path, frontmatter: dict[str, Any], body: str) -> str:
-    title = frontmatter.get("title")
-    if isinstance(title, str) and title.strip():
-        return clean_markdown_text(title)
-    heading = _first_markdown_heading(body)
-    if heading:
-        return heading
-    return path.stem.replace("-", " ").replace("_", " ").strip().title()
-
-
-def _as_string_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [str(item) for item in value if str(item).strip()]
-    if isinstance(value, str) and value.strip():
-        return [value.strip()]
-    return []
-
-
-def _collect_artifacts(paths: VaultPaths, folder: str) -> list[dict[str, Any]]:
-    root = paths.vault / folder
-    if not root.exists():
-        return []
-    artifacts: list[dict[str, Any]] = []
-    for path in sorted(root.rglob("*.md")):
-        if any(part.startswith(".") for part in path.relative_to(root).parts):
-            continue
-        if not _should_index_artifact_path(folder, path):
-            continue
-        frontmatter, body = read_frontmatter_markdown(path)
-        artifacts.append(
-            {
-                "path": ensure_relative(path, paths.vault),
-                "title": _artifact_title(path, frontmatter, body),
-                "type": frontmatter.get("type") or ARTIFACT_DEFAULT_TYPES.get(folder, "note"),
-                "created": frontmatter.get("created") or frontmatter.get("date"),
-                "sources": _as_string_list(frontmatter.get("sources")),
-            }
-        )
-    return artifacts
-
-
-def _collect_research_artifacts(paths: VaultPaths) -> dict[str, list[dict[str, Any]]]:
-    return {folder: _collect_artifacts(paths, folder) for folder in ARTIFACT_INDEXES}
-
-
-def _rebuild_indexes(
-    paths: VaultPaths,
-    *,
-    progress: ManualSaveProgress | None = None,
-) -> dict[str, int]:
-    _manual_save_step(progress, "Loading run records")
-    runs = load_run_records(paths)
-    run_refs = {run.slug: _run_ref(run) for run in runs}
-    _manual_save_step(progress, "Loading paper cards")
-    cards = load_source_cards(paths)
-    _manual_save_step(progress, "Loading import manifests")
-    manifests = load_import_manifests(paths)
-    cards_changed = False
-    cards_normalized = 0
-    pdf_filenames_normalized = 0
-    _manual_save_step(progress, "Normalizing paper card references")
-    for card in cards:
-        card_changed = False
-        if _refresh_card_completeness(card):
-            card_changed = True
-        normalized_discovered_in = [
-            _normalize_run_ref(item, run_refs) for item in card.discovered_in
-        ]
-        if normalized_discovered_in != card.discovered_in:
-            card.discovered_in = normalized_discovered_in
-            card_changed = True
-        backfilled_sources = _backfill_summary_source_from_card(card, run_refs=run_refs)
-        normalized_sources = _merge_summary_sources(backfilled_sources, [], run_refs=run_refs)
-        if normalized_sources != card.summary_sources:
-            card.summary_sources = normalized_sources
-            card_changed = True
-        if _normalize_attached_pdf_filename(paths, card):
-            card_changed = True
-            pdf_filenames_normalized += 1
-        if card.keywords and card.publication_keywords_status != "present":
-            card.publication_keywords_status = "present"
-            card.publication_keywords_source = card.publication_keywords_source or "imported"
-            card_changed = True
-        if card_changed:
-            cards_changed = True
-            cards_normalized += 1
-    _manual_save_step(progress, "Repairing run links to attached PDFs")
-    cross_run_links_synced = _repair_run_links_to_attached_cards(
-        paths,
-        runs,
-        cards,
-        manifests,
-    )
-    cards_changed = cards_changed or bool(cross_run_links_synced)
-    paper_cards_written = 0
-    _manual_save_step(progress, "Rendering paper cards")
-    for card in cards:
-        rendered = render_paper_markdown(card)
-        paper_path = paths.papers / f"{card.slug}.md"
-        should_write = (
-            cards_changed
-            or not paper_path.exists()
-            or paper_path.read_text(encoding="utf-8") != rendered
-        )
-        if should_write:
-            write_text(paper_path, rendered)
-            paper_cards_written += 1
-    topic_cards = group_cards_by_topic(cards)
-    artifacts = _collect_research_artifacts(paths)
-
-    _manual_save_step(progress, "Writing index pages")
-    write_text(paths.indexes / "prompts.md", render_prompts_index(runs))
-    write_text(paths.indexes / "papers.md", render_papers_index(cards))
-    write_text(paths.indexes / "topics.md", render_topics_index(topic_cards))
-    write_text(paths.indexes / "missing-pdfs.md", render_missing_pdfs(runs))
-    write_text(paths.indexes / "unmatched.md", render_unmatched_index(manifests))
-    write_text(paths.indexes / "zotero-migration.md", render_zotero_migration())
-    for folder, (title, empty_message) in ARTIFACT_INDEXES.items():
-        write_text(
-            paths.indexes / f"{folder}.md",
-            render_artifact_index(
-                title,
-                artifacts.get(folder) or [],
-                empty_message=empty_message,
-            ),
-        )
-    dashboard_files_written = _write_dashboard_indexes(
-        paths,
-        cards,
-        runs,
-        manifests,
-        artifacts,
-        topic_cards,
-    )
-    write_text(paths.indexes / "search-index.md", render_search_index(paths, cards))
-    _manual_save_step(progress, "Writing LLM context files")
-    write_text(paths.vault / "llms.txt", render_llms_txt())
-    write_text(
-        paths.vault / "llms-full.txt",
-        render_llms_full(cards, runs, manifests, artifacts),
-    )
-    _manual_save_step(progress, "Writing library exports")
-    write_json(paths.exports / "library.json", _cards_to_library_json(cards))
-    write_json(paths.exports / "library.csl.json", _cards_to_csl_json(cards))
-    write_json(paths.exports / "semantic-neighbors.json", semantic_neighbors_export(cards))
-    write_library_bib(cards, paths.exports / "library.bib", metadata_root=paths.raw_metadata)
-
-    _manual_save_step(progress, "Writing topic pages")
-    for topic, topic_list in topic_cards.items():
-        write_text(paths.topics / f"{topic_slug(topic)}.md", render_topic_page(topic, topic_list))
-    _manual_save_step(progress, "Writing run notes")
-    for run in runs:
-        _write_run(paths, run, cards)
-    return {
-        "papers": len(cards),
-        "runs": len(runs),
-        "manifests": len(manifests),
-        "topics": len(topic_cards),
-        "paper_cards_written": paper_cards_written,
-        "cards_normalized": cards_normalized,
-        "pdf_filenames_normalized": pdf_filenames_normalized,
-        "cross_run_links_synced": cross_run_links_synced,
-        "index_files_written": 6 + len(ARTIFACT_INDEXES) + dashboard_files_written + 1,
-        "llm_files_written": 2,
-        "export_files_written": 4,
-        "topic_pages_written": len(topic_cards),
-        "run_notes_written": len(runs),
-    }
-
-
 def _clear_directory(path: Path) -> int:
     removed = 0
     if not path.exists():
@@ -1921,15 +741,6 @@ def _find_card_for_run_result(
     return None
 
 
-def _card_has_valid_pdf(paths: VaultPaths, card: SourceCard) -> bool:
-    if not card.pdf:
-        return False
-    pdf_path = Path(card.pdf)
-    if not pdf_path.is_absolute():
-        pdf_path = paths.vault / card.pdf
-    return pdf_path.exists()
-
-
 def _card_pdf_sha256(paths: VaultPaths, card: SourceCard) -> str | None:
     if not _card_has_valid_pdf(paths, card):
         return None
@@ -1998,41 +809,6 @@ def _build_match_review_request(
         inferred_year=candidate.year,
         text_excerpt=candidate.text_excerpt,
     )
-
-
-def _enrichment_progress_message(
-    card: SourceCard,
-    status: str,
-    *,
-    abstracts: bool = False,
-    keywords: bool = False,
-) -> str:
-    stage = "keywords" if keywords else "abstracts" if abstracts else "citations"
-    identifier = card.citekey or card.slug
-    title = " ".join((card.title or identifier).split())
-    context: list[str] = []
-    if keywords:
-        context.append(
-            f"state={card.publication_keywords_status if not card.keywords else 'present'}"
-        )
-        context.append(f"count={len(card.keywords)}")
-        context.append(f"pdf={'yes' if card.pdf else 'no'}")
-    elif abstracts:
-        context.append(f"state={card.abstract_status}")
-        if card.abstract_source:
-            context.append(f"source={card.abstract_source}")
-        context.append(f"pdf={'yes' if card.pdf else 'no'}")
-        if card.abstract_lock:
-            context.append("locked")
-    else:
-        context.append(f"state={card.citation_status}")
-        if card.citation_source:
-            context.append(f"source={card.citation_source}")
-        if card.enrichment_missing:
-            context.append(f"missing={','.join(card.enrichment_missing)}")
-        if card.doi:
-            context.append(f"doi={card.doi}")
-    return f"Enriching {stage} [{status}]: {identifier} // {title} // {'; '.join(context)}"
 
 
 def _match_progress_identifier(result: ScholarLabsResult) -> str:
@@ -4374,74 +3150,6 @@ def import_doi(vault: Path | str, doi: str) -> dict[str, int]:
     return {"imported": 1}
 
 
-def _enrichment_detail(
-    paths: VaultPaths,
-    card: SourceCard,
-    result: EnrichmentResult,
-    *,
-    abstracts: bool,
-    keywords: bool = False,
-) -> dict[str, Any]:
-    if result.skipped:
-        category = "skipped"
-    elif not abstracts and not keywords and card.enrichment_status == "incomplete":
-        category = "incomplete"
-    else:
-        category = result.status
-
-    if keywords:
-        source = (
-            result.source
-            or card.publication_keywords_source
-            or ("pdf_extracted" if card.keywords else None)
-        )
-    else:
-        source = card.abstract_source if abstracts else card.citation_source or card.doi_source
-    return {
-        "kind": "keywords" if keywords else "abstract" if abstracts else "citation",
-        "category": category,
-        "status": result.status,
-        "citekey": card.citekey or card.slug,
-        "title": card.title,
-        "paper_path": f"papers/{card.slug}.md",
-        "paper_file": str(paths.papers / f"{card.slug}.md"),
-        "pdf": card.pdf,
-        "pdf_file": str(paths.vault / card.pdf) if card.pdf else None,
-        "doi": card.doi,
-        "authors": list(card.authors),
-        "authors_preview": card.authors_preview,
-        "year": card.year,
-        "venue": card.venue,
-        "url": card.url,
-        "source": source,
-        "missing_fields": list(result.missing_fields or card.enrichment_missing),
-        "keywords": list(card.keywords),
-        "message": result.message,
-        "changed": result.changed,
-        "skipped": result.skipped,
-    }
-
-
-def _clean_manual_field(value: str | int | None) -> str | None:
-    if value is None:
-        return None
-    cleaned = clean_markdown_text(str(value))
-    return cleaned or None
-
-
-def _parse_manual_authors(authors: str | Iterable[str] | None) -> list[str] | None:
-    if authors is None:
-        return None
-    if isinstance(authors, str):
-        text = authors.replace("\r\n", "\n").replace("\r", "\n").strip()
-        if not text:
-            return None
-        parts = re.split(r"\n+|;|\s+and\s+|\s*&\s*", text)
-    else:
-        parts = list(authors)
-    cleaned = [clean_markdown_text(str(part)) for part in parts]
-    return [author for author in cleaned if author]
-
 
 def set_manual_metadata(
     vault: Path | str,
@@ -4455,184 +3163,59 @@ def set_manual_metadata(
     lock: bool = False,
     progress: ManualSaveProgress | None = None,
 ) -> dict[str, Any]:
-    _manual_save_step(progress, "Opening vault")
-    paths = initialize_vault(vault)
-    _manual_save_step(progress, "Normalizing metadata fields")
-    cleaned_doi = _clean_manual_field(doi)
-    normalized_doi = normalize_doi(cleaned_doi) if cleaned_doi else None
-    if normalized_doi and not normalized_doi.startswith("10."):
-        raise ValueError("Manual DOI must look like a DOI, for example 10.xxxx/example.")
-    cleaned_authors = _parse_manual_authors(authors)
-    cleaned_year = infer_year(year)
-    cleaned_venue = _clean_manual_field(venue)
-    cleaned_url = _clean_manual_field(url)
-    if not any([normalized_doi, cleaned_authors, cleaned_year, cleaned_venue, cleaned_url]):
-        raise ValueError("Provide at least one metadata field to save.")
+    from .enrichment import set_manual_metadata as set_metadata
 
-    _manual_save_step(progress, "Loading paper cards")
-    cards = load_source_cards(paths)
-    card = next((item for item in cards if item.citekey == citekey or item.slug == citekey), None)
-    if card is None:
-        raise ValueError(f"No paper card found for citekey or slug: {citekey}")
-
-    _manual_save_step(progress, "Updating citation metadata")
-    if normalized_doi:
-        card.doi = normalized_doi
-        card.doi_status = "verified"
-        card.doi_source = "manual"
-        card.doi_confidence = 1.0
-    elif card.doi and card.doi_status == "ambiguous":
-        card.doi = normalize_doi(card.doi)
-        card.doi_status = "verified"
-        card.doi_source = card.doi_source or "manual"
-        card.doi_confidence = card.doi_confidence or 1.0
-    elif not card.doi and card.doi_status == "ambiguous":
-        card.doi_status = "missing"
-        card.doi_source = None
-        card.doi_confidence = None
-    if cleaned_authors is not None:
-        card.authors = cleaned_authors
-        card.authors_preview = ", ".join(cleaned_authors)
-    if cleaned_year:
-        card.year = cleaned_year
-    if cleaned_venue:
-        card.venue = cleaned_venue
-    if cleaned_url:
-        card.url = cleaned_url
-
-    checked_at = _now_iso()
-    card.citation_status = "verified"
-    card.citation_source = "manual"
-    card.citation_last_checked = checked_at
-    card.citation_enriched_at = checked_at
-    card.citation_retries = 0
-    card.citation_input_fingerprint = card_fingerprint(card)
-    if lock:
-        card.metadata_lock = True
-    card.enrichment_refresh = False
-    refresh_metadata_completeness(card)
-    if card.enrichment_missing and card.metadata_lock:
-        card.citation_skip_reason = (
-            "manual metadata locked; missing fields accepted: "
-            + ", ".join(card.enrichment_missing)
-        )
-    elif card.enrichment_missing:
-        card.citation_status = "generated"
-        refresh_metadata_completeness(card)
-        card.citation_skip_reason = (
-            f"manual metadata incomplete: {', '.join(card.enrichment_missing)}"
-        )
-    else:
-        card.citation_skip_reason = None
-
-    _manual_save_step(progress, "Writing paper card")
-    _save_card(paths, card)
-    _manual_save_step(progress, "Rebuilding derived files")
-    _rebuild_indexes(paths, progress=progress)
-    _manual_save_step(progress, "Manual save complete")
-    return {
-        "citekey": card.citekey or card.slug,
-        "paper": f"papers/{card.slug}.md",
-        "doi": card.doi,
-        "authors": list(card.authors),
-        "year": card.year,
-        "venue": card.venue,
-        "url": card.url,
-        "metadata_lock": card.metadata_lock,
-        "citation_status": card.citation_status,
-        "doi_status": card.doi_status,
-        "enrichment_status": card.enrichment_status,
-        "missing_fields": list(card.enrichment_missing),
-    }
+    return set_metadata(
+        vault,
+        citekey,
+        doi=doi,
+        authors=authors,
+        year=year,
+        venue=venue,
+        url=url,
+        lock=lock,
+        progress=progress,
+    )
 
 
 def set_manual_abstract(
     vault: Path | str,
     citekey: str,
-    abstract: str,
+    text: str,
     *,
     source_url: str | None = None,
     lock: bool = True,
     progress: ManualSaveProgress | None = None,
-) -> dict[str, str | bool]:
-    _manual_save_step(progress, "Opening vault")
-    paths = initialize_vault(vault)
-    _manual_save_step(progress, "Cleaning abstract text")
-    cleaned = clean_markdown_text(normalize_copied_abstract(abstract))
-    if not cleaned:
-        raise ValueError("Manual abstract text is empty.")
+) -> dict[str, Any]:
+    from .enrichment import set_manual_abstract as set_abstract
 
-    _manual_save_step(progress, "Loading paper cards")
-    cards = load_source_cards(paths)
-    card = next((item for item in cards if item.citekey == citekey or item.slug == citekey), None)
-    if card is None:
-        raise ValueError(f"No paper card found for citekey or slug: {citekey}")
-
-    _manual_save_step(progress, "Updating abstract metadata")
-    checked_at = _now_iso()
-    card.abstract = cleaned
-    card.abstract_status = "manual_lock" if lock else "resolved"
-    card.abstract_source = "manual"
-    card.abstract_source_url = source_url
-    card.abstract_confidence = 1.0
-    card.abstract_last_checked = checked_at
-    card.abstract_enriched_at = checked_at
-    card.abstract_input_fingerprint = abstract_fingerprint(card)
-    card.abstract_lock = lock
-    card.enrichment_refresh = False
-    _manual_save_step(progress, "Writing paper card")
-    _save_card(paths, card)
-    _manual_save_step(progress, "Rebuilding derived files")
-    _rebuild_indexes(paths, progress=progress)
-    _manual_save_step(progress, "Manual save complete")
-    return {
-        "citekey": card.citekey or card.slug,
-        "paper": f"papers/{card.slug}.md",
-        "locked": lock,
-    }
+    return set_abstract(
+        vault,
+        citekey,
+        text,
+        source_url=source_url,
+        lock=lock,
+        progress=progress,
+    )
 
 
 def set_manual_keywords(
     vault: Path | str,
     citekey: str,
-    keywords: str | Iterable[str],
+    text: str,
     *,
     replace: bool = False,
     progress: ManualSaveProgress | None = None,
-) -> dict[str, str | int | list[str]]:
-    _manual_save_step(progress, "Opening vault")
-    paths = initialize_vault(vault)
-    _manual_save_step(progress, "Normalizing keyword separators")
-    raw_keywords = keywords.splitlines() if isinstance(keywords, str) else keywords
-    cleaned_keywords = normalize_keywords(raw_keywords)
-    if not cleaned_keywords:
-        raise ValueError("Manual keyword text is empty.")
+) -> dict[str, Any]:
+    from .enrichment import set_manual_keywords as set_keywords
 
-    _manual_save_step(progress, "Loading paper cards")
-    cards = load_source_cards(paths)
-    card = next((item for item in cards if item.citekey == citekey or item.slug == citekey), None)
-    if card is None:
-        raise ValueError(f"No paper card found for citekey or slug: {citekey}")
-
-    _manual_save_step(progress, "Updating keyword metadata")
-    card.keywords = cleaned_keywords if replace else _merge_unique(card.keywords, cleaned_keywords)
-    card.publication_keywords_status = "present"
-    card.publication_keywords_source = "manual"
-    card.enrichment_refresh = False
-    card.enrichment_missing = [
-        field for field in card.enrichment_missing if field != "keywords"
-    ]
-    _manual_save_step(progress, "Writing paper card")
-    _save_card(paths, card)
-    _manual_save_step(progress, "Rebuilding derived files")
-    _rebuild_indexes(paths, progress=progress)
-    _manual_save_step(progress, "Manual save complete")
-    return {
-        "citekey": card.citekey or card.slug,
-        "paper": f"papers/{card.slug}.md",
-        "count": len(card.keywords),
-        "keywords": list(card.keywords),
-    }
+    return set_keywords(
+        vault,
+        citekey,
+        text,
+        replace=replace,
+        progress=progress,
+    )
 
 
 def confirm_no_publication_keywords(
@@ -4640,2230 +3223,10 @@ def confirm_no_publication_keywords(
     citekey: str,
     *,
     progress: ManualSaveProgress | None = None,
-) -> dict[str, str | int | list[str]]:
-    _manual_save_step(progress, "Opening vault")
-    paths = initialize_vault(vault)
-    _manual_save_step(progress, "Loading paper cards")
-    cards = load_source_cards(paths)
-    card = next((item for item in cards if item.citekey == citekey or item.slug == citekey), None)
-    if card is None:
-        raise ValueError(f"No paper card found for citekey or slug: {citekey}")
-
-    _manual_save_step(progress, "Confirming source keyword absence")
-    card.keywords = []
-    card.publication_keywords_status = "absent"
-    card.publication_keywords_source = "manual"
-    card.enrichment_refresh = False
-    card.enrichment_missing = [
-        field for field in card.enrichment_missing if field != "keywords"
-    ]
-    _manual_save_step(progress, "Writing paper card")
-    _save_card(paths, card)
-    _manual_save_step(progress, "Rebuilding derived files")
-    _rebuild_indexes(paths, progress=progress)
-    _manual_save_step(progress, "Manual save complete")
-    return {
-        "citekey": card.citekey or card.slug,
-        "paper": f"papers/{card.slug}.md",
-        "count": 0,
-        "keywords": [],
-        "status": card.publication_keywords_status,
-    }
-
-
-def rebuild_vault(vault: Path | str) -> dict[str, int]:
-    paths = initialize_vault(vault, rebuild=False)
-    return _rebuild_indexes(paths)
-
-
-def export_bibtex(
-    vault: Path | str,
-    *,
-    include_local_fields: bool = True,
-) -> Path:
-    paths = initialize_vault(vault, rebuild=False)
-    cards = load_source_cards(paths)
-    return write_library_bib(
-        cards,
-        paths.exports / "library.bib",
-        metadata_root=paths.raw_metadata,
-        include_local_fields=include_local_fields,
-    )
-
-
-def export_card_bibtex(
-    vault: Path | str,
-    citekey: str,
-    *,
-    output: Path | str | None = None,
-    include_vault_note: bool = False,
-    include_local_fields: bool = True,
-    cite: bool = False,
 ) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    cards = load_source_cards(paths)
-    card = next(
-        (
-            candidate
-            for candidate in cards
-            if citekey in {candidate.citekey, candidate.slug}
-        ),
-        None,
-    )
-    if card is None:
-        raise ValueError(f"No paper card found for citekey: {citekey}")
-    if cite:
-        citekey_value = card.citekey or card.slug
-        content = f"\\cite{{{citekey_value}}}\n"
-        rendered = None
-    else:
-        rendered = render_card_bibtex(
-            card,
-            metadata_root=paths.raw_metadata,
-            include_vault_note=include_vault_note,
-            include_local_fields=include_local_fields,
-            require_ready=False,
-        )
-        if rendered is None:
-            raise ValueError(f"Cannot render BibLaTeX for {citekey}: missing title")
-        content = rendered.entry.rstrip() + "\n"
-    output_path = Path(output).expanduser().resolve() if output is not None else None
-    if output_path is not None:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(content, encoding="utf-8")
-    return {
-        "vault": str(paths.vault),
-        "citekey": card.citekey or card.slug,
-        "paper": _card_ref(card),
-        "source": "cite" if cite else rendered.source,
-        "entry_type": None if cite else rendered.entry_type,
-        "warnings": [] if cite else list(rendered.warnings),
-        "output": str(output_path) if output_path else None,
-        "bibtex": content,
-        "content": content,
-        "content_kind": "cite" if cite else "biblatex",
-    }
+    from .enrichment import confirm_no_publication_keywords as confirm_absence
 
-
-def bibtex_doctor(vault: Path | str) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    cards = load_source_cards(paths)
-    rows: list[dict[str, Any]] = []
-    rendered_count = 0
-    for card in cards:
-        rendered = render_card_bibtex(
-            card,
-            metadata_root=paths.raw_metadata,
-            include_vault_note=False,
-            include_local_fields=True,
-            require_ready=False,
-        )
-        if rendered is None:
-            rows.append(
-                {
-                    "citekey": card.citekey or card.slug,
-                    "paper": _card_ref(card),
-                    "title": card.title,
-                    "entry_type": None,
-                    "source": None,
-                    "warnings": ["cannot render BibLaTeX: missing title"],
-                }
-            )
-            continue
-        rendered_count += 1
-        if rendered.warnings:
-            rows.append(
-                {
-                    "citekey": card.citekey or card.slug,
-                    "paper": _card_ref(card),
-                    "title": card.title,
-                    "entry_type": rendered.entry_type,
-                    "source": rendered.source,
-                    "warnings": list(rendered.warnings),
-                }
-            )
-    return {
-        "vault": str(paths.vault),
-        "cards": len(cards),
-        "rendered": rendered_count,
-        "issues": len(rows),
-        "rows": rows,
-    }
-
-
-def export_card_reference(
-    vault: Path | str,
-    citekey: str,
-    *,
-    output: Path | str | None = None,
-    style: str = "apa",
-    output_format: str = "markdown",
-) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    cards = load_source_cards(paths)
-    card = next(
-        (
-            candidate
-            for candidate in cards
-            if citekey in {candidate.citekey, candidate.slug}
-        ),
-        None,
-    )
-    if card is None:
-        raise ValueError(f"No paper card found for citekey: {citekey}")
-    rendered = render_card_reference(
-        card,
-        metadata_root=paths.raw_metadata,
-        style=style,
-        output_format=output_format,
-    )
-    if rendered is None:
-        raise ValueError(f"Cannot render reference for {citekey}: missing title")
-    output_path = Path(output).expanduser().resolve() if output is not None else None
-    if output_path is not None:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(rendered.content, encoding="utf-8")
-    return {
-        "vault": str(paths.vault),
-        "citekey": card.citekey or card.slug,
-        "paper": _card_ref(card),
-        "source": rendered.source,
-        "style": rendered.style,
-        "format": rendered.output_format,
-        "warnings": list(rendered.warnings),
-        "output": str(output_path) if output_path else None,
-        "content": rendered.content,
-    }
-
-
-def export_references(
-    vault: Path | str,
-    *,
-    output: Path | str | None = None,
-    style: str = "apa",
-    output_format: str = "markdown",
-) -> dict[str, Any]:
-    style = style.casefold()
-    output_format = output_format.casefold()
-    if style not in REFERENCE_STYLES:
-        raise ValueError(f"Unsupported reference style: {style}")
-    if output_format not in REFERENCE_FORMATS:
-        raise ValueError(f"Unsupported reference format: {output_format}")
-    paths = initialize_vault(vault, rebuild=False)
-    cards = load_source_cards(paths)
-    rendered_entries = []
-    rows: list[dict[str, Any]] = []
-    for card in sorted(cards, key=lambda item: (item.authors[0] if item.authors else item.title)):
-        rendered = render_card_reference(
-            card,
-            metadata_root=paths.raw_metadata,
-            style=style,
-            output_format=output_format,
-            wrap_rtf=False,
-        )
-        if rendered is None:
-            rows.append(
-                {
-                    "citekey": card.citekey or card.slug,
-                    "paper": _card_ref(card),
-                    "warnings": ["cannot render reference: missing title"],
-                }
-            )
-            continue
-        rendered_entries.append(rendered.content.rstrip())
-        if rendered.warnings:
-            rows.append(
-                {
-                    "citekey": card.citekey or card.slug,
-                    "paper": _card_ref(card),
-                    "warnings": list(rendered.warnings),
-                }
-            )
-    extension = {"markdown": "md", "plain": "txt", "rtf": "rtf"}[output_format]
-    output_path = (
-        Path(output).expanduser().resolve()
-        if output is not None
-        else paths.exports / f"references-{style}.{extension}"
-    )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    if output_format == "rtf":
-        content = r"{\rtf1\ansi " + "\n".join(rendered_entries).rstrip() + "\n}\n"
-    else:
-        content = "\n\n".join(rendered_entries).rstrip() + "\n"
-    output_path.write_text(content, encoding="utf-8")
-    return {
-        "vault": str(paths.vault),
-        "style": style,
-        "format": output_format,
-        "output": str(output_path),
-        "references": len(rendered_entries),
-        "warnings": rows,
-    }
-
-
-def concept_index(vault: Path | str) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    artifacts = _collect_research_artifacts(paths)
-    concepts = artifacts.get("concepts") or []
-    title, empty_message = ARTIFACT_INDEXES["concepts"]
-    index_path = paths.indexes / "concepts.md"
-    write_text(
-        index_path,
-        render_artifact_index(title, concepts, empty_message=empty_message),
-    )
-    cards = load_source_cards(paths)
-    runs = load_run_records(paths)
-    manifests = load_import_manifests(paths)
-    write_text(paths.vault / "llms.txt", render_llms_txt())
-    write_text(
-        paths.vault / "llms-full.txt",
-        render_llms_full(cards, runs, manifests, artifacts),
-    )
-    return {
-        "vault": str(paths.vault),
-        "index": ensure_relative(index_path, paths.vault),
-        "concepts": len(concepts),
-        "llm_files_written": 2,
-    }
-
-
-def _display_path(path: Path, root: Path) -> str:
-    try:
-        return ensure_relative(path, root)
-    except ValueError:
-        return str(path)
-
-
-def _card_ref(card: SourceCard) -> str:
-    return f"papers/{card.slug}.md"
-
-
-def _card_id(card: SourceCard) -> str:
-    return card.citekey or card.slug
-
-
-def _status_counts(cards: list[SourceCard], field: str) -> dict[str, int]:
-    counts = Counter(str(getattr(card, field, None) or "missing") for card in cards)
-    return dict(sorted(counts.items()))
-
-
-def _card_issue(card: SourceCard, *, issue: str) -> dict[str, Any]:
-    return {
-        "citekey": _card_id(card),
-        "paper": _card_ref(card),
-        "title": card.title,
-        "issue": issue,
-        "doi": card.doi,
-        "venue": card.venue,
-        "citation_status": card.citation_status,
-        "doi_status": card.doi_status,
-        "enrichment_status": card.enrichment_status,
-        "enrichment_missing": list(card.enrichment_missing),
-        "abstract_status": card.abstract_status,
-        "publication_keywords_status": card.publication_keywords_status,
-        "pdf": card.pdf,
-    }
-
-
-def _card_followup_kinds(card: SourceCard) -> list[str]:
-    issue_states = {"incomplete", "ambiguous", "unresolved"}
-    kinds: list[str] = []
-    if card.enrichment_refresh:
-        kinds.append("refresh")
-    if card.enrichment_status in issue_states or card.enrichment_missing:
-        kinds.append("metadata")
-    if card.citation_status in issue_states:
-        kinds.append("citation")
-    if card.abstract_status in issue_states:
-        kinds.append("abstract")
-    if (
-        card.pdf
-        and not card.keywords
-        and card.publication_keywords_status != "absent"
-    ):
-        kinds.append("keywords")
-    if card.doi_status in {"ambiguous", "unresolved"}:
-        kinds.append("doi")
-    return kinds
-
-
-def _refresh_card_completeness(card: SourceCard) -> bool:
-    before = (
-        card.enrichment_status,
-        tuple(card.enrichment_missing),
-    )
-    refresh_metadata_completeness(card)
-    return before != (card.enrichment_status, tuple(card.enrichment_missing))
-
-
-def _topic_report(cards: list[SourceCard], *, limit: int = 30) -> dict[str, Any]:
-    counts = Counter(topic for card in cards for topic in card.topics)
-    noisy = [
-        {"topic": topic, "count": count}
-        for topic, count in counts.most_common()
-        if normalize_title(topic) in NOISY_TOPIC_KEYS
-    ]
-    return {
-        "topic_count": len(counts),
-        "top": [
-            {"topic": topic, "count": count}
-            for topic, count in counts.most_common(limit)
-        ],
-        "noisy": noisy,
-    }
-
-
-def _run_issue_summary(
-    run: RunRecord,
-    cards_by_path: dict[str, SourceCard],
-) -> dict[str, Any]:
-    status_counts = Counter(result.status for result in run.results)
-    pdf_status_counts = Counter(result.pdf_status for result in run.results)
-    followups: Counter[str] = Counter()
-    missing_candidates = 0
-    for result in run.results:
-        if result.paper_card and result.paper_card in cards_by_path:
-            followups.update(_card_followup_kinds(cards_by_path[result.paper_card]))
-            continue
-        if result.pdf_status != "attached":
-            missing_candidates += 1
-    return {
-        "run_id": run.slug,
-        "title": run.title or infer_run_title(run.prompt),
-        "result_count": len(run.results),
-        "status_counts": dict(sorted(status_counts.items())),
-        "pdf_status_counts": dict(sorted(pdf_status_counts.items())),
-        "missing_candidate_pdfs": missing_candidates,
-        "candidate_results_without_cards": missing_candidates,
-        "followups": dict(sorted(followups.items())),
-    }
-
-
-def _unmatched_rows_from_manifests(
-    manifests: list[ImportManifest],
-) -> list[dict[str, str | int | None]]:
-    rows: list[dict[str, str | int | None]] = []
-    for manifest in manifests:
-        for entry in manifest.entries:
-            if entry.original_path and entry.decision != "accepted":
-                rows.append(
-                    {
-                        "run_id": manifest.run_id,
-                        "original_path": entry.original_path,
-                        "filename": Path(entry.original_path).name,
-                        "proposed_match": entry.proposed_match,
-                        "score": entry.score,
-                        "decision": entry.decision,
-                    }
-                )
-    return rows
-
-
-def _repeated_unmatched_files(
-    rows: list[dict[str, str | int | None]],
-) -> list[dict[str, Any]]:
-    by_name: dict[str, list[dict[str, str | int | None]]] = defaultdict(list)
-    for row in rows:
-        by_name[str(row["filename"])].append(row)
-    repeated = [
-        {
-            "filename": filename,
-            "count": len(items),
-            "runs": sorted({str(item["run_id"]) for item in items}),
-            "best_score": max(
-                int(item["score"] or 0)
-                for item in items
-            ),
-        }
-        for filename, items in by_name.items()
-        if len(items) > 1
-    ]
-    repeated.sort(key=lambda item: (int(item["count"]), int(item["best_score"])), reverse=True)
-    return repeated
-
-
-def pdf_doctor(
-    vault: Path | str,
-    *,
-    staging_path: Path | str | None = None,
-) -> dict[str, Any]:
-    paths = VaultPaths.from_root(vault)
-    cards = load_source_cards(paths)
-    manifests = load_import_manifests(paths)
-    pdf_files = sorted(paths.pdfs.glob("*.pdf"))
-    unmatched_rows = _unmatched_rows_from_manifests(manifests)
-
-    referenced_pdf_paths: set[Path] = set()
-    cards_without_pdf: list[dict[str, Any]] = []
-    missing_card_pdfs: list[dict[str, Any]] = []
-    for card in cards:
-        if not card.pdf:
-            cards_without_pdf.append(_card_issue(card, issue="card has no pdf field"))
-            continue
-        pdf_path = Path(card.pdf)
-        if not pdf_path.is_absolute():
-            pdf_path = paths.vault / pdf_path
-        if pdf_path.exists():
-            referenced_pdf_paths.add(pdf_path.resolve())
-        else:
-            missing_card_pdfs.append(
-                {
-                    **_card_issue(card, issue="card pdf file is missing"),
-                    "pdf": card.pdf,
-                }
-            )
-
-    orphan_pdfs = [
-        _display_path(path, paths.vault)
-        for path in pdf_files
-        if path.resolve() not in referenced_pdf_paths
-    ]
-    duplicate_style = [
-        _display_path(path, paths.vault)
-        for path in pdf_files
-        if re.search(r"-\d+\.pdf$", path.name, flags=re.IGNORECASE)
-    ]
-
-    hashes: dict[str, list[str]] = defaultdict(list)
-    hash_errors: list[dict[str, str]] = []
-    for path in pdf_files:
-        try:
-            hashes[_file_sha256(path)].append(_display_path(path, paths.vault))
-        except OSError as exc:
-            hash_errors.append({"path": _display_path(path, paths.vault), "error": str(exc)})
-    duplicate_hashes = [
-        {"sha256": digest, "files": files}
-        for digest, files in sorted(hashes.items())
-        if len(files) > 1
-    ]
-
-    staging_summary: dict[str, Any] | None = None
-    if staging_path is not None:
-        staging_dir = Path(staging_path).expanduser().resolve()
-        staged_pdfs = sorted(staging_dir.glob("*.pdf"))
-        vault_hashes = {digest: files for digest, files in hashes.items()}
-        staged_duplicates: list[dict[str, Any]] = []
-        actionable_staged_pdfs: list[str] = []
-        for staged_pdf in staged_pdfs:
-            try:
-                digest = _file_sha256(staged_pdf)
-            except OSError as exc:
-                hash_errors.append({"path": str(staged_pdf), "error": str(exc)})
-                continue
-            if digest in vault_hashes:
-                staged_duplicates.append(
-                    {
-                        "staging_pdf": str(staged_pdf),
-                        "sha256": digest,
-                        "vault_pdfs": vault_hashes[digest],
-                    }
-                )
-            else:
-                actionable_staged_pdfs.append(str(staged_pdf))
-        staging_summary = {
-            "path": str(staging_dir),
-            "pdf_count": len(staged_pdfs),
-            "duplicates_in_vault": staged_duplicates,
-            "duplicate_count": len(staged_duplicates),
-            "actionable_pdfs": actionable_staged_pdfs,
-            "actionable_pdf_count": len(actionable_staged_pdfs),
-        }
-
-    return {
-        "vault": str(paths.vault),
-        "pdf_files": len(pdf_files),
-        "cards": len(cards),
-        "cards_with_pdf": len(cards) - len(cards_without_pdf),
-        "cards_without_pdf": cards_without_pdf,
-        "missing_card_pdfs": missing_card_pdfs,
-        "orphan_pdfs": orphan_pdfs,
-        "duplicate_style_filenames": duplicate_style,
-        "duplicate_hashes": duplicate_hashes,
-        "repeated_unmatched_files": _repeated_unmatched_files(unmatched_rows),
-        "unmatched_entries": len(unmatched_rows),
-        "historical_unmatched_entries": len(unmatched_rows),
-        "hash_errors": hash_errors,
-        "staging": staging_summary,
-    }
-
-
-def doctor_vault(
-    vault: Path | str,
-    *,
-    staging_path: Path | str | None = None,
-    topic_limit: int = 30,
-) -> dict[str, Any]:
-    paths = VaultPaths.from_root(vault)
-    cards = load_source_cards(paths)
-    for card in cards:
-        refresh_metadata_completeness(card)
-    runs = load_run_records(paths)
-    manifests = load_import_manifests(paths)
-    unmatched_rows = _unmatched_rows_from_manifests(manifests)
-    cards_by_path = {_card_ref(card): card for card in cards}
-    pdf_summary = pdf_doctor(vault, staging_path=staging_path)
-    missing_candidates = [
-        {
-            "run_id": run.slug,
-            "rank": result.rank,
-            "title": result.title,
-            "authors_preview": result.authors_preview,
-            "year": result.year,
-            "pdf_status": result.pdf_status,
-            "status": result.status,
-        }
-        for run in runs
-        for result in run.results
-        if result.pdf_status != "attached" and not result.paper_card
-    ]
-    metadata_issues = {
-        "ambiguous_citations": [
-            _card_issue(card, issue="ambiguous citation")
-            for card in cards
-            if card.citation_status == "ambiguous" or card.doi_status == "ambiguous"
-        ],
-        "unresolved_citations": [
-            _card_issue(card, issue="unresolved citation")
-            for card in cards
-            if card.citation_status == "unresolved" or card.doi_status == "unresolved"
-        ],
-        "incomplete_enrichment": [
-            _card_issue(card, issue="incomplete metadata")
-            for card in cards
-            if card.enrichment_status == "incomplete"
-        ],
-        "missing_abstracts": [
-            _card_issue(card, issue="missing abstract")
-            for card in cards
-            if card.abstract_status in {"missing", "ambiguous", "unresolved"}
-        ],
-        "missing_keywords": [
-            _card_issue(card, issue="missing publication keywords")
-            for card in cards
-            if card.pdf and not card.keywords and card.publication_keywords_status != "absent"
-        ],
-    }
-    metadata_notes = {
-        "metadata_not_enriched": [
-            _card_issue(card, issue="metadata not enriched")
-            for card in cards
-            if card.enrichment_status == "missing"
-        ],
-    }
-    staging_summary = pdf_summary.get("staging") or {}
-    return {
-        "vault": str(paths.vault),
-        "counts": {
-            "paper_cards": len(cards),
-            "runs": len(runs),
-            "topic_pages": len(list(paths.topics.glob("*.md"))),
-            "pdf_files": len(list(paths.pdfs.glob("*.pdf"))),
-            "attached_pdf_cards": sum(1 for card in cards if _card_has_valid_pdf(paths, card)),
-            "missing_pdf_cards": sum(1 for card in cards if not _card_has_valid_pdf(paths, card)),
-            "missing_candidate_pdfs": len(missing_candidates),
-            "candidate_results_without_cards": len(missing_candidates),
-            "unmatched_entries": len(unmatched_rows),
-            "historical_unmatched_entries": len(unmatched_rows),
-            "active_staging_pdfs": staging_summary.get("pdf_count"),
-            "active_staging_duplicates": staging_summary.get("duplicate_count"),
-            "active_staging_actionable_pdfs": staging_summary.get("actionable_pdf_count"),
-        },
-        "status_counts": {
-            "pdf_status": _status_counts(cards, "pdf_status"),
-            "enrichment_status": _status_counts(cards, "enrichment_status"),
-            "citation_status": _status_counts(cards, "citation_status"),
-            "doi_status": _status_counts(cards, "doi_status"),
-            "abstract_status": _status_counts(cards, "abstract_status"),
-            "publication_keywords_status": _status_counts(
-                cards,
-                "publication_keywords_status",
-            ),
-        },
-        "issue_counts": {
-            key: len(value)
-            for key, value in metadata_issues.items()
-        },
-        "diagnostic_counts": {
-            key: len(value)
-            for key, value in metadata_notes.items()
-        },
-        "metadata_issues": metadata_issues,
-        "metadata_notes": metadata_notes,
-        "runs": [
-            _run_issue_summary(run, cards_by_path)
-            for run in sorted(
-                runs,
-                key=lambda item: (_parse_datetime(item.exported_at), item.slug),
-                reverse=True,
-            )
-        ],
-        "missing_candidate_pdfs": missing_candidates,
-        "candidate_results_without_cards": missing_candidates,
-        "topics": _topic_report(cards, limit=topic_limit),
-        "pdfs": pdf_summary,
-    }
-
-
-def topic_map_report(
-    vault: Path | str,
-    *,
-    limit: int = 30,
-) -> dict[str, Any]:
-    paths = VaultPaths.from_root(vault)
-    cards = load_source_cards(paths)
-    return {"vault": str(paths.vault), **_topic_report(cards, limit=limit)}
-
-
-def topic_preset_mapping(preset: str) -> dict[str, Any]:
-    if preset == "prompt-boilerplate":
-        return dict(PROMPT_BOILERPLATE_TOPIC_MAP)
-    raise ValueError(f"Unknown topic cleanup preset: {preset}")
-
-
-def _topic_replacements(value: Any) -> list[str]:
-    if value is None or value is False:
-        return []
-    if isinstance(value, list):
-        values = value
-    else:
-        values = [value]
-    cleaned = [clean_markdown_text(str(item)) for item in values]
-    return [item for item in cleaned if item]
-
-
-def apply_topic_map(
-    vault: Path | str,
-    mapping: dict[str, Any],
-    *,
-    apply: bool = False,
-) -> dict[str, Any]:
-    paths = VaultPaths.from_root(vault)
-    cards = load_source_cards(paths)
-    normalized_mapping = {
-        normalize_title(str(source)): _topic_replacements(target)
-        for source, target in mapping.items()
-        if normalize_title(str(source))
-    }
-    changed_cards: list[dict[str, Any]] = []
-    removed_counter: Counter[str] = Counter()
-    added_counter: Counter[str] = Counter()
-    for card in cards:
-        old_topics = list(card.topics)
-        new_topics: list[str] = []
-        seen: set[str] = set()
-        for topic in old_topics:
-            key = normalize_title(topic)
-            replacements = normalized_mapping.get(key)
-            if replacements is None:
-                replacements = [topic]
-            else:
-                removed_counter[topic] += 1
-            for replacement in replacements:
-                replacement_key = replacement.casefold()
-                if replacement_key in seen:
-                    continue
-                seen.add(replacement_key)
-                new_topics.append(replacement)
-                if replacement != topic:
-                    added_counter[replacement] += 1
-        if new_topics != old_topics:
-            changed_cards.append(
-                {
-                    "citekey": _card_id(card),
-                    "paper": _card_ref(card),
-                    "title": card.title,
-                    "before": old_topics,
-                    "after": new_topics,
-                }
-            )
-            if apply:
-                card.topics = new_topics
-                _save_card(paths, card)
-    rebuild_summary = _rebuild_indexes(paths) if apply and changed_cards else None
-    return {
-        "vault": str(paths.vault),
-        "applied": apply,
-        "mapping": {
-            source: _topic_replacements(target)
-            for source, target in mapping.items()
-        },
-        "changed_cards": len(changed_cards),
-        "changes": changed_cards,
-        "removed_topics": dict(sorted(removed_counter.items())),
-        "added_topics": dict(sorted(added_counter.items())),
-        "rebuild": rebuild_summary,
-    }
-
-
-MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\((<?[^)>\n]+(?:\.md|/)?>?)\)")
-PAPER_PATH_RE = re.compile(r"papers/[^)\]>\s]+\.md")
-PDF_READING_NOTES_RE = re.compile(r"^###\s+PDF reading notes\b", re.IGNORECASE | re.MULTILINE)
-VAULT_NOTE_ROOTS = {
-    "concepts",
-    "papers",
-    "projects",
-    "proposals",
-    "runs",
-    "syntheses",
-    "tasks",
-}
-PROPOSAL_ROLE_RE = re.compile(
-    r"Proposal role\s*:\s*(Core|Supporting|Discarded)\b",
-    re.IGNORECASE,
-)
-ROLE_CELL_RE = re.compile(r"\|\s*(Core|Supporting|Discarded)\s*\|", re.IGNORECASE)
-ORIGINAL_NOTES_RE = re.compile(
-    r"^#+\s+Original User Notes - Verbatim\s*$",
-    re.IGNORECASE | re.MULTILINE,
-)
-
-
-def _markdown_heading_re(heading: str) -> re.Pattern[str]:
-    cleaned = re.sub(r"^#+\s*", "", heading or "").strip()
-    if not cleaned:
-        raise ValueError("Heading must not be empty.")
-    return re.compile(
-        rf"^#{{1,6}}\s+{re.escape(cleaned)}(?:$|[\s:—–-].*)",
-        re.IGNORECASE | re.MULTILINE,
-    )
-
-
-def notes_missing(vault: Path | str, *, heading: str = "PDF reading notes") -> dict[str, Any]:
-    paths = VaultPaths.from_root(vault)
-    cards = load_source_cards(paths)
-    heading_re = _markdown_heading_re(heading)
-    eligible_cards = [
-        card
-        for card in cards
-        if card.status == "active" and (card.pdf_status == "attached" or bool(card.pdf))
-    ]
-    rows = []
-    for card in eligible_cards:
-        pdf_path = (paths.vault / card.pdf).resolve() if card.pdf else None
-        row = {
-            "paper": _card_ref(card),
-            "citekey": card.citekey,
-            "title": card.title,
-            "year": card.year,
-            "pdf": card.pdf,
-            "pdf_exists": bool(pdf_path and pdf_path.exists()),
-        }
-        if not heading_re.search(card.notes or ""):
-            rows.append(row)
-    return {
-        "vault": str(paths.vault),
-        "heading": re.sub(r"^#+\s*", "", heading or "").strip(),
-        "eligible_cards": len(eligible_cards),
-        "present": len(eligible_cards) - len(rows),
-        "missing": len(rows),
-        "missing_cards": rows,
-        "ok": not rows,
-    }
-
-
-def _metadata_issue_count(summary: dict[str, Any]) -> int:
-    issue_counts = summary.get("issue_counts") or {}
-    return sum(int(value or 0) for value in issue_counts.values())
-
-
-def _report_table(headers: list[str], rows: list[list[object]], *, empty: str) -> list[str]:
-    return _markdown_table(headers, rows, empty=empty)
-
-
-def _render_maintenance_report(
-    *,
-    report_date: str,
-    status_summary: dict[str, Any],
-    pdf_summary: dict[str, Any],
-    notes_summary: dict[str, Any],
-    artifacts: dict[str, list[dict[str, Any]]],
-    topic_cards: dict[str, list[SourceCard]],
-) -> str:
-    counts = status_summary.get("counts") or {}
-    topics = status_summary.get("topics") or {}
-    staging = pdf_summary.get("staging")
-    concepts = artifacts.get("concepts") or []
-    syntheses = artifacts.get("syntheses") or []
-    tasks = artifacts.get("tasks") or []
-    concept_needs = _artifacts_without_sources(concepts)
-    synthesis_needs = _artifacts_without_sources(syntheses)
-    opportunities = _topic_opportunities(topic_cards, syntheses)
-    metadata_issues = status_summary.get("metadata_issues") or {}
-    lines = [
-        f"# Maintenance Report - {report_date}",
-        "",
-        "Generated triage report. It writes this report and a task note only; it does not "
-        "modify paper cards, PDFs, run records, metadata, topics, or provenance.",
-        "",
-        "Scholar Labs candidate results without canonical paper cards are discovery context, "
-        "not defects in the selected-only workflow.",
-        "",
-        "## Status / Doctor Summary",
-        "",
-        *_report_table(
-            ["Metric", "Count"],
-            [
-                ["Paper cards", counts.get("paper_cards", 0)],
-                ["Runs", counts.get("runs", 0)],
-                ["PDF files", counts.get("pdf_files", 0)],
-                ["Attached PDF cards", counts.get("attached_pdf_cards", 0)],
-                ["Missing PDF cards", counts.get("missing_pdf_cards", 0)],
-                [
-                    "Candidate results without cards",
-                    counts.get("candidate_results_without_cards", 0),
-                ],
-                ["Historical unmatched entries", counts.get("historical_unmatched_entries", 0)],
-                ["Active staging PDFs", counts.get("active_staging_pdfs") or 0],
-                [
-                    "Active staging actionable PDFs",
-                    counts.get("active_staging_actionable_pdfs") or 0,
-                ],
-            ],
-            empty="No status rows.",
-        ),
-        "",
-        "## PDF Doctor Summary",
-        "",
-        *_report_table(
-            ["Issue", "Count"],
-            [
-                ["Cards without PDF field", len(pdf_summary.get("cards_without_pdf") or [])],
-                ["Missing card PDF files", len(pdf_summary.get("missing_card_pdfs") or [])],
-                ["Orphan PDFs", len(pdf_summary.get("orphan_pdfs") or [])],
-                [
-                    "Duplicate-style filenames",
-                    len(pdf_summary.get("duplicate_style_filenames") or []),
-                ],
-                ["Duplicate PDF hashes", len(pdf_summary.get("duplicate_hashes") or [])],
-                [
-                    "Repeated unmatched files",
-                    len(pdf_summary.get("repeated_unmatched_files") or []),
-                ],
-            ],
-            empty="No PDF issue rows.",
-        ),
-        "",
-        "## Reading Queue",
-        "",
-        f"- Eligible attached cards: {notes_summary.get('eligible_cards', 0)}",
-        f"- Missing `{notes_summary.get('heading')}`: {notes_summary.get('missing', 0)}",
-        "",
-        *_report_table(
-            ["Paper", "Citekey", "PDF"],
-            [
-                [
-                    f"[{row['title']}](../{row['paper']})",
-                    row.get("citekey") or "",
-                    row.get("pdf") or "",
-                ]
-                for row in notes_summary.get("missing_cards", [])[:50]
-            ],
-            empty="No selected attached papers are missing PDF reading notes.",
-        ),
-        "",
-        "## Enrichment Issues",
-        "",
-        *_report_table(
-            ["Issue class", "Count"],
-            [
-                [key.replace("_", " "), len(rows)]
-                for key, rows in sorted(metadata_issues.items())
-            ],
-            empty="No enrichment issue rows.",
-        ),
-        "",
-        "## Candidate Discovery Backlog",
-        "",
-        "These rows are optional discovery context unless you choose to fetch/import PDFs.",
-        "",
-        *_report_table(
-            ["Run", "Rank", "Title", "Status"],
-            [
-                [
-                    row.get("run_id"),
-                    row.get("rank"),
-                    row.get("title"),
-                    row.get("status"),
-                ]
-                for row in status_summary.get("candidate_results_without_cards", [])[:50]
-            ],
-            empty="No candidate-only Scholar Labs results found.",
-        ),
-        "",
-        "## Historical Unmatched Records",
-        "",
-        f"- Historical unmatched entries: {pdf_summary.get('historical_unmatched_entries', 0)}",
-        "",
-        *_report_table(
-            ["Filename", "Count", "Runs", "Best score"],
-            [
-                [row["filename"], row["count"], ", ".join(row["runs"]), row["best_score"]]
-                for row in pdf_summary.get("repeated_unmatched_files", [])
-            ],
-            empty="No repeated historical unmatched records.",
-        ),
-        "",
-        "## Active Staging Issues",
-        "",
-    ]
-    if staging:
-        lines.extend(
-            [
-                f"- Staging folder: {staging.get('path')}",
-                f"- PDFs in staging: {staging.get('pdf_count', 0)}",
-                f"- Already duplicated in vault: {staging.get('duplicate_count', 0)}",
-                f"- Actionable non-duplicate PDFs: {staging.get('actionable_pdf_count', 0)}",
-                "",
-            ]
-        )
-    else:
-        lines.extend(
-            [
-                "No staging folder was provided or configured for this report.",
-                "",
-            ]
-        )
-    lines.extend(
-        [
-            "## Topic Noise",
-            "",
-            *_report_table(
-                ["Topic", "Count"],
-                [[row["topic"], row["count"]] for row in topics.get("noisy", [])],
-                empty="No prompt-boilerplate topic labels detected.",
-            ),
-            "",
-            "## Concepts, Syntheses, And Tasks",
-            "",
-            *_report_table(
-                ["Artifact type", "Count", "Needs source links"],
-                [
-                    ["Concepts", len(concepts), len(concept_needs)],
-                    ["Syntheses", len(syntheses), len(synthesis_needs)],
-                    ["Tasks", len(tasks), ""],
-                ],
-                empty="No research artifacts found.",
-            ),
-            "",
-            "## Missing Synthesis Opportunities",
-            "",
-            *_report_table(
-                ["Topic", "Papers", "Example papers"],
-                [
-                    [row["topic"], row["papers"], row["example_papers"]]
-                    for row in opportunities
-                ],
-                empty="No multi-paper topic opportunities detected.",
-            ),
-            "",
-        ]
-    )
-    lines.extend(
-        _render_command_block(
-            [
-                "scholar-vault status --vault /path/to/vault --json",
-                "scholar-vault pdf-doctor --vault /path/to/vault --json",
-                'scholar-vault notes-missing --vault /path/to/vault --heading "PDF reading notes"',
-                "scholar-vault enrich --vault /path/to/vault --ui",
-                "scholar-vault topic-map --vault /path/to/vault --preset prompt-boilerplate",
-                (
-                    "scholar-vault topic-map --vault /path/to/vault "
-                    "--preset prompt-boilerplate --apply"
-                ),
-                "scholar-vault rebuild --vault /path/to/vault",
-            ]
-        )
-    )
-    return "\n".join(lines)
-
-
-def _render_maintenance_task(
-    *,
-    report_date: str,
-    report_path: str,
-    status_summary: dict[str, Any],
-    notes_summary: dict[str, Any],
-) -> str:
-    counts = status_summary.get("counts") or {}
-    issue_total = _metadata_issue_count(status_summary)
-    lines = [
-        f"# {report_date} maintenance",
-        "",
-        f"Report: [{report_path}](../{report_path})",
-        "",
-        "## Checklist",
-        "",
-        f"- [ ] Review reading queue ({notes_summary.get('missing', 0)} papers).",
-        f"- [ ] Resolve enrichment issues ({issue_total} issue rows).",
-        f"- [ ] Check active staging PDFs ({counts.get('active_staging_actionable_pdfs') or 0}).",
-        "- [ ] Run topic cleanup dry-run before applying prompt-boilerplate changes.",
-        "- [ ] Add/update concepts or syntheses only after reading PDFs as evidence.",
-        "",
-        "## Commands",
-        "",
-        "```fish",
-        "scholar-vault maintenance-report --vault /path/to/vault",
-        "scholar-vault enrich --vault /path/to/vault --ui",
-        "scholar-vault rebuild --vault /path/to/vault",
-        "```",
-        "",
-    ]
-    return "\n".join(lines)
-
-
-def maintenance_report(
-    vault: Path | str,
-    *,
-    staging_path: Path | str | None = None,
-    report_date: str | None = None,
-) -> dict[str, Any]:
-    paths = VaultPaths.from_root(vault)
-    paths.indexes.mkdir(parents=True, exist_ok=True)
-    paths.tasks.mkdir(parents=True, exist_ok=True)
-    current_date = report_date or datetime.now().astimezone().date().isoformat()
-    status_summary = doctor_vault(paths.vault, staging_path=staging_path)
-    pdf_summary = status_summary.get("pdfs") or pdf_doctor(paths.vault, staging_path=staging_path)
-    notes_summary = notes_missing(paths.vault, heading="PDF reading notes")
-    cards = load_source_cards(paths)
-    topic_cards = group_cards_by_topic(cards)
-    artifacts = _collect_research_artifacts(paths)
-    report_path = paths.indexes / "maintenance-report.md"
-    task_path = paths.tasks / f"{current_date}-maintenance.md"
-    write_text(
-        report_path,
-        _render_maintenance_report(
-            report_date=current_date,
-            status_summary=status_summary,
-            pdf_summary=pdf_summary,
-            notes_summary=notes_summary,
-            artifacts=artifacts,
-            topic_cards=topic_cards,
-        ),
-    )
-    write_text(
-        task_path,
-        _render_maintenance_task(
-            report_date=current_date,
-            report_path=ensure_relative(report_path, paths.vault),
-            status_summary=status_summary,
-            notes_summary=notes_summary,
-        ),
-    )
-    topics = status_summary.get("topics") or {}
-    return {
-        "vault": str(paths.vault),
-        "date": current_date,
-        "report": ensure_relative(report_path, paths.vault),
-        "task": ensure_relative(task_path, paths.vault),
-        "paper_cards_modified": 0,
-        "counts": {
-            "reading_queue": notes_summary.get("missing", 0),
-            "metadata_issue_rows": _metadata_issue_count(status_summary),
-            "candidate_results_without_cards": len(
-                status_summary.get("candidate_results_without_cards", [])
-            ),
-            "historical_unmatched_entries": pdf_summary.get("historical_unmatched_entries", 0),
-            "active_staging_actionable_pdfs": (
-                (pdf_summary.get("staging") or {}).get("actionable_pdf_count") or 0
-            ),
-            "noisy_topics": len(topics.get("noisy", [])),
-            "concepts_without_sources": len(
-                _artifacts_without_sources(artifacts.get("concepts") or [])
-            ),
-            "syntheses_without_sources": len(
-                _artifacts_without_sources(artifacts.get("syntheses") or [])
-            ),
-        },
-    }
-
-
-PROJECT_LIST_FIELDS = (
-    "related_papers",
-    "related_runs",
-    "related_concepts",
-    "related_syntheses",
-    "related_tasks",
-    "related_proposals",
-    "outputs",
-)
-
-
-def _project_slug(slug: str) -> str:
-    raw = (slug or "").strip().strip("/")
-    if raw.startswith("projects/"):
-        raw = raw.removeprefix("projects/").strip("/")
-    if raw.endswith("/index.md"):
-        raw = raw[: -len("/index.md")]
-    path = Path(raw)
-    if (
-        not raw
-        or path.is_absolute()
-        or len(path.parts) != 1
-        or any(part in {"", ".", ".."} for part in path.parts)
-    ):
-        raise ValueError("Project slug must be a single safe path segment.")
-    return slugify_text(raw, max_length=80)
-
-
-def _project_title(slug: str, title: str | None) -> str:
-    cleaned = (title or "").strip()
-    if cleaned:
-        return cleaned
-    return slug.replace("-", " ").replace("_", " ").title()
-
-
-def _project_index_path(paths: VaultPaths, slug: str) -> Path:
-    return paths.projects / slug / "index.md"
-
-
-def _project_map_path(paths: VaultPaths, slug: str) -> Path:
-    return paths.projects / slug / "project-map.md"
-
-
-def _project_defaults(slug: str, title: str | None = None) -> dict[str, Any]:
-    now = _now_iso()
-    project = {
-        "type": "project",
-        "title": _project_title(slug, title),
-        "slug": slug,
-        "status": "active",
-        "created": now,
-        "updated": now,
-    }
-    for field in PROJECT_LIST_FIELDS:
-        project[field] = []
-    return project
-
-
-def _normalize_project_frontmatter(frontmatter: dict[str, Any], slug: str) -> dict[str, Any]:
-    project = _project_defaults(slug, str(frontmatter.get("title") or ""))
-    project.update(frontmatter)
-    project["type"] = "project"
-    project["slug"] = slug
-    project["title"] = str(project.get("title") or _project_title(slug, None))
-    project["status"] = str(project.get("status") or "active")
-    project["created"] = str(project.get("created") or _now_iso())
-    project["updated"] = str(project.get("updated") or project["created"])
-    for field in PROJECT_LIST_FIELDS:
-        project[field] = _as_string_list(project.get(field))
-    return project
-
-
-def _load_project(paths: VaultPaths, slug: str) -> tuple[dict[str, Any], Path, str]:
-    normalized_slug = _project_slug(slug)
-    project_path = _project_index_path(paths, normalized_slug)
-    if not project_path.exists():
-        raise ValueError(f"Project does not exist: projects/{normalized_slug}")
-    frontmatter, body = read_frontmatter_markdown(project_path)
-    project = _normalize_project_frontmatter(frontmatter, normalized_slug)
-    return project, project_path, body
-
-
-def _write_project_preserving_body(path: Path, project: dict[str, Any], body: str) -> None:
-    write_text(path, f"---\n{dump_frontmatter(project).strip()}\n---\n\n{body.strip()}\n")
-
-
-def _project_list(paths: VaultPaths) -> list[dict[str, Any]]:
-    if not paths.projects.exists():
-        return []
-    rows: list[dict[str, Any]] = []
-    for project_path in sorted(paths.projects.glob("*/index.md")):
-        frontmatter, _ = read_frontmatter_markdown(project_path)
-        slug = project_path.parent.name
-        project = _normalize_project_frontmatter(frontmatter, slug)
-        rows.append(
-            {
-                "slug": slug,
-                "title": project["title"],
-                "status": project["status"],
-                "path": ensure_relative(project_path, paths.vault),
-                "project_map": (
-                    ensure_relative(_project_map_path(paths, slug), paths.vault)
-                    if _project_map_path(paths, slug).exists()
-                    else None
-                ),
-                "related_papers": len(project.get("related_papers") or []),
-                "related_concepts": len(project.get("related_concepts") or []),
-                "related_syntheses": len(project.get("related_syntheses") or []),
-                "related_tasks": len(project.get("related_tasks") or []),
-                "related_runs": len(project.get("related_runs") or []),
-            }
-        )
-    return rows
-
-
-def project_list(vault: Path | str) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    projects = _project_list(paths)
-    return {"vault": str(paths.vault), "count": len(projects), "projects": projects}
-
-
-def project_scaffold(
-    vault: Path | str,
-    slug: str,
-    *,
-    title: str | None = None,
-) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    normalized_slug = _project_slug(slug)
-    project_dir = paths.projects / normalized_slug
-    project_dir.mkdir(parents=True, exist_ok=True)
-    project_path = _project_index_path(paths, normalized_slug)
-    state = "unchanged"
-    if not project_path.exists():
-        project = _project_defaults(normalized_slug, title)
-        write_text(project_path, render_project_markdown(project))
-        state = "created"
-    else:
-        frontmatter, body = read_frontmatter_markdown(project_path)
-        project = _normalize_project_frontmatter(frontmatter, normalized_slug)
-        if title and project.get("title") != title:
-            project["title"] = title
-            project["updated"] = _now_iso()
-            _write_project_preserving_body(project_path, project, body)
-            state = "updated"
-    rebuild_summary = _rebuild_indexes(paths)
-    return {
-        "vault": str(paths.vault),
-        "project": ensure_relative(project_path, paths.vault),
-        "slug": normalized_slug,
-        "title": _project_title(normalized_slug, title),
-        "state": state,
-        "rebuild": rebuild_summary,
-    }
-
-
-def _resolve_project_paper_ref(paths: VaultPaths, citekey: str) -> str:
-    cards = load_source_cards(paths)
-    for card in cards:
-        if citekey in {card.citekey, card.slug, f"papers/{card.slug}.md"}:
-            return _card_ref(card)
-    raise ValueError(f"No paper card found for citekey or slug: {citekey}")
-
-
-def _normalize_artifact_ref(
-    paths: VaultPaths,
-    folder: str,
-    value: str,
-    *,
-    require_exists: bool = True,
-) -> str:
-    raw = (value or "").strip().strip("/")
-    if raw.startswith(f"{folder}/"):
-        raw = raw.removeprefix(f"{folder}/")
-    candidate = Path(raw)
-    if (
-        not raw
-        or candidate.is_absolute()
-        or any(part in {"", ".", ".."} for part in candidate.parts)
-    ):
-        raise ValueError(f"{folder[:-1].title()} reference must stay inside {folder}/.")
-    if candidate.suffix != ".md":
-        candidate = candidate.with_suffix(".md")
-    path = paths.vault / folder / candidate
-    if require_exists and not path.exists():
-        raise ValueError(f"Linked {folder[:-1]} does not exist: {folder}/{candidate}")
-    return ensure_relative(path, paths.vault)
-
-
-def _resolve_project_run_ref(paths: VaultPaths, run_id: str) -> str:
-    normalized = (run_id or "").strip().strip("/")
-    for run in load_run_records(paths):
-        if run.slug == normalized:
-            return run.slug
-    raise ValueError(f"No run found for run id: {run_id}")
-
-
-def _resolve_project_task_ref(paths: VaultPaths, task_path: str) -> str:
-    return _normalize_artifact_ref(paths, "tasks", task_path)
-
-
-def _append_project_section_item(body: str, heading: str, bullet: str) -> str:
-    if bullet in body:
-        return body
-    pattern = re.compile(rf"(^##\s+{re.escape(heading)}\s*$)", re.MULTILINE)
-    match = pattern.search(body)
-    if not match:
-        return body.rstrip() + f"\n\n## {heading}\n{bullet}\n"
-    next_match = re.search(r"^##\s+", body[match.end() :], flags=re.MULTILINE)
-    section_end = len(body) if next_match is None else match.end() + next_match.start()
-    before = body[: match.end()]
-    section = body[match.end() : section_end]
-    after = body[section_end:]
-    kept_lines = [
-        line
-        for line in section.strip().splitlines()
-        if not line.strip().casefold().startswith("- no linked")
-    ]
-    kept_lines.append(bullet)
-    replacement = before + "\n" + "\n".join(kept_lines).strip() + "\n"
-    return replacement + after
-
-
-def _update_project_link(
-    vault: Path | str,
-    slug: str,
-    *,
-    field: str,
-    ref: str,
-    section: str | None = None,
-    bullet: str | None = None,
-) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    project, project_path, body = _load_project(paths, slug)
-    values = list(project.get(field) or [])
-    changed = False
-    if ref not in values:
-        values.append(ref)
-        project[field] = sorted(values, key=str.casefold)
-        project["updated"] = _now_iso()
-        changed = True
-    if changed and section and bullet:
-        body = _append_project_section_item(body, section, bullet)
-    if changed:
-        _write_project_preserving_body(project_path, project, body)
-        rebuild_summary = _rebuild_indexes(paths)
-    else:
-        rebuild_summary = None
-    return {
-        "vault": str(paths.vault),
-        "project": ensure_relative(project_path, paths.vault),
-        "field": field,
-        "ref": ref,
-        "changed": changed,
-        "rebuild": rebuild_summary,
-    }
-
-
-def project_link_paper(vault: Path | str, slug: str, citekey: str) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    ref = _resolve_project_paper_ref(paths, citekey)
-    return _update_project_link(
-        paths.vault,
-        slug,
-        field="related_papers",
-        ref=ref,
-        section="Linked sources",
-        bullet=f"- [{ref}](../../{ref})",
-    )
-
-
-def project_link_concept(vault: Path | str, slug: str, concept_slug: str) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    ref = _normalize_artifact_ref(paths, "concepts", concept_slug)
-    return _update_project_link(
-        paths.vault,
-        slug,
-        field="related_concepts",
-        ref=ref,
-        section="Linked concepts",
-        bullet=f"- [{ref}](../../{ref})",
-    )
-
-
-def project_link_synthesis(
-    vault: Path | str,
-    slug: str,
-    synthesis_slug: str,
-) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    ref = _normalize_artifact_ref(paths, "syntheses", synthesis_slug)
-    return _update_project_link(
-        paths.vault,
-        slug,
-        field="related_syntheses",
-        ref=ref,
-        section="Linked syntheses",
-        bullet=f"- [{ref}](../../{ref})",
-    )
-
-
-def project_link_run(vault: Path | str, slug: str, run_id: str) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    ref = _resolve_project_run_ref(paths, run_id)
-    return _update_project_link(
-        paths.vault,
-        slug,
-        field="related_runs",
-        ref=ref,
-        section="Linked sources",
-        bullet=f"- Run: `{ref}`",
-    )
-
-
-def project_link_task(vault: Path | str, slug: str, task_path: str) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    ref = _resolve_project_task_ref(paths, task_path)
-    return _update_project_link(
-        paths.vault,
-        slug,
-        field="related_tasks",
-        ref=ref,
-        section="Open questions and tasks",
-        bullet=f"- [{ref}](../../{ref})",
-    )
-
-
-def _card_by_ref(cards: list[SourceCard], ref: str) -> SourceCard | None:
-    normalized = ref.strip()
-    stem = Path(normalized).stem
-    for card in cards:
-        if normalized in {_card_ref(card), card.slug, card.citekey or ""} or stem == card.slug:
-            return card
-    return None
-
-
-def _artifact_row(paths: VaultPaths, ref: str) -> dict[str, Any]:
-    path = paths.vault / ref
-    if not path.exists():
-        return {"path": ref, "title": ref, "exists": False}
-    frontmatter, body = read_frontmatter_markdown(path)
-    return {
-        "path": ensure_relative(path, paths.vault),
-        "title": _artifact_title(path, frontmatter, body),
-        "exists": True,
-    }
-
-
-def _run_row(paths: VaultPaths, run_id: str, runs: list[RunRecord]) -> dict[str, Any]:
-    for run in runs:
-        if run.slug == run_id:
-            return {
-                "id": run.slug,
-                "title": run_display_title(run.title, run.prompt),
-                "path": _run_ref(run),
-                "exists": True,
-            }
-    return {"id": run_id, "title": run_id, "path": None, "exists": False}
-
-
-def _project_map_data(paths: VaultPaths, project: dict[str, Any]) -> dict[str, Any]:
-    cards = load_source_cards(paths)
-    runs = load_run_records(paths)
-    gaps: list[str] = []
-    actions: list[str] = []
-    paper_rows: list[dict[str, Any]] = []
-    for ref in project.get("related_papers") or []:
-        card = _card_by_ref(cards, ref)
-        if card is None:
-            paper_rows.append(
-                {
-                    "path": ref,
-                    "title": ref,
-                    "citekey": "",
-                    "pdf_status": "missing card",
-                    "metadata_status": "missing card",
-                    "read_notes_status": "-",
-                }
-            )
-            gaps.append(f"Linked paper does not resolve: {ref}")
-            continue
-        pdf_exists = _card_has_valid_pdf(paths, card)
-        has_notes = bool(PDF_READING_NOTES_RE.search(card.notes or ""))
-        if not card.pdf or not pdf_exists:
-            gaps.append(f"Linked paper needs a PDF: {_card_id(card)}")
-        elif not has_notes:
-            gaps.append(f"Linked paper needs PDF reading notes: {_card_id(card)}")
-        if card.enrichment_status in {"missing", "incomplete", "ambiguous", "unresolved"}:
-            gaps.append(
-                f"Linked paper has metadata status `{card.enrichment_status}`: {_card_id(card)}"
-            )
-        paper_rows.append(
-            {
-                "path": _card_ref(card),
-                "title": card.title,
-                "citekey": _card_id(card),
-                "pdf_status": "attached" if card.pdf and pdf_exists else "missing",
-                "metadata_status": card.enrichment_status,
-                "read_notes_status": "present" if has_notes else "missing",
-            }
-        )
-    concept_rows = [
-        _artifact_row(paths, ref) for ref in project.get("related_concepts") or []
-    ]
-    synthesis_rows = [
-        _artifact_row(paths, ref) for ref in project.get("related_syntheses") or []
-    ]
-    task_rows = [_artifact_row(paths, ref) for ref in project.get("related_tasks") or []]
-    run_rows = [_run_row(paths, ref, runs) for ref in project.get("related_runs") or []]
-    for label, rows in [
-        ("concept", concept_rows),
-        ("synthesis", synthesis_rows),
-        ("task", task_rows),
-        ("run", run_rows),
-    ]:
-        for row in rows:
-            if not row.get("exists"):
-                gaps.append(f"Linked {label} does not resolve: {row.get('path') or row.get('id')}")
-    if not paper_rows:
-        actions.append("Link project source papers with `scholar-vault project link-paper`.")
-    if any("needs a PDF" in gap for gap in gaps):
-        actions.append("Attach PDFs for linked papers before using them as evidence.")
-    if any("PDF reading notes" in gap for gap in gaps):
-        actions.append("Read linked PDFs and add `### PDF reading notes` to paper cards.")
-    if any("metadata status" in gap for gap in gaps):
-        actions.append("Run `scholar-vault enrich --ui` for linked paper metadata issues.")
-    actions.append(f"Run `scholar-vault project audit {project['slug']}` after link changes.")
-    return {
-        "project": f"projects/{project['slug']}/index.md",
-        "generated": _now_iso(),
-        "papers": paper_rows,
-        "concepts": concept_rows,
-        "syntheses": synthesis_rows,
-        "tasks": task_rows,
-        "runs": run_rows,
-        "gaps": sorted(set(gaps), key=str.casefold),
-        "recommended_next_actions": actions,
-    }
-
-
-def project_map(vault: Path | str, slug: str) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    project, project_path, _ = _load_project(paths, slug)
-    map_data = _project_map_data(paths, project)
-    map_path = _project_map_path(paths, project["slug"])
-    write_text(map_path, render_project_map_markdown(project, map_data))
-    return {
-        "vault": str(paths.vault),
-        "project": ensure_relative(project_path, paths.vault),
-        "project_map": ensure_relative(map_path, paths.vault),
-        "linked_papers": len(map_data["papers"]),
-        "gaps": len(map_data["gaps"]),
-        "recommended_next_actions": len(map_data["recommended_next_actions"]),
-    }
-
-
-def _project_issue(message: str, **extra: Any) -> dict[str, Any]:
-    issue = {"message": message}
-    issue.update(extra)
-    return issue
-
-
-def _project_broken_links(paths: VaultPaths, project_dir: Path) -> list[dict[str, Any]]:
-    issues: list[dict[str, Any]] = []
-    for path in _markdown_files(project_dir):
-        text = path.read_text(encoding="utf-8")
-        for target in _extract_markdown_targets(text):
-            resolved = _resolve_markdown_target(paths, path, target)
-            if not resolved.exists():
-                issues.append(
-                    _project_issue(
-                        "Markdown link does not resolve",
-                        file=_display_path(path, paths.vault),
-                        target=target,
-                    )
-                )
-    return issues
-
-
-def project_audit(vault: Path | str, slug: str) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    project, project_path, _ = _load_project(paths, slug)
-    cards = load_source_cards(paths)
-    issues: dict[str, list[dict[str, Any]]] = {
-        "missing_linked_papers": [],
-        "linked_papers_without_pdfs": [],
-        "linked_papers_without_pdf_reading_notes": [],
-        "missing_linked_concepts": [],
-        "missing_linked_syntheses": [],
-        "missing_linked_tasks": [],
-        "missing_linked_runs": [],
-        "broken_links": [],
-        "stale_project_map": [],
-    }
-    for ref in project.get("related_papers") or []:
-        card = _card_by_ref(cards, ref)
-        if card is None:
-            issues["missing_linked_papers"].append(
-                _project_issue("Linked paper card does not exist", paper=ref)
-            )
-            continue
-        if not card.pdf or not _card_has_valid_pdf(paths, card):
-            issues["linked_papers_without_pdfs"].append(
-                _project_issue("Linked paper has no existing PDF", paper=_card_ref(card))
-            )
-        elif not PDF_READING_NOTES_RE.search(card.notes or ""):
-            issues["linked_papers_without_pdf_reading_notes"].append(
-                _project_issue("Linked paper lacks PDF reading notes", paper=_card_ref(card))
-            )
-    for field, key in [
-        ("related_concepts", "missing_linked_concepts"),
-        ("related_syntheses", "missing_linked_syntheses"),
-        ("related_tasks", "missing_linked_tasks"),
-    ]:
-        for ref in project.get(field) or []:
-            if not (paths.vault / ref).exists():
-                issues[key].append(_project_issue("Linked file does not exist", target=ref))
-    run_ids = {run.slug for run in load_run_records(paths)}
-    for run_id in project.get("related_runs") or []:
-        if run_id not in run_ids:
-            issues["missing_linked_runs"].append(
-                _project_issue("Linked run does not exist", run=run_id)
-            )
-    issues["broken_links"] = _project_broken_links(paths, project_path.parent)
-    map_path = _project_map_path(paths, project["slug"])
-    if not map_path.exists():
-        issues["stale_project_map"].append(
-            _project_issue("Project map is missing", target=ensure_relative(map_path, paths.vault))
-        )
-    else:
-        map_frontmatter, _ = read_frontmatter_markdown(map_path)
-        if map_frontmatter.get("project_updated") != project.get("updated"):
-            issues["stale_project_map"].append(
-                _project_issue(
-                    "Project map was generated from an older project revision",
-                    target=ensure_relative(map_path, paths.vault),
-                )
-            )
-    issue_counts = {key: len(rows) for key, rows in issues.items()}
-    return {
-        "vault": str(paths.vault),
-        "project": ensure_relative(project_path, paths.vault),
-        "ok": not any(issue_counts.values()),
-        "counts": {
-            "linked_papers": len(project.get("related_papers") or []),
-            "linked_concepts": len(project.get("related_concepts") or []),
-            "linked_syntheses": len(project.get("related_syntheses") or []),
-            "linked_tasks": len(project.get("related_tasks") or []),
-            "linked_runs": len(project.get("related_runs") or []),
-        },
-        "issue_counts": issue_counts,
-        "issues": issues,
-    }
-
-
-def _resolve_proposal_path(paths: VaultPaths, proposal: Path | str) -> Path:
-    proposal_path = Path(proposal).expanduser()
-    if not proposal_path.is_absolute():
-        proposal_path = paths.vault / proposal_path
-    return proposal_path.resolve()
-
-
-def _markdown_files(root: Path) -> list[Path]:
-    if root.is_file() and root.suffix.casefold() == ".md":
-        return [root]
-    if not root.exists():
-        return []
-    return [
-        path
-        for path in sorted(root.rglob("*.md"))
-        if not any(part.startswith(".") for part in path.relative_to(root).parts)
-    ]
-
-
-def _extract_markdown_targets(text: str) -> list[str]:
-    targets: list[str] = []
-    for match in MARKDOWN_LINK_RE.finditer(text):
-        target = match.group(1).strip("<>")
-        if "://" in target or target.startswith("#"):
-            continue
-        targets.append(urllib.parse.unquote(target.split("#", 1)[0]))
-    return [target for target in targets if target]
-
-
-def _extract_paper_refs(text: str) -> list[str]:
-    refs = set(PAPER_PATH_RE.findall(text))
-    for target in _extract_markdown_targets(text):
-        if "papers/" in target and target.endswith(".md"):
-            refs.add(target[target.index("papers/") :])
-    return sorted(refs)
-
-
-def _resolve_markdown_target(paths: VaultPaths, source: Path, target: str) -> Path:
-    if "papers/" in target:
-        return (paths.vault / target[target.index("papers/") :]).resolve()
-    target_path = Path(target)
-    if target_path.is_absolute():
-        return target_path.resolve()
-    if target_path.parts and target_path.parts[0] in VAULT_NOTE_ROOTS:
-        return (paths.vault / target_path).resolve()
-    return (source.parent / target_path).resolve()
-
-
-def _evidence_matrix_targets(path: Path) -> list[str]:
-    frontmatter, _ = read_frontmatter_markdown(path)
-    targets = _as_string_list(frontmatter.get("evidence_matrix"))
-    targets.extend(_as_string_list(frontmatter.get("evidence_matrices")))
-    return targets
-
-
-def _collect_declared_evidence_matrices(
-    paths: VaultPaths,
-    outline_files: list[Path],
-) -> tuple[list[Path], list[dict[str, Any]]]:
-    matrices: list[Path] = []
-    issues: list[dict[str, Any]] = []
-    seen: set[Path] = set()
-    for outline_file in outline_files:
-        for target in _evidence_matrix_targets(outline_file):
-            resolved = _resolve_markdown_target(paths, outline_file, target)
-            if resolved.exists() and resolved.suffix.casefold() == ".md":
-                if resolved not in seen:
-                    matrices.append(resolved)
-                    seen.add(resolved)
-                continue
-            issues.append(
-                _proposal_issue(
-                    outline_file,
-                    paths.vault,
-                    "evidence_matrix link does not resolve",
-                    target=target,
-                )
-            )
-    return matrices, issues
-
-
-def _line_for_ref(text: str, ref: str) -> str:
-    slug = Path(ref).stem
-    for line in text.splitlines():
-        if ref in line or slug in line:
-            return line
-    return ""
-
-
-def _line_has_proposal_role(line: str) -> bool:
-    return bool(PROPOSAL_ROLE_RE.search(line) or ROLE_CELL_RE.search(line))
-
-
-def _proposal_issue(file: Path, root: Path, message: str, **extra: Any) -> dict[str, Any]:
-    issue = {
-        "file": _display_path(file, root),
-        "message": message,
-    }
-    issue.update(extra)
-    return issue
-
-
-def _proposal_slug(slug: str) -> str:
-    raw = (slug or "").strip().strip("/")
-    if raw.startswith("proposals/"):
-        raw = raw.removeprefix("proposals/").strip("/")
-    path = Path(raw)
-    if (
-        not raw
-        or path.is_absolute()
-        or len(path.parts) != 1
-        or any(part in {"", ".", ".."} for part in path.parts)
-    ):
-        raise ValueError("Proposal slug must be a single safe path segment.")
-    return slugify_text(raw, max_length=80)
-
-
-def _proposal_title(slug: str, title: str | None) -> str:
-    cleaned = (title or "").strip()
-    if cleaned:
-        return cleaned
-    return slug.replace("-", " ").replace("_", " ").title()
-
-
-def _proposal_scaffold_texts(slug: str, title: str) -> dict[str, str]:
-    today = datetime.now().astimezone().date().isoformat()
-    title_yaml = json.dumps(title)
-    slug_yaml = json.dumps(slug)
-    proposal_yaml = json.dumps(f"proposals/{slug}")
-    return {
-        "index.md": dedent(
-            f"""
-            ---
-            type: proposal
-            title: {title_yaml}
-            slug: {slug_yaml}
-            created: {today}
-            ---
-
-            # {title}
-
-            ## Workspace Links
-
-            - [Outline](outline.md)
-            - [Source matrix](source-matrix.md)
-            - [Reading log](reading-log.md)
-            - [Raw idea](raw-idea.md)
-
-            ## Evidence Checks
-
-            - `scholar-vault notes-missing --heading "PDF reading notes"`
-            - `scholar-vault proposal-audit proposals/{slug}`
-            """
-        ).strip()
-        + "\n",
-        "outline.md": dedent(
-            f"""
-            ---
-            type: proposal_outline
-            title: {json.dumps(f"{title} Outline")}
-            proposal: {proposal_yaml}
-            evidence_matrix: source-matrix.md
-            created: {today}
-            ---
-
-            # {title} Outline
-
-            ## Workspace Links
-
-            - [Source matrix](source-matrix.md)
-            - [Reading log](reading-log.md)
-            - [Raw idea](raw-idea.md)
-
-            ## Core Claim
-
-            ## Structure
-
-            ## Evidence To Add
-            """
-        ).strip()
-        + "\n",
-        "source-matrix.md": dedent(
-            f"""
-            ---
-            type: proposal_source_matrix
-            title: {json.dumps(f"{title} Source Matrix")}
-            proposal: {proposal_yaml}
-            created: {today}
-            ---
-
-            # {title} Source Matrix
-
-            | Source | Proposal role | PDF evidence | Used in | Notes |
-            | --- | --- | --- | --- | --- |
-
-            Proposal role values: Core, Supporting, Discarded.
-            """
-        ).strip()
-        + "\n",
-        "reading-log.md": dedent(
-            f"""
-            ---
-            type: proposal_reading_log
-            title: {json.dumps(f"{title} Reading Log")}
-            proposal: {proposal_yaml}
-            created: {today}
-            ---
-
-            # {title} Reading Log
-
-            | Date | Paper | Status | PDF reading notes | Proposal role | Next action |
-            | --- | --- | --- | --- | --- | --- |
-            """
-        ).strip()
-        + "\n",
-        "raw-idea.md": dedent(
-            f"""
-            ---
-            type: proposal_raw_idea
-            title: {json.dumps(f"{title} Raw Idea")}
-            proposal: {proposal_yaml}
-            created: {today}
-            ---
-
-            # {title} Raw Idea
-
-            ## Original User Notes - Verbatim
-
-            ## Working Interpretation
-            """
-        ).strip()
-        + "\n",
-    }
-
-
-PROPOSAL_REQUIRED_SNIPPETS = {
-    "index.md": [
-        (
-            "## Workspace Links",
-            "## Workspace Links\n\n"
-            "- [Outline](outline.md)\n"
-            "- [Source matrix](source-matrix.md)\n"
-            "- [Reading log](reading-log.md)\n"
-            "- [Raw idea](raw-idea.md)",
-        ),
-        (
-            "scholar-vault proposal-audit",
-            "## Evidence Checks\n\n"
-            '- `scholar-vault notes-missing --heading "PDF reading notes"`\n'
-            "- `scholar-vault proposal-audit proposals/{slug}`",
-        ),
-    ],
-    "outline.md": [
-        (
-            "## Workspace Links",
-            "## Workspace Links\n\n"
-            "- [Source matrix](source-matrix.md)\n"
-            "- [Reading log](reading-log.md)\n"
-            "- [Raw idea](raw-idea.md)",
-        ),
-        ("## Evidence To Add", "## Evidence To Add"),
-    ],
-    "source-matrix.md": [
-        (
-            "| Source | Proposal role | PDF evidence | Used in | Notes |",
-            "| Source | Proposal role | PDF evidence | Used in | Notes |\n"
-            "| --- | --- | --- | --- | --- |\n\n"
-            "Proposal role values: Core, Supporting, Discarded.",
-        )
-    ],
-    "reading-log.md": [
-        (
-            "| Date | Paper | Status | PDF reading notes | Proposal role | Next action |",
-            "| Date | Paper | Status | PDF reading notes | Proposal role | Next action |\n"
-            "| --- | --- | --- | --- | --- | --- |",
-        )
-    ],
-    "raw-idea.md": [
-        ("## Original User Notes - Verbatim", "## Original User Notes - Verbatim"),
-    ],
-}
-
-
-def _write_or_update_scaffold_file(
-    path: Path,
-    initial_text: str,
-    *,
-    slug: str,
-) -> str:
-    if not path.exists():
-        write_text(path, initial_text)
-        return "created"
-    text = path.read_text(encoding="utf-8")
-    additions = [
-        snippet.format(slug=slug)
-        for marker, snippet in PROPOSAL_REQUIRED_SNIPPETS.get(path.name, [])
-        if marker not in text
-    ]
-    if not additions:
-        return "unchanged"
-    write_text(path, text.rstrip() + "\n\n" + "\n\n".join(additions) + "\n")
-    return "updated"
-
-
-def proposal_sprint_scaffold(
-    vault: Path | str,
-    slug: str,
-    *,
-    title: str | None = None,
-) -> dict[str, Any]:
-    paths = initialize_vault(vault, rebuild=False)
-    normalized_slug = _proposal_slug(slug)
-    proposal_title = _proposal_title(normalized_slug, title)
-    proposal_dir = paths.proposals / normalized_slug
-    proposal_dir.mkdir(parents=True, exist_ok=True)
-    template_texts = _proposal_scaffold_texts(normalized_slug, proposal_title)
-    file_states: dict[str, list[str]] = {"created": [], "updated": [], "unchanged": []}
-    for filename, initial_text in template_texts.items():
-        state = _write_or_update_scaffold_file(
-            proposal_dir / filename,
-            initial_text,
-            slug=normalized_slug,
-        )
-        file_states[state].append(ensure_relative(proposal_dir / filename, paths.vault))
-    rebuild_summary = _rebuild_indexes(paths)
-    return {
-        "vault": str(paths.vault),
-        "proposal": ensure_relative(proposal_dir, paths.vault),
-        "title": proposal_title,
-        "files": file_states,
-        "rebuild": rebuild_summary,
-    }
-
-
-def proposal_audit(
-    vault: Path | str,
-    proposal: Path | str,
-) -> dict[str, Any]:
-    paths = VaultPaths.from_root(vault)
-    proposal_path = _resolve_proposal_path(paths, proposal)
-    files = _markdown_files(proposal_path)
-    if not files:
-        raise ValueError(f"No Markdown files found for proposal path: {proposal_path}")
-
-    card_text_by_ref = {
-        f"papers/{card.slug}.md": (paths.papers / f"{card.slug}.md").read_text(encoding="utf-8")
-        for card in load_source_cards(paths)
-    }
-    outline_files = [path for path in files if "outline" in path.name.casefold()]
-    local_source_matrix_files = [path for path in files if "matrix" in path.name.casefold()]
-    declared_source_matrix_files, broken_matrix_links = _collect_declared_evidence_matrices(
-        paths,
-        outline_files,
-    )
-    source_matrix_files = sorted(
-        {*local_source_matrix_files, *declared_source_matrix_files},
-        key=lambda path: _display_path(path, paths.vault),
-    )
-    files = sorted(
-        {*files, *declared_source_matrix_files},
-        key=lambda path: _display_path(path, paths.vault),
-    )
-    file_texts = {path: path.read_text(encoding="utf-8") for path in files}
-    raw_idea_files = [
-        path
-        for path in files
-        if "idea" in path.name.casefold()
-        and ("raw" in path.name.casefold() or "original" in path.name.casefold())
-    ]
-    draft_files = [
-        path
-        for path in files
-        if any(token in path.name.casefold() for token in ["draft", "claim", "outline"])
-    ]
-
-    all_paper_refs = sorted(
-        {ref for text in file_texts.values() for ref in _extract_paper_refs(text)}
-    )
-    read_paper_refs = [
-        ref for ref in all_paper_refs if PDF_READING_NOTES_RE.search(card_text_by_ref.get(ref, ""))
-    ]
-    role_lookup: dict[str, bool] = {}
-    for ref in all_paper_refs:
-        role_lookup[ref] = any(
-            _line_has_proposal_role(_line_for_ref(text, ref))
-            for text in file_texts.values()
-        ) or _line_has_proposal_role(card_text_by_ref.get(ref, ""))
-
-    outline_missing_notes = []
-    for file in outline_files:
-        for ref in _extract_paper_refs(file_texts[file]):
-            if not PDF_READING_NOTES_RE.search(card_text_by_ref.get(ref, "")):
-                outline_missing_notes.append(
-                    _proposal_issue(
-                        file,
-                        paths.vault,
-                        "outline citation lacks PDF reading notes",
-                        paper=ref,
-                    )
-                )
-
-    read_without_role = [
-        {"paper": ref, "message": "read paper lacks Proposal role"}
-        for ref in read_paper_refs
-        if not role_lookup.get(ref)
-    ]
-
-    for file in source_matrix_files:
-        for target in _extract_markdown_targets(file_texts[file]):
-            resolved = _resolve_markdown_target(paths, file, target)
-            if not resolved.exists():
-                broken_matrix_links.append(
-                    _proposal_issue(
-                        file,
-                        paths.vault,
-                        "source matrix link does not resolve",
-                        target=target,
-                    )
-                )
-
-    raw_idea_missing = []
-    if not raw_idea_files:
-        raw_idea_missing.append(
-            {
-                "file": None,
-                "message": "no raw/original idea card found",
-            }
-        )
-    for file in raw_idea_files:
-        if not ORIGINAL_NOTES_RE.search(file_texts[file]):
-            raw_idea_missing.append(
-                _proposal_issue(
-                    file,
-                    paths.vault,
-                    "raw idea card lacks Original User Notes - Verbatim heading",
-                )
-            )
-
-    draft_scholar_labs_only = []
-    draft_missing_notes = []
-    for file in draft_files:
-        text = file_texts[file]
-        for line_number, line in enumerate(text.splitlines(), start=1):
-            if "scholar labs summar" in line.casefold():
-                draft_scholar_labs_only.append(
-                    _proposal_issue(
-                        file,
-                        paths.vault,
-                        "draft claim references Scholar Labs summary",
-                        line=line_number,
-                    )
-                )
-        for ref in _extract_paper_refs(text):
-            if not PDF_READING_NOTES_RE.search(card_text_by_ref.get(ref, "")):
-                draft_missing_notes.append(
-                    _proposal_issue(
-                        file,
-                        paths.vault,
-                        "draft citation lacks PDF reading notes",
-                        paper=ref,
-                    )
-                )
-
-    issues = {
-        "outline_citations_without_pdf_reading_notes": outline_missing_notes,
-        "read_papers_without_proposal_role": read_without_role,
-        "broken_source_matrix_links": broken_matrix_links,
-        "raw_idea_missing_original_notes": raw_idea_missing,
-        "draft_claims_using_scholar_labs_summaries": draft_scholar_labs_only,
-        "draft_citations_without_pdf_reading_notes": draft_missing_notes,
-    }
-    issue_counts = {key: len(value) for key, value in issues.items()}
-    return {
-        "vault": str(paths.vault),
-        "proposal": _display_path(proposal_path, paths.vault),
-        "files": [_display_path(path, paths.vault) for path in files],
-        "counts": {
-            "files": len(files),
-            "paper_refs": len(all_paper_refs),
-            "read_papers": len(read_paper_refs),
-            "outline_files": len(outline_files),
-            "source_matrix_files": len(source_matrix_files),
-            "raw_idea_files": len(raw_idea_files),
-            "draft_files": len(draft_files),
-        },
-        "issue_counts": issue_counts,
-        "issues": issues,
-        "ok": not any(issue_counts.values()),
-    }
-
-
-def _enrichment_counts(details: list[dict[str, Any]]) -> dict[str, int]:
-    return {
-        "processed": len([row for row in details if not row.get("skipped")]),
-        "changed": len([row for row in details if row.get("changed")]),
-        "skipped": len([row for row in details if row.get("skipped")]),
-        "generated": len([row for row in details if row.get("status") == "generated"]),
-        "resolved": len([row for row in details if row.get("status") == "resolved"]),
-        "verified": len([row for row in details if row.get("status") == "verified"]),
-        "ambiguous": len([row for row in details if row.get("status") == "ambiguous"]),
-        "unresolved": len([row for row in details if row.get("status") == "unresolved"]),
-    }
-
-
-def _run_enrichment_pass(
-    paths: VaultPaths,
-    cards: list[SourceCard],
-    options: EnrichmentOptions,
-    *,
-    abstracts: bool = False,
-    keywords: bool = False,
-    progress: ProgressCallback | None = None,
-) -> tuple[list[EnrichmentResult], list[dict[str, Any]]]:
-    def report_progress(card: SourceCard, index: int, total: int, status: str) -> None:
-        if progress:
-            progress(
-                _enrichment_progress_message(
-                    card,
-                    status,
-                    abstracts=abstracts,
-                    keywords=keywords,
-                ),
-                index,
-                total,
-            )
-
-    results = enrich_cards(paths, cards, options, progress=report_progress)
-    details = [
-        _enrichment_detail(paths, card, result, abstracts=abstracts, keywords=keywords)
-        for card, result in zip(cards, results, strict=False)
-    ]
-    return results, details
+    return confirm_absence(vault, citekey, progress=progress)
 
 
 def enrich_vault(
@@ -6878,114 +3241,19 @@ def enrich_vault(
     force: bool = False,
     progress: ProgressCallback | None = None,
 ) -> dict[str, Any]:
-    valid_only = {
-        "all",
-        "missing-doi",
-        "missing-bibtex",
-        "missing-abstract",
-        "missing-keywords",
-    }
-    if only not in valid_only:
-        raise ValueError(
-            "--only must be one of: all, missing-doi, missing-bibtex, "
-            "missing-abstract, missing-keywords"
-        )
+    from .enrichment import enrich_vault as enrich
 
-    paths = initialize_vault(vault)
-    cards = load_source_cards(paths)
-    filter_citekey = citekey
-    if citekey:
-        cards = [card for card in cards if citekey in {card.citekey, card.slug}]
-        if not cards:
-            raise ValueError(f"No paper card found for citekey: {citekey}")
-        filter_citekey = None
-
-    citation_details: list[dict[str, Any]] = []
-    abstract_details: list[dict[str, Any]] = []
-    keyword_details: list[dict[str, Any]] = []
-    changed_slugs: set[str] = set()
-
-    if only in {"all", "missing-doi", "missing-bibtex"}:
-        citation_results, citation_details = _run_enrichment_pass(
-            paths,
-            cards,
-            EnrichmentOptions(
-                only=only,  # type: ignore[arg-type]
-                citekey=filter_citekey,
-                refresh=refresh,
-                retry_failed=retry_failed,
-                dry_run=dry_run,
-                force=force,
-            ),
-            progress=progress,
-        )
-        changed_slugs.update(
-            card.slug
-            for card, result in zip(cards, citation_results, strict=False)
-            if result.changed
-        )
-
-    if only in {"all", "missing-abstract"}:
-        abstract_results, abstract_details = _run_enrichment_pass(
-            paths,
-            cards,
-            EnrichmentOptions(
-                only="missing-abstract" if only == "missing-abstract" else "all",
-                citekey=filter_citekey,
-                abstracts=True,
-                refresh_abstracts=refresh_abstracts,
-                retry_failed=retry_failed,
-                dry_run=dry_run,
-                force=force,
-            ),
-            abstracts=True,
-            progress=progress,
-        )
-        changed_slugs.update(
-            card.slug
-            for card, result in zip(cards, abstract_results, strict=False)
-            if result.changed
-        )
-
-    if only in {"all", "missing-keywords"}:
-        keyword_results, keyword_details = _run_enrichment_pass(
-            paths,
-            cards,
-            EnrichmentOptions(
-                only="missing-keywords",
-                citekey=filter_citekey,
-                refresh=refresh,
-                retry_failed=retry_failed,
-                dry_run=dry_run,
-                force=force,
-            ),
-            keywords=True,
-            progress=progress,
-        )
-        changed_slugs.update(
-            card.slug
-            for card, result in zip(cards, keyword_results, strict=False)
-            if result.changed
-        )
-
-    if not dry_run:
-        for card in cards:
-            if card.slug in changed_slugs:
-                _save_card(paths, card)
-        _rebuild_indexes(paths)
-
-    details = [*citation_details, *abstract_details, *keyword_details]
-    counts = _enrichment_counts(details)
-    return {
-        **counts,
-        "citation_enrichment": _enrichment_counts(citation_details),
-        "abstract_enrichment": _enrichment_counts(abstract_details),
-        "keyword_enrichment": _enrichment_counts(keyword_details),
-        "enrichment_details": citation_details,
-        "abstract_details": abstract_details,
-        "keyword_details": keyword_details,
-        "details": details,
-    }
+    return enrich(
+        vault,
+        citekey=citekey,
+        only=only,
+        refresh=refresh,
+        refresh_abstracts=refresh_abstracts,
+        retry_failed=retry_failed,
+        dry_run=dry_run,
+        force=force,
+        progress=progress,
+    )
 
 
 def enrich_citations(
@@ -7001,79 +3269,250 @@ def enrich_citations(
     force: bool = False,
     progress: EnrichmentProgress | None = None,
 ) -> dict[str, Any]:
-    valid_only = {
-        "all",
-        "missing-doi",
-        "missing-bibtex",
-        "missing-abstract",
-        "missing-keywords",
-    }
-    if only not in valid_only:
-        raise ValueError(
-            "--only must be one of: all, missing-doi, missing-bibtex, "
-            "missing-abstract, missing-keywords"
-        )
+    from .enrichment import enrich_citations as enrich
 
-    enrich_keywords = only == "missing-keywords"
-    enrich_abstracts = (
-        not enrich_keywords and (abstracts or refresh_abstracts or only == "missing-abstract")
-    )
-
-    paths = initialize_vault(vault)
-    cards = load_source_cards(paths)
-    options = EnrichmentOptions(
-        only=only,  # type: ignore[arg-type]
+    return enrich(
+        vault,
         citekey=citekey,
+        only=only,
         refresh=refresh,
-        abstracts=enrich_abstracts,
+        abstracts=abstracts,
         refresh_abstracts=refresh_abstracts,
         retry_failed=retry_failed,
         dry_run=dry_run,
         force=force,
+        progress=progress,
     )
-    results = enrich_cards(paths, cards, options, progress=progress)
-    if citekey and all(result.skipped and result.message == "citekey filter" for result in results):
-        raise ValueError(f"No paper card found for citekey: {citekey}")
 
-    details = [
-        _enrichment_detail(
-            paths,
-            card,
-            result,
-            abstracts=enrich_abstracts,
-            keywords=enrich_keywords,
-        )
-        for card, result in zip(cards, results, strict=False)
-    ]
+def render_search_index(paths: VaultPaths, cards: list[SourceCard]) -> str:
+    from .search_index import render_search_index as render
 
-    if not dry_run:
-        for card, result in zip(cards, results, strict=False):
-            if result.changed:
-                _save_card(paths, card)
-        _rebuild_indexes(paths)
+    return render(paths, cards)
 
-    return {
-        "processed": len([result for result in results if not result.skipped]),
-        "changed": len([result for result in results if result.changed]),
-        "skipped": len([result for result in results if result.skipped]),
-        "generated": len([result for result in results if result.status == "generated"]),
-        "resolved": len([result for result in results if result.status == "resolved"]),
-        "verified": len([result for result in results if result.status == "verified"]),
-        "ambiguous": len([result for result in results if result.status == "ambiguous"]),
-        "unresolved": len([result for result in results if result.status == "unresolved"]),
-        "abstracts": len(
-            [
-                result
-                for result in results
-                if enrich_abstracts and result.status in {"resolved", "verified"}
-            ]
-        ),
-        "keywords": len(
-            [
-                result
-                for result in results
-                if enrich_keywords and result.status == "resolved"
-            ]
-        ),
-        "details": details,
-    }
+
+def semantic_neighbors_export(cards: list[SourceCard]) -> dict[str, Any]:
+    from .neighbors import semantic_neighbors_export as export
+
+    return export(cards)
+
+
+def rebuild_vault(vault: Path | str) -> dict[str, int]:
+    from .rebuild import rebuild_vault as rebuild
+
+    return rebuild(vault)
+
+
+def concept_index(vault: Path | str) -> dict[str, Any]:
+    from .rebuild import concept_index as build_concept_index
+
+    return build_concept_index(vault)
+
+
+def export_bibtex(
+    vault: Path | str,
+    *,
+    include_local_fields: bool = True,
+) -> Path:
+    from .bibliography import export_bibtex as export
+
+    return export(vault, include_local_fields=include_local_fields)
+
+
+def export_card_bibtex(
+    vault: Path | str,
+    citekey: str,
+    *,
+    output: Path | str | None = None,
+    include_vault_note: bool = False,
+    include_local_fields: bool = True,
+    cite: bool = False,
+) -> dict[str, Any]:
+    from .bibliography import export_card_bibtex as export
+
+    return export(
+        vault,
+        citekey,
+        output=output,
+        include_vault_note=include_vault_note,
+        include_local_fields=include_local_fields,
+        cite=cite,
+    )
+
+
+def bibtex_doctor(vault: Path | str) -> dict[str, Any]:
+    from .bibliography import bibtex_doctor as doctor
+
+    return doctor(vault)
+
+
+def export_card_reference(
+    vault: Path | str,
+    citekey: str,
+    *,
+    output: Path | str | None = None,
+    style: str = "apa",
+    output_format: str = "markdown",
+) -> dict[str, Any]:
+    from .bibliography import export_card_reference as export
+
+    return export(vault, citekey, output=output, style=style, output_format=output_format)
+
+
+def export_references(
+    vault: Path | str,
+    *,
+    output: Path | str | None = None,
+    style: str = "apa",
+    output_format: str = "markdown",
+) -> dict[str, Any]:
+    from .bibliography import export_references as export
+
+    return export(vault, output=output, style=style, output_format=output_format)
+
+
+def pdf_doctor(
+    vault: Path | str,
+    *,
+    staging_path: Path | str | None = None,
+) -> dict[str, Any]:
+    from .diagnostics import pdf_doctor as doctor
+
+    return doctor(vault, staging_path=staging_path)
+
+
+def doctor_vault(
+    vault: Path | str,
+    *,
+    staging_path: Path | str | None = None,
+    topic_limit: int = 30,
+) -> dict[str, Any]:
+    from .diagnostics import doctor_vault as doctor
+
+    return doctor(vault, staging_path=staging_path, topic_limit=topic_limit)
+
+
+def notes_missing(vault: Path | str, *, heading: str = "PDF reading notes") -> dict[str, Any]:
+    from .diagnostics import notes_missing as report
+
+    return report(vault, heading=heading)
+
+
+def topic_map_report(
+    vault: Path | str,
+    *,
+    limit: int = 30,
+) -> dict[str, Any]:
+    from .topics import topic_map_report as report
+
+    return report(vault, limit=limit)
+
+
+def topic_preset_mapping(preset: str) -> dict[str, Any]:
+    from .topics import topic_preset_mapping as mapping
+
+    return mapping(preset)
+
+
+def apply_topic_map(
+    vault: Path | str,
+    mapping: dict[str, Any],
+    *,
+    apply: bool = False,
+) -> dict[str, Any]:
+    from .topics import apply_topic_map as apply_mapping
+
+    return apply_mapping(vault, mapping, apply=apply)
+
+
+def maintenance_report(
+    vault: Path | str,
+    *,
+    staging_path: Path | str | None = None,
+    report_date: str | None = None,
+) -> dict[str, Any]:
+    from .maintenance import maintenance_report as report
+
+    return report(vault, staging_path=staging_path, report_date=report_date)
+
+
+def project_list(vault: Path | str) -> dict[str, Any]:
+    from .projects import project_list as list_projects
+
+    return list_projects(vault)
+
+
+def project_scaffold(
+    vault: Path | str,
+    slug: str,
+    *,
+    title: str | None = None,
+) -> dict[str, Any]:
+    from .projects import project_scaffold as scaffold
+
+    return scaffold(vault, slug, title=title)
+
+
+def project_link_paper(vault: Path | str, slug: str, citekey: str) -> dict[str, Any]:
+    from .projects import project_link_paper as link_paper
+
+    return link_paper(vault, slug, citekey)
+
+
+def project_link_concept(vault: Path | str, slug: str, concept_slug: str) -> dict[str, Any]:
+    from .projects import project_link_concept as link_concept
+
+    return link_concept(vault, slug, concept_slug)
+
+
+def project_link_synthesis(
+    vault: Path | str,
+    slug: str,
+    synthesis_slug: str,
+) -> dict[str, Any]:
+    from .projects import project_link_synthesis as link_synthesis
+
+    return link_synthesis(vault, slug, synthesis_slug)
+
+
+def project_link_run(vault: Path | str, slug: str, run_id: str) -> dict[str, Any]:
+    from .projects import project_link_run as link_run
+
+    return link_run(vault, slug, run_id)
+
+
+def project_link_task(vault: Path | str, slug: str, task_path: str) -> dict[str, Any]:
+    from .projects import project_link_task as link_task
+
+    return link_task(vault, slug, task_path)
+
+
+def project_map(vault: Path | str, slug: str) -> dict[str, Any]:
+    from .projects import project_map as map_project
+
+    return map_project(vault, slug)
+
+
+def project_audit(vault: Path | str, slug: str) -> dict[str, Any]:
+    from .projects import project_audit as audit
+
+    return audit(vault, slug)
+
+
+def proposal_sprint_scaffold(
+    vault: Path | str,
+    slug: str,
+    *,
+    title: str | None = None,
+) -> dict[str, Any]:
+    from .proposals import proposal_sprint_scaffold as scaffold
+
+    return scaffold(vault, slug, title=title)
+
+
+def proposal_audit(
+    vault: Path | str,
+    proposal: Path | str,
+) -> dict[str, Any]:
+    from .proposals import proposal_audit as audit
+
+    return audit(vault, proposal)
