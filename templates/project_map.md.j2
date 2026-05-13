@@ -1,0 +1,75 @@
+# {{ project.title }} Project Map
+
+Generated from [{{ map.project }}](index.md).
+
+## Linked papers
+
+{% if map.papers %}
+| Paper | Citekey | PDF | Metadata | Read notes |
+| --- | --- | --- | --- | --- |
+{% for paper in map.papers -%}
+| [{{ paper.title }}](../../{{ paper.path }}) | {{ paper.citekey }} | {{ paper.pdf_status }} | {{ paper.metadata_status }} | {{ paper.read_notes_status }} |
+{% endfor %}
+{% else %}
+No linked papers.
+{% endif %}
+
+## Linked concepts
+
+{% if map.concepts %}
+{% for concept in map.concepts -%}
+- [{{ concept.title }}](../../{{ concept.path }}){% if not concept.exists %} (missing){% endif %}
+{% endfor %}
+{% else %}
+- No linked concepts.
+{% endif %}
+
+## Linked syntheses
+
+{% if map.syntheses %}
+{% for synthesis in map.syntheses -%}
+- [{{ synthesis.title }}](../../{{ synthesis.path }}){% if not synthesis.exists %} (missing){% endif %}
+{% endfor %}
+{% else %}
+- No linked syntheses.
+{% endif %}
+
+## Linked tasks
+
+{% if map.tasks %}
+{% for task in map.tasks -%}
+- [{{ task.title }}](../../{{ task.path }}){% if not task.exists %} (missing){% endif %}
+{% endfor %}
+{% else %}
+- No linked tasks.
+{% endif %}
+
+## Linked runs
+
+{% if map.runs %}
+{% for run in map.runs -%}
+- {% if run.path %}[{{ run.title }}](../../{{ run.path }}){% else %}{{ run.title }}{% endif %}{% if not run.exists %} (missing){% endif %}
+{% endfor %}
+{% else %}
+- No linked runs.
+{% endif %}
+
+## Gaps
+
+{% if map.gaps %}
+{% for gap in map.gaps -%}
+- {{ gap }}
+{% endfor %}
+{% else %}
+- No immediate gaps detected from linked records.
+{% endif %}
+
+## Recommended next actions
+
+{% if map.recommended_next_actions %}
+{% for action in map.recommended_next_actions -%}
+- {{ action }}
+{% endfor %}
+{% else %}
+- Keep project links current as work evolves.
+{% endif %}

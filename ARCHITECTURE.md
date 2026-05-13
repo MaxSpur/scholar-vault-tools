@@ -24,8 +24,10 @@
 - `status` / `doctor`: read-only vault health reports for humans and agents. The command summarizes canonical-card issues, run records, topic noise, optional candidate discovery backlog, historical unmatched manifest entries, active staging counts, and PDF inventory issues, with `--json` for Codex-friendly structured output. Candidate results without cards are not defects in the selected-only workflow.
 - `pdf-doctor`: read-only PDF inventory report for `pdfs/` and the optional staging folder. It flags orphan vault PDFs, missing card PDF files, duplicate hashes, duplicate-style filenames, repeated historical unmatched staged filenames, staged files already present in the vault by hash, and non-duplicate PDFs still actionable in staging.
 - `notes-missing`: read-only paper-card report for selected/attached cards that lack a requested notes subheading such as `PDF reading notes`. It is meant to produce PDF-reading queues for actual vault improvement work.
+- `maintenance-report`: read-only triage composition that writes `_indexes/maintenance-report.md` and `tasks/<date>-maintenance.md` from the current `status`, `pdf-doctor`, `notes-missing`, enrichment, staging, topic-noise, concept, synthesis, and task signals without mutating paper cards, PDFs, run manifests, or metadata.
 - `concept-index`: regenerates `_indexes/concepts.md` from durable `concepts/*.md` metacards and refreshes `llms.txt` / `llms-full.txt` without a full card/runs/topics rebuild.
-- `topic-map`: read-only topic-frequency/noise report by default. With a YAML mapping it can dry-run or `--apply` exact topic frontmatter removals/renames on canonical `papers/*.md` cards, then rebuild derived topic pages and indexes.
+- `topic-map`: read-only topic-frequency/noise report by default. With a YAML mapping, or with `--preset prompt-boilerplate`, it can dry-run or `--apply` exact topic frontmatter removals/renames on canonical `papers/*.md` cards, then rebuild derived topic pages and indexes.
+- `project scaffold/list/map/link-*` / `project audit`: lightweight project workspace commands for `projects/<slug>/index.md`. Projects are lenses over shared papers, runs, concepts, syntheses, tasks, and optional proposals; link commands update project frontmatter without duplicating paper cards, `map` writes `project-map.md`, and `audit` is read-only.
 - `proposal-audit`: read-only evidence audit for a `proposals/<slug>` workspace. It checks outline citations against PDF reading notes, read-paper proposal roles, source-matrix links, raw idea notes, and draft claims that still cite Scholar Labs summaries instead of PDF-grounded evidence. Source matrices include proposal-local `*matrix*.md` files plus Markdown files named by outline frontmatter `evidence_matrix` / `evidence_matrices`, including shared matrices under `syntheses/`.
 - `proposal-sprint scaffold`: idempotently creates or updates a proposal workspace with an index, outline, source matrix, reading log, and raw idea card, then rebuilds derived navigation.
 - `skills diff` / `skills adopt` / `skills publish` / `skills ui`: safe synchronization for project-local Codex skills between this repository and a vault's `.agents/skills/`. The repository skill folder is the source and the vault skill folder is the target. The terminal commands dry-run by default, `adopt` copies a vault-side target skill back into the repository source of truth, `publish` updates the vault target from repository source skills, and vault-only extras are kept unless explicitly archived into `.sync-backups/`. Diff rows include source/target modification-time hints and recommendations, but copying remains explicit. The UI uses one scrollable custom-select list of differing skills; buttons label and execute the copy direction as `Update Selected Skills From Repository` or `Pull Selected Skills Into Repository`.
@@ -52,8 +54,8 @@
 - Raw inputs: `raw/`
 - Staging scan cache: `.scholar-vault-pdf-scan-cache` beside staged PDFs, keyed by filename plus size/mtime and ignored by JSON export discovery.
 - Raw citation cache: `raw/metadata/<citekey>/`
-- Derived indexes and exports: `_indexes/`, `_exports/`, `llms.txt`, `llms-full.txt`
-- Optional agent-written metacards and workspaces: `concepts/`, `syntheses/`, `tasks/`, and `proposals/`
+- Derived indexes and exports: `_indexes/`, `_exports/`, `llms.txt`, `llms-full.txt`. The generated Obsidian-facing navigation layer includes `_indexes/dashboard.md`, `paper-status.md`, `reading-queue.md`, `metadata-issues.md`, `pdf-issues.md`, `synthesis-dashboard.md`, `search-index.md`, and `_exports/semantic-neighbors.json`.
+- Optional agent-written metacards and workspaces: `concepts/`, `syntheses/`, `tasks/`, `projects/`, and `proposals/`
 
 ## Merge Strategy
 
@@ -70,5 +72,5 @@
 
 - Rebuild reads canonical paper cards plus run YAML files.
 - Rebuild repairs stale run results and import manifests that match an attached canonical card by Scholar CID or exact normalized title, then backfills the run reference onto the card.
-- Rebuild rerenders generated paper/run Markdown from current templates and regenerates indexes, topic pages, LLM summaries, and export files.
+- Rebuild rerenders generated paper/run Markdown from current templates and regenerates indexes, dashboard pages, the search index, topic pages, LLM summaries, library exports, and the deterministic semantic-neighbor export.
 - Rebuild intentionally does not require Obsidian, Zotero, or a database.

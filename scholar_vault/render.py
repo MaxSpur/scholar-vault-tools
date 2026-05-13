@@ -74,6 +74,31 @@ def render_run_markdown(run: RunRecord, cards_by_slug: dict[str, SourceCard]) ->
     return f"---\n{frontmatter}\n---\n\n{body}\n"
 
 
+def render_project_markdown(project: dict[str, Any]) -> str:
+    template = ENVIRONMENT.get_template("project.md.j2")
+    body = template.render(project=project).strip()
+    frontmatter = dump_frontmatter(project).strip()
+    return f"---\n{frontmatter}\n---\n\n{body}\n"
+
+
+def render_project_map_markdown(
+    project: dict[str, Any],
+    map_data: dict[str, Any],
+) -> str:
+    template = ENVIRONMENT.get_template("project_map.md.j2")
+    body = template.render(project=project, map=map_data).strip()
+    frontmatter = dump_frontmatter(
+        {
+            "type": "project_map",
+            "project": map_data.get("project"),
+            "project_slug": project.get("slug"),
+            "project_updated": project.get("updated"),
+            "generated": map_data.get("generated"),
+        }
+    ).strip()
+    return f"---\n{frontmatter}\n---\n\n{body}\n"
+
+
 def render_prompts_index(runs: list[RunRecord]) -> str:
     template = ENVIRONMENT.get_template("prompts.md.j2")
     return (
@@ -202,8 +227,8 @@ def render_vault_readme() -> str:
         "# scholar-vault research vault\n\n"
         "This vault is a local-first source wiki. Paper card records live in `papers/`, "
         "canonical evidence PDFs live in `pdfs/`, Scholar Labs runs live in `runs/`, durable "
-        "agent-written concepts/syntheses/proposals live in their named folders, and "
-        "derived navigation lives in "
+        "agent-written concepts/syntheses/tasks/projects/proposals live in their named "
+        "folders, and derived navigation lives in "
         "`_indexes/`, `_exports/`, `llms.txt`, and `llms-full.txt`.\n"
     )
 
@@ -230,7 +255,12 @@ def render_vault_agents() -> str:
             - `topics/`, `_indexes/`, `_exports/`, `llms.txt`, and `llms-full.txt` are
               generated or derived views.
             - Durable agent-written work belongs in non-generated folders such as `concepts/`,
-              `syntheses/`, `tasks/`, `proposals/`, and `sources/`.
+              `syntheses/`, `tasks/`, `projects/`, and `proposals/`.
+            - Projects are lenses over shared papers, runs, concepts, syntheses, tasks, and
+              optional proposals. They link to paper cards instead of duplicating source
+              content.
+            - Do not create new top-level folders unless the user explicitly instructs you to.
+            - Proposal workspaces are one workflow, not the primary vault workflow.
 
             ## CLI Environment
 
@@ -270,6 +300,8 @@ def render_vault_agents() -> str:
             scholar-vault status --json
             scholar-vault pdf-doctor --json
             scholar-vault notes-missing --heading "PDF reading notes"
+            scholar-vault maintenance-report
+            scholar-vault project list
             scholar-vault runs
             ```
 
@@ -288,7 +320,7 @@ def render_vault_agents() -> str:
             ```
 
             After editing only `concepts/`, run `scholar-vault concept-index`. After
-            editing paper cards, topics, syntheses, tasks, or proposals, run:
+            editing paper cards, topics, syntheses, tasks, projects, or proposals, run:
 
             ```fish
             scholar-vault rebuild
@@ -357,25 +389,57 @@ def render_vault_agents() -> str:
 
             1. Use `$scholar-vault-research-loop` for a focused question, concept, method,
                dataset, proposal section, or paper cluster.
-            2. Orient from `status --json`, `llms.txt`, relevant cards, runs, topics, and
-               existing `concepts/`, `syntheses/`, `tasks/`, and `proposals/`.
-            3. Build a reading set from selected paper cards with attached PDFs.
-            4. Use `scholar-vault notes-missing --heading "PDF reading notes"` when you need
+            2. Start general work from `llms.txt`, `_indexes/dashboard.md`, relevant
+               `projects/`, relevant `concepts/`, relevant `syntheses/`, and then focused
+               paper cards.
+            3. Use `scholar-vault maintenance-report` when you need a broad triage pass.
+            4. Orient from `status --json`, relevant cards, runs, topics, and existing
+               `concepts/`, `syntheses/`, `tasks/`, `projects/`, and `proposals/`.
+            5. Build a reading set from selected paper cards with attached PDFs.
+            6. Use `scholar-vault notes-missing --heading "PDF reading notes"` when you need
                the unread selected-card queue.
-            5. Read PDFs as primary evidence.
-            6. Update only touched paper cards with concise `## Notes`.
-            7. Create `concepts/<slug>.md` for reusable concepts, methods, datasets, visual
-               encodings, evaluation protocols, or terminology.
-            8. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers and
+            7. Read PDFs as primary evidence.
+            8. Update only touched paper cards with concise `## Notes`.
+            9. Create `concepts/<slug>.md` for reusable concepts, methods, algorithms,
+               datasets, visual encodings, evaluation protocols, or terminology.
+            10. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers and
                literature-review prose.
-            9. Create `tasks/<date>-research-gaps.md` for unclear evidence, follow-up
-               reading, or next Scholar Labs prompts.
-            10. Run `scholar-vault concept-index` after concept-only edits, or
-                `scholar-vault rebuild` after broader paper/topic/synthesis/task/proposal edits.
+            11. Create `tasks/<date>-research-gaps.md` for open questions, unclear evidence,
+               gaps, follow-up reading, or next Scholar Labs prompts.
+            12. Run `scholar-vault concept-index` after concept-only edits, or run
+                `scholar-vault rebuild` after broader paper/topic/synthesis/task/project/proposal
+                edits.
+
+            ## Project Workflow
+
+            Project workspaces live under `projects/<slug>/index.md`.
+            Projects are lenses over the shared vault. Do not create separate vaults per
+            project, and do not duplicate paper cards inside project folders.
+
+            When working on a project, read:
+
+            1. `llms.txt`
+            2. `projects/<slug>/index.md`
+            3. `projects/<slug>/project-map.md` if present
+            4. linked syntheses
+            5. linked concepts
+            6. linked paper cards and PDFs as needed
+
+            Start or refresh a workspace with:
+
+            ```fish
+            scholar-vault project scaffold <slug>
+            scholar-vault project map <slug>
+            scholar-vault project audit <slug>
+            ```
+
+            Project notes may contain goals, plans, and work-specific synthesis, but factual
+            claims should link to paper cards or syntheses.
 
             ## Proposal Workflow
 
             Proposal workspaces live under `proposals/`.
+            Do not treat proposal workflows as the primary workflow for all vault work.
 
             Start or refresh a workspace with:
 
@@ -465,15 +529,25 @@ def render_llms_txt() -> str:
     return (
         "scholar-vault navigation\n"
         "- Canonical sources: papers/\n"
+        "- Dashboard hub: _indexes/dashboard.md\n"
+        "- Maintenance triage: scholar-vault maintenance-report --vault /path/to/vault\n"
         "- Concepts and method cards: concepts/ and _indexes/concepts.md\n"
         "- Synthesis notes: syntheses/ and _indexes/syntheses.md\n"
+        "- Open questions and research gaps: tasks/ and _indexes/tasks.md\n"
+        "- Project workspaces: projects/ and _indexes/projects.md\n"
         "- Proposal workspaces: proposals/ and _indexes/proposals.md\n"
         "- Scholar Labs provenance: runs/\n"
         "- Optional candidate discovery backlog: _indexes/missing-pdfs.md\n"
         "- Historical unmatched staging records: _indexes/unmatched.md\n"
+        "- Paper reading queue: _indexes/reading-queue.md\n"
+        "- Metadata/PDF issue dashboards: _indexes/metadata-issues.md and _indexes/pdf-issues.md\n"
+        "- Search surface: _indexes/search-index.md\n"
+        "- Semantic-neighbor navigation export: _exports/semantic-neighbors.json\n"
         "- Topics: topics/\n"
         "- Derived indexes: _indexes/\n"
         "- Exports: _exports/\n"
+        "- Evidence rule: Scholar Labs summaries and generated indexes are navigation only; "
+        "read PDFs before factual synthesis.\n"
     )
 
 
@@ -484,6 +558,35 @@ def render_llms_full(
     artifacts: dict[str, list[dict[str, Any]]] | None = None,
 ) -> str:
     lines = ["scholar-vault overview", ""]
+    lines.extend(
+        [
+            "Agent Navigation:",
+            "- Start with llms.txt, _indexes/dashboard.md, and relevant projects, "
+            "concepts, and syntheses.",
+            "- Use `scholar-vault maintenance-report --vault /path/to/vault` for broad triage.",
+            "- Use concepts/ for reusable methods, algorithms, visual encodings, datasets, "
+            "evaluation protocols, and terminology.",
+            "- Use syntheses/ for evidence-backed cross-paper answers and literature-review prose.",
+            "- Use tasks/ for open questions, gaps, and next searches.",
+            "- Use projects/ as lenses over shared papers, runs, concepts, syntheses, tasks, "
+            "and optional proposals.",
+            "- Do not treat Scholar Labs summaries, generated indexes, or semantic-neighbor "
+            "links as evidence.",
+            "- Read linked PDFs before writing factual synthesis.",
+            "",
+            "Generated Navigation:",
+            "- _indexes/dashboard.md",
+            "- _indexes/paper-status.md",
+            "- _indexes/reading-queue.md",
+            "- _indexes/metadata-issues.md",
+            "- _indexes/pdf-issues.md",
+            "- _indexes/synthesis-dashboard.md",
+            "- _indexes/search-index.md",
+            "- _indexes/projects.md",
+            "- _exports/semantic-neighbors.json",
+            "",
+        ]
+    )
     lines.append("Runs:")
     for run in runs:
         selected = len([result for result in run.results if result.status == "selected"])
@@ -540,6 +643,8 @@ def render_llms_full(
         for folder, title in [
             ("concepts", "Concepts"),
             ("syntheses", "Syntheses"),
+            ("tasks", "Tasks"),
+            ("projects", "Projects"),
             ("proposals", "Proposals"),
         ]:
             rows = artifacts.get(folder) or []

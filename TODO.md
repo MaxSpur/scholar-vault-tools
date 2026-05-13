@@ -82,3 +82,14 @@
 - [x] Add APA-style Markdown/RTF/plain formatted reference commands for one-card and whole-vault bibliography workflows.
 - [x] Add safe Codex skillset diff/adopt/publish commands, wrapper scripts, and an optional UI so repository and vault skills can be synchronized without blind overwrites.
 - [x] Add `import-pdf --ui` for drag-and-drop multi-PDF import with automatic enrichment and follow-up field resolution.
+- [x] Add lightweight `projects/` workspaces with scaffold/link/map/audit commands and generated project indexes.
+
+## Obsidian usability and vault navigation
+
+- [x] Add generated Obsidian-facing Markdown dashboards for paper-library, reading-queue, metadata-issues, PDF issues, and synthesis/source-matrix workflows.
+- [ ] Add an Obsidian setup command that writes safe default graph/search settings, including graph filters that hide generated run/topic/index scaffolding by default.
+- [ ] Reduce paper-card search noise by moving full Scholar Labs prompts out of generated paper cards while preserving run links and run-local provenance.
+- [x] Add a search-facing plain-text index over paper titles, abstracts, summaries, keywords, PDF reading notes, concepts, syntheses, tasks, projects, and proposals without full PDF text.
+- [x] Add a recurring vault-maintenance report that summarizes topic noise, unread attached papers, metadata issues, orphan/duplicate PDFs, stale candidates, and suggested cleanup commands.
+- [x] Add a topic cleanup preset that removes prompt boilerplate labels such as `Find`, `Papers`, `Peer Reviewed`, `Important`, and `That`, then rebuilds derived topic pages.
+- [x] Add a lightweight deterministic semantic-neighbor export for paper cards so Obsidian graph-like navigation can use shared topics, keywords, runs, and title/abstract overlap.

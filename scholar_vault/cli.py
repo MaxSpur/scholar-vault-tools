@@ -44,8 +44,18 @@ from .importer import (
     initialize_vault,
     latest_run_id,
     list_unmatched,
+    maintenance_report,
     notes_missing,
     pdf_doctor,
+    project_audit,
+    project_link_concept,
+    project_link_paper,
+    project_link_run,
+    project_link_synthesis,
+    project_link_task,
+    project_list,
+    project_map,
+    project_scaffold,
     proposal_audit,
     proposal_sprint_scaffold,
     rebuild_vault,
@@ -56,6 +66,7 @@ from .importer import (
     set_manual_keywords,
     set_manual_metadata,
     topic_map_report,
+    topic_preset_mapping,
     undo_run,
 )
 from .models import (
@@ -76,8 +87,10 @@ from .skill_sync import (
 from .sources import VaultPaths, infer_run_title, load_run_records, load_source_cards
 
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
+project_app = typer.Typer(help="Project workspace helpers.")
 proposal_sprint_app = typer.Typer(help="Proposal sprint workspace helpers.")
 skills_app = typer.Typer(help="Compare, adopt, and publish project-local Codex skills.")
+app.add_typer(project_app, name="project")
 app.add_typer(proposal_sprint_app, name="proposal-sprint")
 app.add_typer(skills_app, name="skills")
 console = Console()
@@ -168,6 +181,12 @@ def _complete_only_modes(incomplete: str) -> list[str]:
 def _complete_folder_modes(incomplete: str) -> list[str]:
     values = ["shared", "separate"]
     return [value for value in values if value.startswith(incomplete)]
+
+
+def _complete_topic_presets(incomplete: str) -> list[str]:
+    values = ["prompt-boilerplate"]
+    return [value for value in values if value.startswith(incomplete)]
+
 
 VaultArg = Annotated[
     Path | None,
@@ -496,6 +515,14 @@ TopicMappingArg = Annotated[
         help="YAML mapping of old topic labels to new labels, lists, or null to remove.",
     ),
 ]
+TopicPresetArg = Annotated[
+    str | None,
+    typer.Option(
+        "--preset",
+        autocompletion=_complete_topic_presets,
+        help="Built-in topic cleanup preset. Currently supported: prompt-boilerplate.",
+    ),
+]
 ApplyArg = Annotated[
     bool,
     typer.Option("--apply", help="Apply the planned changes. Default is dry-run."),
@@ -514,6 +541,37 @@ BackupArg = Annotated[
 ProposalPathArg = Annotated[
     Path,
     typer.Argument(help="Proposal folder or Markdown file to audit, relative to the vault."),
+]
+ProjectSlugArg = Annotated[
+    str,
+    typer.Argument(help="Project workspace slug, for example map-lens-deformation."),
+]
+ProjectTitleArg = Annotated[
+    str | None,
+    typer.Option("--title", help="Human-readable project title."),
+]
+ProjectCitekeyArg = Annotated[
+    str,
+    typer.Argument(
+        autocompletion=_complete_citekeys,
+        help="Paper citekey or card slug to link into the project.",
+    ),
+]
+ProjectConceptSlugArg = Annotated[
+    str,
+    typer.Argument(help="Concept slug or concepts/<slug>.md path."),
+]
+ProjectSynthesisSlugArg = Annotated[
+    str,
+    typer.Argument(help="Synthesis slug or syntheses/<slug>.md path."),
+]
+ProjectRunIdArg = Annotated[
+    str,
+    typer.Argument(autocompletion=_complete_run_ids, help="Scholar Labs run id."),
+]
+ProjectTaskPathArg = Annotated[
+    str,
+    typer.Argument(help="Task path, with or without the leading tasks/ folder."),
 ]
 ProposalSlugArg = Annotated[
     str,
@@ -1498,6 +1556,94 @@ def _print_concept_index(summary: dict[str, Any]) -> None:
     )
     if summary.get("llm_files_written"):
         console.print(f"Refreshed {summary.get('llm_files_written')} LLM context file(s).")
+
+
+def _print_project_list(summary: dict[str, Any]) -> None:
+    rows = summary.get("projects") or []
+    console.print(f"Projects: {summary.get('count', 0)}")
+    if not rows:
+        return
+    table = Table(title="Project Workspaces", show_lines=False)
+    table.add_column("Slug")
+    table.add_column("Title")
+    table.add_column("Status")
+    table.add_column("Papers", justify="right")
+    table.add_column("Path")
+    for row in rows:
+        table.add_row(
+            str(row.get("slug") or ""),
+            str(row.get("title") or ""),
+            str(row.get("status") or ""),
+            str(row.get("related_papers") or 0),
+            str(row.get("path") or ""),
+        )
+    console.print(table)
+
+
+def _print_project_scaffold(summary: dict[str, Any]) -> None:
+    console.print(f"Project scaffold: {summary.get('project')} [{summary.get('state')}]")
+    rebuild = summary.get("rebuild") or {}
+    if rebuild:
+        console.print(
+            "- Rebuilt derived outputs: "
+            f"{rebuild.get('index_files_written')} indexes, "
+            f"{rebuild.get('llm_files_written')} LLM files."
+        )
+
+
+def _print_project_link(summary: dict[str, Any]) -> None:
+    state = "linked" if summary.get("changed") else "already linked"
+    console.print(
+        f"Project {state}: {summary.get('ref')} -> {summary.get('project')} "
+        f"({summary.get('field')})"
+    )
+
+
+def _print_project_map(summary: dict[str, Any]) -> None:
+    console.print(f"Wrote project map: {summary.get('project_map')}")
+    console.print(
+        f"Linked papers={summary.get('linked_papers', 0)}, "
+        f"gaps={summary.get('gaps', 0)}, "
+        f"recommended actions={summary.get('recommended_next_actions', 0)}."
+    )
+
+
+def _print_project_audit(summary: dict[str, Any]) -> None:
+    status = "OK" if summary.get("ok") else "ISSUES"
+    console.print(f"Project audit: {summary.get('project')} [{status}]")
+    counts = summary.get("counts") or {}
+    console.print(
+        "Papers={linked_papers}, concepts={linked_concepts}, syntheses={linked_syntheses}, "
+        "tasks={linked_tasks}, runs={linked_runs}.".format(**counts)
+    )
+    _print_issue_counts("Project Audit Issues", summary.get("issue_counts") or {})
+    issues = summary.get("issues") or {}
+    for key, rows in issues.items():
+        if not rows:
+            continue
+        table = Table(title=key.replace("_", " ").title(), show_lines=False)
+        table.add_column("Target")
+        table.add_column("Message")
+        for row in rows[:50]:
+            table.add_row(
+                str(row.get("paper") or row.get("target") or row.get("run") or "-"),
+                str(row.get("message") or ""),
+            )
+        console.print(table)
+
+
+def _print_maintenance_report(summary: dict[str, Any]) -> None:
+    counts = summary.get("counts") or {}
+    console.print(f"Wrote maintenance report: {summary.get('report')}")
+    console.print(f"Wrote maintenance task: {summary.get('task')}")
+    console.print(
+        "Queues: "
+        f"reading={counts.get('reading_queue', 0)}, "
+        f"metadata={counts.get('metadata_issue_rows', 0)}, "
+        f"candidates={counts.get('candidate_results_without_cards', 0)}, "
+        f"staging={counts.get('active_staging_actionable_pdfs', 0)}, "
+        f"noisy_topics={counts.get('noisy_topics', 0)}."
+    )
 
 
 def _copy_to_clipboard(text: str) -> str:
@@ -2816,15 +2962,156 @@ def concept_index_command(
         _print_concept_index(summary)
 
 
+@project_app.command("scaffold")
+def project_scaffold_command(
+    slug: ProjectSlugArg,
+    vault: VaultArg = None,
+    title: ProjectTitleArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = project_scaffold(_resolve_vault(vault), slug, title=title)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_project_scaffold(summary)
+
+
+@project_app.command("list")
+def project_list_command(
+    vault: VaultArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = project_list(_resolve_vault(vault))
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_project_list(summary)
+
+
+@project_app.command("map")
+def project_map_command(
+    slug: ProjectSlugArg,
+    vault: VaultArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = project_map(_resolve_vault(vault), slug)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_project_map(summary)
+
+
+@project_app.command("link-paper")
+def project_link_paper_command(
+    slug: ProjectSlugArg,
+    citekey: ProjectCitekeyArg,
+    vault: VaultArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = project_link_paper(_resolve_vault(vault), slug, citekey)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_project_link(summary)
+
+
+@project_app.command("link-concept")
+def project_link_concept_command(
+    slug: ProjectSlugArg,
+    concept_slug: ProjectConceptSlugArg,
+    vault: VaultArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = project_link_concept(_resolve_vault(vault), slug, concept_slug)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_project_link(summary)
+
+
+@project_app.command("link-synthesis")
+def project_link_synthesis_command(
+    slug: ProjectSlugArg,
+    synthesis_slug: ProjectSynthesisSlugArg,
+    vault: VaultArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = project_link_synthesis(_resolve_vault(vault), slug, synthesis_slug)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_project_link(summary)
+
+
+@project_app.command("link-run")
+def project_link_run_command(
+    slug: ProjectSlugArg,
+    run_id: ProjectRunIdArg,
+    vault: VaultArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = project_link_run(_resolve_vault(vault), slug, run_id)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_project_link(summary)
+
+
+@project_app.command("link-task")
+def project_link_task_command(
+    slug: ProjectSlugArg,
+    task_path: ProjectTaskPathArg,
+    vault: VaultArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = project_link_task(_resolve_vault(vault), slug, task_path)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_project_link(summary)
+
+
+@project_app.command("audit")
+def project_audit_command(
+    slug: ProjectSlugArg,
+    vault: VaultArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = project_audit(_resolve_vault(vault), slug)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_project_audit(summary)
+
+
+@app.command("maintenance-report")
+def maintenance_report_command(
+    vault: VaultArg = None,
+    staging: StagingArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = maintenance_report(
+        _resolve_vault(vault),
+        staging_path=_optional_staging_path(staging),
+    )
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_maintenance_report(summary)
+
+
 @app.command("topic-map")
 def topic_map_command(
     vault: VaultArg = None,
     mapping: TopicMappingArg = None,
+    preset: TopicPresetArg = None,
     apply: ApplyArg = False,
     limit: int = typer.Option(30, "--limit", "-n", min=1, help="Topics to show."),
     json_output: JsonOutputArg = False,
 ) -> None:
-    if mapping is None:
+    if mapping is not None and preset is not None:
+        raise typer.BadParameter("Use either --mapping or --preset, not both.")
+    if mapping is None and preset is None:
         summary = topic_map_report(_resolve_vault(vault), limit=limit)
         if json_output:
             _print_json(summary)
@@ -2832,7 +3119,13 @@ def topic_map_command(
             _print_topic_report(summary)
         return
 
-    raw_mapping = yaml.safe_load(mapping.read_text(encoding="utf-8")) or {}
+    if preset is not None:
+        try:
+            raw_mapping = topic_preset_mapping(preset)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    else:
+        raw_mapping = yaml.safe_load(mapping.read_text(encoding="utf-8")) or {}
     if not isinstance(raw_mapping, dict):
         raise typer.BadParameter("--mapping must contain a YAML mapping.")
     summary = apply_topic_map(_resolve_vault(vault), raw_mapping, apply=apply)

@@ -131,6 +131,7 @@ scholar-vault import-pdf
 scholar-vault import-pdf --ui
 scholar-vault rerun --commit
 scholar-vault status
+scholar-vault maintenance-report
 scholar-vault rebuild
 scholar-vault enrich --ui
 ```
@@ -164,6 +165,7 @@ scholar-labs-vault/
   concepts/
   syntheses/
   tasks/
+  projects/
   proposals/
   _indexes/
     prompts.md
@@ -172,13 +174,23 @@ scholar-labs-vault/
     missing-pdfs.md
     unmatched.md
     zotero-migration.md
+    dashboard.md
+    paper-status.md
+    reading-queue.md
+    metadata-issues.md
+    pdf-issues.md
+    synthesis-dashboard.md
+    search-index.md
     concepts.md
     syntheses.md
+    tasks.md
+    projects.md
     proposals.md
   _exports/
     library.bib
     library.json
     library.csl.json
+    semantic-neighbors.json
 ```
 
 `AGENTS.md` is initialized with the vault-specific agent operating rules from
@@ -516,8 +528,13 @@ Inspect vault health for an agent or for manual triage:
 scholar-vault status --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault status --vault ~/Documents/Research/scholar-labs-vault --json
 scholar-vault doctor --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault maintenance-report --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault notes-missing --vault ~/Documents/Research/scholar-labs-vault --heading "PDF reading notes"
 scholar-vault concept-index --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault project scaffold --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation
+scholar-vault project link-paper --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation Schottler2021_GeospatialNetworks
+scholar-vault project map --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation
+scholar-vault project audit --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation
 scholar-vault proposal-sprint scaffold --vault ~/Documents/Research/scholar-labs-vault pepr-mobidec
 scholar-vault proposal-audit --vault ~/Documents/Research/scholar-labs-vault proposals/pepr-mobidec
 scholar-vault proposal-audit --vault ~/Documents/Research/scholar-labs-vault proposals/pepr-mobidec --json
@@ -531,6 +548,11 @@ duplicate-style filenames. `enrichment_status: missing` is a diagnostic state,
 not necessarily a UI follow-up issue; `scholar-vault enrich --ui` shows only
 actionable rows such as ambiguous metadata or missing keywords.
 
+`maintenance-report` writes `_indexes/maintenance-report.md` and a dated
+`tasks/<date>-maintenance.md` triage note. It composes the existing status,
+PDF doctor, reading queue, enrichment, candidate backlog, staging, topic-noise,
+concept, and synthesis checks without modifying paper cards or run data.
+
 `notes-missing` is read-only. It lists active, attached paper cards whose
 `## Notes` section does not contain a requested subheading, for example
 `### PDF reading notes`. Use it to build a reading queue for selected sources.
@@ -538,6 +560,23 @@ actionable rows such as ambiguous metadata or missing keywords.
 `concept-index` regenerates `_indexes/concepts.md` from durable concept cards
 and refreshes `llms.txt` / `llms-full.txt` so future agents can find those
 metacards without a full rebuild.
+
+`project scaffold <slug>` creates `projects/<slug>/index.md`. A project is a
+lightweight lens over shared papers, runs, concepts, syntheses, tasks, and
+optional proposals. It does not create a separate vault and it should link to
+paper cards instead of duplicating source content. Use `project link-paper`,
+`project link-concept`, `project link-synthesis`, `project link-run`, and
+`project link-task` to maintain the project frontmatter. `project map <slug>`
+writes `projects/<slug>/project-map.md` with linked paper PDF, metadata, and
+reading-note status plus gaps and next actions. `project audit <slug>` is
+read-only and checks missing linked records, missing PDFs, missing PDF reading
+notes, broken links, and stale project maps.
+
+Use `projects/` for ongoing research workspaces, implementation planning, and
+topic-specific lenses that need to gather shared vault records without copying
+them. Use `proposals/` only for proposal-specific outlines, source matrices,
+reading logs, raw idea cards, and draft evidence layers that should be audited
+with `proposal-audit`.
 
 `proposal-sprint scaffold <slug>` creates or updates
 `proposals/<slug>/index.md`, `outline.md`, `source-matrix.md`,
@@ -829,6 +868,8 @@ Inspect or batch-clean topic labels:
 ```fish
 scholar-vault topic-map --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault topic-map --vault ~/Documents/Research/scholar-labs-vault --json
+scholar-vault topic-map --vault ~/Documents/Research/scholar-labs-vault --preset prompt-boilerplate
+scholar-vault topic-map --vault ~/Documents/Research/scholar-labs-vault --preset prompt-boilerplate --apply
 scholar-vault topic-map --vault ~/Documents/Research/scholar-labs-vault --mapping ~/Downloads/topic-map.yaml
 scholar-vault topic-map --vault ~/Documents/Research/scholar-labs-vault --mapping ~/Downloads/topic-map.yaml --apply
 ```
@@ -1007,33 +1048,41 @@ normal research workflow is:
 
 1. Use `$scholar-vault-research-loop` with a focused question, concept, method,
    dataset, or paper cluster.
-2. Let Codex orient from `status --json`, `llms.txt`, cards, topics, runs, and
-   existing `syntheses/`, `concepts/`, and `tasks/`.
-3. Use `scholar-vault notes-missing --heading "PDF reading notes"` when you
+2. Let Codex orient from `llms.txt`, `_indexes/dashboard.md`, relevant
+   `projects/`, relevant `concepts/`, relevant `syntheses/`, and then focused
+   paper cards.
+3. Use `scholar-vault maintenance-report` for a broad triage pass when the
+   next work item is unclear.
+4. Use `scholar-vault notes-missing --heading "PDF reading notes"` when you
    need a concrete queue of selected cards that have not yet received PDF
    reading notes.
-4. Read the linked PDFs as primary evidence. Text extraction should cover the
+5. Read the linked PDFs as primary evidence. Text extraction should cover the
    full paper for serious reading; page ranges are only for targeted revisits.
-5. Use Codex's PDF reading/rendering capabilities for figures, tables, maps,
+6. Use Codex's PDF reading/rendering capabilities for figures, tables, maps,
    visualizations, equations, scanned pages, and appendix material. Do not rely
    on text extraction alone for visual evidence.
-6. Update only touched paper cards with concise `## Notes` that capture claims,
+7. Update only touched paper cards with concise `## Notes` that capture claims,
    methods, datasets, evaluation setup, limitations, visual encodings, and
    links to related paper cards.
-7. Create `concepts/<slug>.md` for reusable concepts, methods, datasets,
-   evaluation protocols, or visual encodings that connect multiple papers.
-8. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers,
+8. Create `concepts/<slug>.md` for reusable concepts, methods, algorithms,
+   datasets, evaluation protocols, terminology, or visual encodings that
+   connect multiple papers.
+9. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers,
    tensions, and literature-review prose.
-9. Create `tasks/<date>-research-gaps.md` for unclear evidence, follow-up
-   reading, or next Scholar Labs prompts.
-10. For proposal workspaces, start with
+10. Create `tasks/<date>-research-gaps.md` for open questions, unclear
+   evidence, gaps, follow-up reading, or next Scholar Labs prompts.
+11. For ongoing workspaces, use `projects/<slug>/index.md` as a lens over
+   shared papers, runs, concepts, syntheses, tasks, and optional proposals.
+   Link to the shared records instead of copying paper cards into the project.
+12. For proposal workspaces, start with
    `scholar-vault proposal-sprint scaffold <slug>`, then run
    `scholar-vault proposal-audit proposals/<slug>` before treating the draft
-   evidence layer as ready.
-11. Run `scholar-vault concept-index` after concept-only edits, or
+   evidence layer as ready. Do not treat proposal workflows as the primary
+   workflow for all vault work.
+13. Run `scholar-vault concept-index` after concept-only edits, or
    `scholar-vault rebuild` after broader paper, topic, synthesis, task, or
-   proposal edits, so generated context files include the new durable notes and
-   connections.
+   project/proposal edits, so generated context files include the new durable
+   notes and connections.
 
 ## Generated Records
 
@@ -1042,6 +1091,8 @@ normal research workflow is:
 - `concepts/*.md`: optional agent-written concept/metacards that connect papers by method, dataset, visual encoding, evaluation protocol, or terminology.
 - `syntheses/*.md`: optional agent-written cross-paper syntheses grounded in PDFs.
 - `tasks/*.md`: optional agent-written follow-up tasks and research gaps.
+- `projects/<slug>/index.md`: optional project lens over shared papers, runs, concepts, syntheses, tasks, and proposals.
+- `projects/<slug>/project-map.md`: generated project map summarizing linked record status, gaps, and next actions.
 - `proposals/*.md` or `proposals/<slug>/*.md`: optional proposal workspaces, outlines, source matrices, and draft evidence layers.
 - `papers/*.md` body sections: human-readable keywords, abstract, and primary Scholar Labs summary. Long prose is not duplicated in frontmatter.
 - `runs/<run_id>/<Short Title.md>`: Obsidian-friendly per-run provenance pages that keep all Scholar Labs candidate results.

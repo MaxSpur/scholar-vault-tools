@@ -1,0 +1,52 @@
+# {{ project.title }}
+
+## Goal
+
+## Current state
+
+## Linked sources
+{% if project.related_papers %}
+{% for paper in project.related_papers -%}
+- [{{ paper }}](../../{{ paper }})
+{% endfor %}
+{% else %}
+- No linked papers yet.
+{% endif %}
+
+## Linked concepts
+{% if project.related_concepts %}
+{% for concept in project.related_concepts -%}
+- [{{ concept }}](../../{{ concept }})
+{% endfor %}
+{% else %}
+- No linked concepts yet.
+{% endif %}
+
+## Linked syntheses
+{% if project.related_syntheses %}
+{% for synthesis in project.related_syntheses -%}
+- [{{ synthesis }}](../../{{ synthesis }})
+{% endfor %}
+{% else %}
+- No linked syntheses yet.
+{% endif %}
+
+## Open questions and tasks
+{% if project.related_tasks %}
+{% for task in project.related_tasks -%}
+- [{{ task }}](../../{{ task }})
+{% endfor %}
+{% else %}
+- No linked tasks yet.
+{% endif %}
+
+## Outputs
+{% if project.outputs %}
+{% for output in project.outputs -%}
+- {{ output }}
+{% endfor %}
+{% else %}
+- No outputs recorded yet.
+{% endif %}
+
+## Notes

@@ -10,7 +10,10 @@ These instructions apply inside this research vault. They are for agents working
 - `papers/*.md` cards are the durable metadata, provenance, index, and notes layer over those PDFs.
 - Scholar Labs `runs/` are discovery provenance. They explain why sources were found, but they are not evidence by themselves.
 - `topics/`, `_indexes/`, `_exports/`, `llms.txt`, and `llms-full.txt` are generated or derived views.
-- Durable agent-written work belongs in non-generated folders such as `concepts/`, `syntheses/`, `tasks/`, `proposals/`, and `sources/`.
+- Durable agent-written work belongs in non-generated folders such as `concepts/`, `syntheses/`, `tasks/`, `projects/`, and `proposals/`.
+- Projects are lenses over shared papers, runs, concepts, syntheses, tasks, and optional proposals. They link to paper cards instead of duplicating source content.
+- Do not create new top-level folders unless the user explicitly instructs you to.
+- Proposal workspaces are one workflow, not the primary vault workflow.
 
 ## CLI Environment
 
@@ -32,17 +35,26 @@ Prefer structured commands for orientation:
 scholar-vault status --json
 scholar-vault pdf-doctor --json
 scholar-vault notes-missing --heading "PDF reading notes"
+scholar-vault maintenance-report
+scholar-vault project list
 scholar-vault runs
 ```
 
-For one-card BibTeX while working from Obsidian, copy the card `citekey` and run:
+For one-card BibLaTeX while working from Obsidian, copy the card `citekey` and run:
 
 ```fish
-scholar-vault card-bibtex <citekey>
+scholar-vault card-biblatex <citekey>
+```
+
+For APA-style Markdown/RTF/plain references, use the formatter instead of hand-formatting:
+
+```fish
+scholar-vault reference <citekey>
+scholar-vault references
 ```
 
 After editing only `concepts/`, run `scholar-vault concept-index`. After
-editing paper cards, topics, syntheses, tasks, or proposals, run:
+editing paper cards, topics, syntheses, tasks, projects, or proposals, run:
 
 ```fish
 scholar-vault rebuild
@@ -97,19 +109,46 @@ scholar-vault resolve-citation --citekey <citekey> \
 For actual vault improvement after import and enrichment:
 
 1. Use `$scholar-vault-research-loop` for a focused question, concept, method, dataset, proposal section, or paper cluster.
-2. Orient from `status --json`, `llms.txt`, relevant cards, runs, topics, and existing `concepts/`, `syntheses/`, `tasks/`, and `proposals/`.
-3. Build a reading set from selected paper cards with attached PDFs.
-4. Use `scholar-vault notes-missing --heading "PDF reading notes"` when you need the unread selected-card queue.
-5. Read PDFs as primary evidence.
-6. Update only touched paper cards with concise `## Notes`.
-7. Create `concepts/<slug>.md` for reusable concepts, methods, datasets, visual encodings, evaluation protocols, or terminology.
-8. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers and literature-review prose.
-9. Create `tasks/<date>-research-gaps.md` for unclear evidence, follow-up reading, or next Scholar Labs prompts.
-10. Run `scholar-vault concept-index` after concept-only edits, or `scholar-vault rebuild` after broader paper/topic/synthesis/task/proposal edits.
+2. Start general work from `llms.txt`, `_indexes/dashboard.md`, relevant `projects/`, relevant `concepts/`, relevant `syntheses/`, and then focused paper cards.
+3. Use `scholar-vault maintenance-report` when you need a broad triage pass.
+4. Orient from `status --json`, relevant cards, runs, topics, and existing `concepts/`, `syntheses/`, `tasks/`, `projects/`, and `proposals/`.
+5. Build a reading set from selected paper cards with attached PDFs.
+6. Use `scholar-vault notes-missing --heading "PDF reading notes"` when you need the unread selected-card queue.
+7. Read PDFs as primary evidence.
+8. Update only touched paper cards with concise `## Notes`.
+9. Create `concepts/<slug>.md` for reusable concepts, methods, algorithms, datasets, visual encodings, evaluation protocols, or terminology.
+10. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers and literature-review prose.
+11. Create `tasks/<date>-research-gaps.md` for open questions, unclear evidence, gaps, follow-up reading, or next Scholar Labs prompts.
+12. Run `scholar-vault concept-index` after concept-only edits, or `scholar-vault rebuild` after broader paper/topic/synthesis/task/project/proposal edits.
+
+## Project Workflow
+
+Project workspaces live under `projects/<slug>/index.md`.
+Projects are lenses over the shared vault. Do not create separate vaults per project, and do not duplicate paper cards inside project folders.
+
+When working on a project, read:
+
+1. `llms.txt`
+2. `projects/<slug>/index.md`
+3. `projects/<slug>/project-map.md` if present
+4. linked syntheses
+5. linked concepts
+6. linked paper cards and PDFs as needed
+
+Start or refresh a workspace with:
+
+```fish
+scholar-vault project scaffold <slug>
+scholar-vault project map <slug>
+scholar-vault project audit <slug>
+```
+
+Project notes may contain goals, plans, and work-specific synthesis, but factual claims should link to paper cards or syntheses.
 
 ## Proposal Workflow
 
 Proposal workspaces live under `proposals/`.
+Do not treat proposal workflows as the primary workflow for all vault work.
 
 Start or refresh a workspace with:
 

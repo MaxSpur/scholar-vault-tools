@@ -104,6 +104,7 @@ class VaultPaths:
     concepts: Path
     syntheses: Path
     tasks: Path
+    projects: Path
     proposals: Path
     indexes: Path
     exports: Path
@@ -130,6 +131,7 @@ class VaultPaths:
             concepts=root / "concepts",
             syntheses=root / "syntheses",
             tasks=root / "tasks",
+            projects=root / "projects",
             proposals=root / "proposals",
             indexes=indexes,
             exports=exports,
@@ -152,6 +154,7 @@ class VaultPaths:
             self.concepts,
             self.syntheses,
             self.tasks,
+            self.projects,
             self.proposals,
             self.indexes,
             self.exports,

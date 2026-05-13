@@ -22,8 +22,16 @@ from scholar_vault.importer import (
     import_staged_pdf_match,
     initialize_vault,
     latest_run_id,
+    maintenance_report,
     notes_missing,
     pdf_doctor,
+    project_audit,
+    project_link_concept,
+    project_link_paper,
+    project_link_synthesis,
+    project_link_task,
+    project_map,
+    project_scaffold,
     proposal_audit,
     proposal_sprint_scaffold,
     rebuild_vault,
@@ -45,7 +53,14 @@ from scholar_vault.models import (
     SourceCard,
 )
 from scholar_vault.render import render_paper_markdown
-from scholar_vault.sources import VaultPaths, load_source_cards, run_note_path, write_yaml
+from scholar_vault.sources import (
+    VaultPaths,
+    dump_frontmatter,
+    load_source_cards,
+    read_frontmatter_markdown,
+    run_note_path,
+    write_yaml,
+)
 
 
 def _write_fixture_copy(name: str, target: Path) -> Path:
@@ -844,8 +859,8 @@ def test_rebuild_rerenders_existing_paper_cards_with_latest_template(tmp_path: P
     rendered = (paths.papers / "quick-access.md").read_text(encoding="utf-8")
     assert summary["papers"] == 1
     assert summary["paper_cards_written"] == 1
-    assert summary["index_files_written"] == 9
-    assert summary["export_files_written"] == 3
+    assert summary["index_files_written"] == 18
+    assert summary["export_files_written"] == 4
     assert "## Quick access" in rendered
     assert "[Open local PDF](../pdfs/quick-access.pdf)" in rendered
 
@@ -897,6 +912,8 @@ def test_initialize_vault_writes_full_agents_template(tmp_path: Path) -> None:
     assert agents.startswith("# Scholar Vault Agent Notes")
     assert "Linked `pdfs/*.pdf` files are the canonical evidence artifacts." in agents
     assert 'scholar-vault notes-missing --heading "PDF reading notes"' in agents
+    assert "scholar-vault project scaffold <slug>" in agents
+    assert "Projects are lenses over the shared vault" in agents
     assert "scholar-vault proposal-sprint scaffold <slug>" in agents
     assert "scholar-vault proposal-audit proposals/<slug>" in agents
     assert "$scholar-vault-research-loop" in agents
@@ -918,6 +935,18 @@ def test_rebuild_indexes_research_artifacts(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (paths.syntheses / "od-flow.md").write_text("# OD-flow Synthesis\n", encoding="utf-8")
+    (paths.projects / "map-lens-deformation").mkdir(parents=True)
+    (paths.projects / "map-lens-deformation" / "index.md").write_text(
+        (
+            "---\n"
+            "type: project\n"
+            "title: Map Lens Deformation\n"
+            "slug: map-lens-deformation\n"
+            "---\n\n"
+            "# Map Lens Deformation\n"
+        ),
+        encoding="utf-8",
+    )
     (paths.proposals / "pepr-mobidec").mkdir(parents=True)
     (paths.proposals / "pepr-mobidec" / "outline.md").write_text(
         "# Proposal Outline\n",
@@ -928,15 +957,295 @@ def test_rebuild_indexes_research_artifacts(tmp_path: Path) -> None:
 
     concepts_index = (paths.indexes / "concepts.md").read_text(encoding="utf-8")
     syntheses_index = (paths.indexes / "syntheses.md").read_text(encoding="utf-8")
+    projects_index = (paths.indexes / "projects.md").read_text(encoding="utf-8")
     proposals_index = (paths.indexes / "proposals.md").read_text(encoding="utf-8")
+    dashboard = (paths.indexes / "dashboard.md").read_text(encoding="utf-8")
     llms = (paths.vault / "llms.txt").read_text(encoding="utf-8")
     llms_full = (paths.vault / "llms-full.txt").read_text(encoding="utf-8")
 
     assert "[Flow Maps](../concepts/flow-maps.md)" in concepts_index
     assert "[OD-flow Synthesis](../syntheses/od-flow.md)" in syntheses_index
+    assert "[Map Lens Deformation](../projects/map-lens-deformation/index.md)" in projects_index
     assert "[Proposal Outline](../proposals/pepr-mobidec/outline.md)" in proposals_index
+    assert "[Projects](projects.md)" in dashboard
+    assert "| Projects | 1 |" in dashboard
     assert "_indexes/concepts.md" in llms
+    assert "_indexes/projects.md" in llms
     assert "Concepts:" in llms_full
+    assert "Projects:" in llms_full
+
+
+def test_project_scaffold_creates_valid_workspace(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+
+    summary = project_scaffold(vault, "map-lens-deformation")
+    project_path = paths.projects / "map-lens-deformation" / "index.md"
+    frontmatter, body = read_frontmatter_markdown(project_path)
+    projects_index = (paths.indexes / "projects.md").read_text(encoding="utf-8")
+
+    assert summary["project"] == "projects/map-lens-deformation/index.md"
+    assert summary["state"] == "created"
+    assert frontmatter["type"] == "project"
+    assert frontmatter["slug"] == "map-lens-deformation"
+    assert frontmatter["status"] == "active"
+    assert frontmatter["related_papers"] == []
+    assert "## Goal" in body
+    assert "## Linked sources" in body
+    assert "[Map Lens Deformation](../projects/map-lens-deformation/index.md)" in projects_index
+
+
+def test_project_link_paper_is_idempotent(tmp_path: Path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="geospatial-networks",
+            citekey="Schottler2021_GeospatialNetworks",
+            title="Geospatial Networks",
+        ),
+    )
+    project_scaffold(vault, "map-lens-deformation")
+
+    first = project_link_paper(
+        vault,
+        "map-lens-deformation",
+        "Schottler2021_GeospatialNetworks",
+    )
+    second = project_link_paper(
+        vault,
+        "map-lens-deformation",
+        "Schottler2021_GeospatialNetworks",
+    )
+    frontmatter, body = read_frontmatter_markdown(
+        paths.projects / "map-lens-deformation" / "index.md"
+    )
+
+    assert first["changed"] is True
+    assert second["changed"] is False
+    assert frontmatter["related_papers"] == ["papers/geospatial-networks.md"]
+    assert body.count("- [papers/geospatial-networks.md]") == 1
+
+
+def test_project_link_concept_is_idempotent(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    (paths.concepts / "flow-maps.md").write_text("# Flow Maps\n", encoding="utf-8")
+    project_scaffold(vault, "map-lens-deformation")
+
+    first = project_link_concept(vault, "map-lens-deformation", "flow-maps")
+    second = project_link_concept(vault, "map-lens-deformation", "flow-maps")
+    frontmatter, body = read_frontmatter_markdown(
+        paths.projects / "map-lens-deformation" / "index.md"
+    )
+
+    assert first["changed"] is True
+    assert second["changed"] is False
+    assert frontmatter["related_concepts"] == ["concepts/flow-maps.md"]
+    assert body.count("- [concepts/flow-maps.md]") == 1
+
+
+def test_project_map_renders_linked_records(tmp_path: Path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _write_pdf_with_title(paths.pdfs / "flow.pdf", "Flow Paper")
+    _save_card(
+        paths,
+        SourceCard(
+            slug="flow-paper",
+            citekey="Flow2026",
+            title="Flow Paper",
+            pdf="pdfs/flow.pdf",
+            pdf_status="attached",
+            enrichment_status="complete",
+            notes="### PDF reading notes\nRead notes.",
+        ),
+    )
+    (paths.concepts / "flow-maps.md").write_text("# Flow Maps\n", encoding="utf-8")
+    (paths.syntheses / "flow-synthesis.md").write_text(
+        "# Flow Synthesis\n",
+        encoding="utf-8",
+    )
+    (paths.tasks / "flow-task.md").write_text("# Flow Task\n", encoding="utf-8")
+    project_scaffold(vault, "map-lens-deformation")
+    project_link_paper(vault, "map-lens-deformation", "Flow2026")
+    project_link_concept(vault, "map-lens-deformation", "flow-maps")
+    project_link_synthesis(vault, "map-lens-deformation", "flow-synthesis")
+    project_link_task(vault, "map-lens-deformation", "flow-task")
+
+    summary = project_map(vault, "map-lens-deformation")
+    text = (paths.projects / "map-lens-deformation" / "project-map.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert summary["project_map"] == "projects/map-lens-deformation/project-map.md"
+    assert "Flow Paper" in text
+    assert "Flow2026" in text
+    assert "attached" in text
+    assert "present" in text
+    assert "Flow Maps" in text
+    assert "Flow Synthesis" in text
+    assert "Flow Task" in text
+
+
+def test_project_audit_detects_missing_linked_paper(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    project_scaffold(vault, "map-lens-deformation")
+    project_path = paths.projects / "map-lens-deformation" / "index.md"
+    frontmatter, body = read_frontmatter_markdown(project_path)
+    frontmatter["related_papers"] = ["papers/missing.md"]
+    frontmatter["updated"] = "2026-05-13T12:00:00+02:00"
+    project_path.write_text(
+        f"---\n{dump_frontmatter(frontmatter).strip()}\n---\n\n{body}",
+        encoding="utf-8",
+    )
+
+    summary = project_audit(vault, "map-lens-deformation")
+
+    assert summary["ok"] is False
+    assert summary["issue_counts"]["missing_linked_papers"] == 1
+    assert summary["issues"]["missing_linked_papers"][0]["paper"] == "papers/missing.md"
+
+
+def test_maintenance_report_writes_index_and_task(tmp_path: Path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _write_pdf_with_title(paths.pdfs / "unread.pdf", "Unread Paper")
+    _save_card(
+        paths,
+        SourceCard(
+            slug="unread",
+            citekey="unread",
+            title="Unread Paper",
+            pdf="pdfs/unread.pdf",
+            pdf_status="attached",
+            topics=["Find", "Mobility"],
+            summary="Scholar Labs summary text.",
+        ),
+    )
+
+    summary = maintenance_report(vault, report_date="2026-05-13")
+
+    report = paths.indexes / "maintenance-report.md"
+    task = paths.tasks / "2026-05-13-maintenance.md"
+    report_text = report.read_text(encoding="utf-8")
+    task_text = task.read_text(encoding="utf-8")
+    assert summary["report"] == "_indexes/maintenance-report.md"
+    assert summary["task"] == "tasks/2026-05-13-maintenance.md"
+    assert summary["paper_cards_modified"] == 0
+    assert summary["counts"]["reading_queue"] == 1
+    assert summary["counts"]["noisy_topics"] == 1
+    assert "# Maintenance Report - 2026-05-13" in report_text
+    assert "Status / Doctor Summary" in report_text
+    assert "Scholar Labs candidate results without canonical paper cards" in report_text
+    assert (
+        "scholar-vault topic-map --vault /path/to/vault --preset prompt-boilerplate"
+        in report_text
+    )
+    assert "Review reading queue (1 papers)" in task_text
+
+
+def test_rebuild_writes_dashboards_search_index_and_semantic_neighbors(tmp_path: Path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _write_pdf_with_title(paths.pdfs / "flow-a.pdf", "Flow Paper A")
+    _write_pdf_with_title(paths.pdfs / "flow-b.pdf", "Flow Paper B")
+    _save_card(
+        paths,
+        SourceCard(
+            slug="flow-a",
+            citekey="flowa",
+            title="Origin Destination Flow Maps",
+            pdf="pdfs/flow-a.pdf",
+            pdf_status="attached",
+            discovered_in=["runs/2026-04-22_flows/Flow Search.md"],
+            topics=["Mobility", "Find"],
+            keywords=["Origin-destination", "Flow maps"],
+            abstract="This paper evaluates origin destination flow map visual encodings.",
+            summary="Scholar Labs summary for flow maps.",
+            notes="### PDF reading notes - 2026-05-13\nPDF-grounded notes about flows.",
+        ),
+    )
+    _save_card(
+        paths,
+        SourceCard(
+            slug="flow-b",
+            citekey="flowb",
+            title="Mobility Flow Evaluation",
+            pdf="pdfs/flow-b.pdf",
+            pdf_status="attached",
+            discovered_in=["runs/2026-04-22_flows/Flow Search.md"],
+            topics=["Mobility"],
+            keywords=["Origin-destination"],
+            abstract="Evaluation of mobility origin destination representations.",
+            summary="Second summary.",
+        ),
+    )
+    _save_card(
+        paths,
+        SourceCard(slug="unrelated", citekey="unrelated", title="Unrelated Source"),
+    )
+    (paths.concepts / "flow-maps.md").write_text(
+        "# Flow Maps\nReusable concept.\n",
+        encoding="utf-8",
+    )
+    (paths.syntheses / "mobility-flows.md").write_text(
+        "# Mobility Flows\nCross-paper synthesis.\n",
+        encoding="utf-8",
+    )
+    (paths.tasks / "2026-05-13-research-gaps.md").write_text(
+        "# Research Gaps\nFind missing evaluation papers.\n",
+        encoding="utf-8",
+    )
+    (paths.proposals / "mobility").mkdir(parents=True)
+    (paths.proposals / "mobility" / "outline.md").write_text(
+        "# Mobility Proposal\n",
+        encoding="utf-8",
+    )
+
+    first_summary = rebuild_vault(vault)
+    generated_files = [
+        paths.indexes / "dashboard.md",
+        paths.indexes / "paper-status.md",
+        paths.indexes / "reading-queue.md",
+        paths.indexes / "metadata-issues.md",
+        paths.indexes / "pdf-issues.md",
+        paths.indexes / "synthesis-dashboard.md",
+        paths.indexes / "search-index.md",
+        paths.exports / "semantic-neighbors.json",
+    ]
+    snapshots = {path: path.read_text(encoding="utf-8") for path in generated_files}
+    second_summary = rebuild_vault(vault)
+    semantic = json.loads((paths.exports / "semantic-neighbors.json").read_text(encoding="utf-8"))
+    flow_a = next(row for row in semantic["papers"] if row["citekey"] == "flowa")
+
+    assert first_summary["index_files_written"] == 18
+    assert first_summary["export_files_written"] == 4
+    assert "Scholar Vault Dashboard" in snapshots[paths.indexes / "dashboard.md"]
+    assert "[Reading queue](reading-queue.md)" in snapshots[paths.indexes / "dashboard.md"]
+    assert "Origin Destination Flow Maps" in snapshots[paths.indexes / "search-index.md"]
+    assert "PDF-grounded notes about flows" in snapshots[paths.indexes / "search-index.md"]
+    assert "Flow Maps" in snapshots[paths.indexes / "search-index.md"]
+    assert (
+        "This file does not include full PDF text"
+        in snapshots[paths.indexes / "search-index.md"]
+    )
+    assert flow_a["neighbors"][0]["citekey"] == "flowb"
+    assert any("shared topic: Mobility" in reason for reason in flow_a["neighbors"][0]["reasons"])
+    assert any("same run:" in reason for reason in flow_a["neighbors"][0]["reasons"])
+    assert second_summary["paper_cards_written"] == 0
+    for path in generated_files:
+        assert path.read_text(encoding="utf-8") == snapshots[path]
 
 
 def test_notes_missing_reports_attached_cards_without_heading(tmp_path: Path) -> None:

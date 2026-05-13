@@ -317,6 +317,74 @@ def test_topic_map_command_dry_runs_mapping(tmp_path) -> None:
     assert "papers/source.md" in result.output
 
 
+def test_topic_map_command_prompt_boilerplate_preset_dry_run(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+    from scholar_vault.sources import load_source_cards  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source",
+            topics=["Find", "Mobility", "Peer Reviewed"],
+        ),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["topic-map", "--vault", str(vault), "--preset", "prompt-boilerplate", "--json"],
+    )
+    unchanged = load_source_cards(paths)[0]
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["applied"] is False
+    assert payload["changed_cards"] == 1
+    assert unchanged.topics == ["Find", "Mobility", "Peer Reviewed"]
+
+
+def test_topic_map_command_prompt_boilerplate_preset_apply(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+    from scholar_vault.sources import load_source_cards  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source",
+            topics=["Find", "Mobility", "Peer Reviewed"],
+        ),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "topic-map",
+            "--vault",
+            str(vault),
+            "--preset",
+            "prompt-boilerplate",
+            "--apply",
+            "--json",
+        ],
+    )
+    changed = load_source_cards(paths)[0]
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["applied"] is True
+    assert payload["changed_cards"] == 1
+    assert changed.topics == ["Mobility"]
+
+
 def test_proposal_audit_command_outputs_json(tmp_path) -> None:
     vault = tmp_path / "vault"
     paths = initialize_vault(vault)
@@ -367,6 +435,41 @@ def test_notes_missing_command_outputs_json(tmp_path) -> None:
     assert payload["missing_cards"][0]["paper"] == "papers/source.md"
 
 
+def test_maintenance_report_command_creates_report_and_task(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    (paths.pdfs / "source.pdf").write_bytes(b"%PDF-1.4 source\n")
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="source",
+            title="Source",
+            pdf="pdfs/source.pdf",
+            pdf_status="attached",
+            topics=["Find"],
+        ),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["maintenance-report", "--vault", str(vault), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["report"] == "_indexes/maintenance-report.md"
+    assert payload["task"].startswith("tasks/")
+    assert payload["task"].endswith("-maintenance.md")
+    assert (paths.indexes / "maintenance-report.md").exists()
+    assert (paths.vault / payload["task"]).exists()
+    assert payload["paper_cards_modified"] == 0
+    assert payload["counts"]["reading_queue"] == 1
+
+
 def test_concept_index_command_outputs_json(tmp_path) -> None:
     vault = tmp_path / "vault"
     paths = initialize_vault(vault)
@@ -378,6 +481,62 @@ def test_concept_index_command_outputs_json(tmp_path) -> None:
     payload = json.loads(result.output)
     assert payload["concepts"] == 1
     assert payload["index"] == "_indexes/concepts.md"
+
+
+def test_project_commands_scaffold_list_link_map_and_audit(tmp_path) -> None:
+    from scholar_vault.importer import _save_card  # noqa: PLC0415
+    from scholar_vault.models import SourceCard  # noqa: PLC0415
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="geospatial-networks",
+            citekey="Schottler2021_GeospatialNetworks",
+            title="Geospatial Networks",
+        ),
+    )
+
+    scaffold = CliRunner().invoke(
+        app,
+        ["project", "scaffold", "map-lens-deformation", "--vault", str(vault), "--json"],
+    )
+    linked = CliRunner().invoke(
+        app,
+        [
+            "project",
+            "link-paper",
+            "map-lens-deformation",
+            "Schottler2021_GeospatialNetworks",
+            "--vault",
+            str(vault),
+            "--json",
+        ],
+    )
+    listed = CliRunner().invoke(app, ["project", "list", "--vault", str(vault), "--json"])
+    mapped = CliRunner().invoke(
+        app,
+        ["project", "map", "map-lens-deformation", "--vault", str(vault), "--json"],
+    )
+    audited = CliRunner().invoke(
+        app,
+        ["project", "audit", "map-lens-deformation", "--vault", str(vault), "--json"],
+    )
+
+    assert scaffold.exit_code == 0
+    assert linked.exit_code == 0
+    assert listed.exit_code == 0
+    assert mapped.exit_code == 0
+    assert audited.exit_code == 0
+    assert json.loads(scaffold.output)["project"] == "projects/map-lens-deformation/index.md"
+    assert json.loads(linked.output)["changed"] is True
+    assert json.loads(listed.output)["projects"][0]["slug"] == "map-lens-deformation"
+    assert json.loads(mapped.output)["project_map"] == (
+        "projects/map-lens-deformation/project-map.md"
+    )
+    audit_payload = json.loads(audited.output)
+    assert audit_payload["issue_counts"]["linked_papers_without_pdfs"] == 1
 
 
 def test_proposal_sprint_scaffold_command_outputs_json(tmp_path) -> None:
