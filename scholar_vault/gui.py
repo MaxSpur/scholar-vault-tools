@@ -4339,7 +4339,370 @@ def _skill_sync_metric_panel(
     return panel, number
 
 
-def show_skill_sync(source: Path | str, target: Path | str) -> None:
+def _project_workspace_model(vault: Path | str) -> dict[str, Any]:
+    from .projects import initialize_vault, project_list
+    from .sources import load_source_cards
+
+    paths = initialize_vault(vault, rebuild=False)
+    projects = project_list(paths.vault).get("projects") or []
+    papers = []
+    for card in load_source_cards(paths):
+        key = card.citekey or card.slug
+        papers.append(
+            {
+                "key": key,
+                "slug": card.slug,
+                "citekey": card.citekey or "",
+                "title": card.title,
+                "path": f"papers/{card.slug}.md",
+                "pdf": "attached" if card.pdf else "missing",
+                "status": card.enrichment_status or "",
+            }
+        )
+    return {
+        "vault": str(paths.vault),
+        "projects": sorted(projects, key=lambda row: str(row.get("slug") or "")),
+        "papers": sorted(papers, key=lambda row: str(row.get("title") or "").casefold()),
+    }
+
+
+def _project_workspace_action_text(label: str, summary: dict[str, Any]) -> str:
+    lines = [label]
+    if "project_map" in summary:
+        lines.append(f"Map: {summary.get('project_map')}")
+        lines.append(
+            "Linked papers={linked_papers}, gaps={gaps}, actions={recommended_next_actions}".format(
+                **summary
+            )
+        )
+    elif "issue_counts" in summary:
+        lines.append(f"Audit: {summary.get('project')} [{'OK' if summary.get('ok') else 'ISSUES'}]")
+        counts = summary.get("issue_counts") or {}
+        for key, value in counts.items():
+            if value:
+                lines.append(f"- {key}: {value}")
+        if summary.get("ok"):
+            lines.append("- No issues found.")
+    elif "changed" in summary:
+        state = "linked" if summary.get("changed") else "already linked"
+        lines.append(f"Paper {state}: {summary.get('ref')}")
+        lines.append(f"Project: {summary.get('project')}")
+    else:
+        lines.append(f"Project: {summary.get('project')}")
+        lines.append(f"State: {summary.get('state')}")
+    refresh = summary.get("refresh") or {}
+    if refresh:
+        lines.append(
+            "Refresh: {index_files_written} index, {llm_files_written} LLM files".format(
+                **refresh
+            )
+        )
+    return "\n".join(lines)
+
+
+def show_project_workspace(
+    vault: Path | str,
+    *,
+    initial_slug: str | None = None,
+    initial_title: str | None = None,
+    initial_citekey: str | None = None,
+) -> None:
+    from .projects import project_audit, project_link_paper, project_map, project_scaffold
+
+    qt = _load_qt_modules(require_fitz=False)
+    app = _application(qt)
+    resolved_vault = str(Path(vault).expanduser().resolve())
+
+    dialog = qt["QDialog"]()
+    dialog.setWindowTitle("Scholar Vault Project Workspace")
+    dialog.resize(1180, 780)
+    dialog.setMinimumWidth(940)
+    dialog.setStyleSheet(_dark_dialog_stylesheet())
+
+    layout = qt["QVBoxLayout"](dialog)
+    layout.setContentsMargins(28, 24, 28, 22)
+    layout.setSpacing(12)
+
+    kicker = qt["QLabel"]("SCHOLAR VAULT // PROJECT WORKSPACE")
+    kicker.setFont(_summary_font(qt, 11, mono=True, bold=True))
+    kicker.setStyleSheet("color: #69ffad;")
+    layout.addWidget(kicker)
+
+    heading = qt["QLabel"]("Project Workspace")
+    heading.setFont(_summary_font(qt, 28, bold=True))
+    heading.setStyleSheet("color: #f3fff7;")
+    layout.addWidget(heading)
+
+    vault_label = qt["QLabel"](resolved_vault)
+    vault_label.setFont(_summary_font(qt, 10, mono=True))
+    vault_label.setStyleSheet("color: #8ce7b8;")
+    vault_label.setTextInteractionFlags(qt["Qt"].TextInteractionFlag.TextSelectableByMouse)
+    layout.addWidget(vault_label)
+
+    form = qt["QGridLayout"]()
+    form.setHorizontalSpacing(12)
+    form.setVerticalSpacing(8)
+    slug_field = qt["QLineEdit"]()
+    slug_field.setPlaceholderText("project-slug")
+    slug_field.setText(initial_slug or "")
+    title_field = qt["QLineEdit"]()
+    title_field.setPlaceholderText("Project title")
+    title_field.setText(initial_title or "")
+    paper_field = qt["QLineEdit"]()
+    paper_field.setPlaceholderText("Paper citekey or card slug")
+    paper_field.setText(initial_citekey or "")
+    for row_index, (label_text, field) in enumerate(
+        [
+            ("Project slug", slug_field),
+            ("Project title", title_field),
+            ("Paper citekey", paper_field),
+        ]
+    ):
+        label = qt["QLabel"](label_text)
+        label.setFont(_summary_font(qt, 10, mono=True, bold=True))
+        label.setStyleSheet("color: #8ce7b8;")
+        field.setMinimumHeight(34)
+        field.setFont(_summary_font(qt, 11))
+        form.addWidget(label, row_index, 0)
+        form.addWidget(field, row_index, 1)
+    layout.addLayout(form)
+
+    lists = qt["QHBoxLayout"]()
+    lists.setSpacing(12)
+    project_list_widget = qt["QListWidget"]()
+    paper_list_widget = qt["QListWidget"]()
+    paper_filter = qt["QLineEdit"]()
+    paper_filter.setPlaceholderText("Filter papers by title, citekey, or slug")
+    for widget in [project_list_widget, paper_list_widget]:
+        widget.setMinimumHeight(210)
+        widget.setFont(_summary_font(qt, 10))
+        widget.setSelectionMode(qt["QListWidget"].SelectionMode.SingleSelection)
+
+    project_panel = _summary_panel(qt, "#69ffad")
+    project_layout = qt["QVBoxLayout"](project_panel)
+    project_layout.setContentsMargins(12, 10, 12, 12)
+    project_heading = qt["QLabel"]("Projects")
+    project_heading.setFont(_summary_font(qt, 10, mono=True, bold=True))
+    project_heading.setStyleSheet("color: #69ffad; border: none;")
+    project_layout.addWidget(project_heading)
+    project_layout.addWidget(project_list_widget)
+    lists.addWidget(project_panel, 1)
+
+    paper_panel = _summary_panel(qt, "#9ecbff")
+    paper_layout = qt["QVBoxLayout"](paper_panel)
+    paper_layout.setContentsMargins(12, 10, 12, 12)
+    paper_heading = qt["QLabel"]("Papers")
+    paper_heading.setFont(_summary_font(qt, 10, mono=True, bold=True))
+    paper_heading.setStyleSheet("color: #9ecbff; border: none;")
+    paper_layout.addWidget(paper_heading)
+    paper_layout.addWidget(paper_filter)
+    paper_layout.addWidget(paper_list_widget)
+    lists.addWidget(paper_panel, 2)
+    layout.addLayout(lists, 1)
+
+    result_box = qt["QTextEdit"]()
+    result_box.setReadOnly(True)
+    result_box.setMinimumHeight(130)
+    result_box.setFont(_summary_font(qt, 10, mono=True))
+    result_box.setStyleSheet(
+        "QTextEdit { color: #d7ffe8; background: #00120b; border: 1px solid #006b45; "
+        "padding: 10px; }"
+    )
+    layout.addWidget(result_box)
+
+    buttons = qt["QHBoxLayout"]()
+    refresh_button = qt["QPushButton"]("Refresh")
+    scaffold_button = qt["QPushButton"]("Scaffold / Update Project")
+    link_button = qt["QPushButton"]("Link Paper")
+    map_button = qt["QPushButton"]("Generate Map")
+    audit_button = qt["QPushButton"]("Run Audit")
+    open_button = qt["QPushButton"]("Open Project")
+    close_button = qt["QPushButton"]("Close")
+    for button, tone in [
+        (refresh_button, "neutral"),
+        (scaffold_button, "success"),
+        (link_button, "primary"),
+        (map_button, "info"),
+        (audit_button, "warning"),
+        (open_button, "neutral"),
+        (close_button, "muted"),
+    ]:
+        button.setMinimumHeight(38)
+        _style_button(button, tone)
+        buttons.addWidget(button)
+    buttons.addStretch(1)
+    layout.addLayout(buttons)
+
+    model: dict[str, Any] = {"projects": [], "papers": []}
+    project_rows: dict[str, dict[str, Any]] = {}
+    paper_rows: dict[str, dict[str, Any]] = {}
+
+    def message(title: str, text: str) -> None:
+        box = qt["QMessageBox"](dialog)
+        box.setWindowTitle(title)
+        box.setText(text)
+        _style_message_box(qt, box)
+        box.exec()
+
+    def current_slug() -> str:
+        return slug_field.text().strip()
+
+    def current_title() -> str | None:
+        title = title_field.text().strip()
+        return title or None
+
+    def current_paper() -> str:
+        return paper_field.text().strip()
+
+    def populate_projects() -> None:
+        project_list_widget.clear()
+        project_rows.clear()
+        for row in model.get("projects", []):
+            slug = str(row.get("slug") or "")
+            project_rows[slug] = row
+            item = qt["QListWidgetItem"](
+                f"{slug}  -  {row.get('title') or ''}  ({row.get('related_papers', 0)} papers)"
+            )
+            item.setData(qt["Qt"].ItemDataRole.UserRole, slug)
+            project_list_widget.addItem(item)
+            if slug and slug == current_slug():
+                item.setSelected(True)
+        if not model.get("projects"):
+            project_list_widget.addItem(qt["QListWidgetItem"]("No projects yet."))
+
+    def populate_papers(_value: str | None = None) -> None:
+        paper_list_widget.clear()
+        paper_rows.clear()
+        needle = paper_filter.text().strip().casefold()
+        visible = []
+        for row in model.get("papers", []):
+            haystack = " ".join(
+                str(row.get(key) or "")
+                for key in ["key", "slug", "citekey", "title", "path", "status"]
+            ).casefold()
+            if needle and needle not in haystack:
+                continue
+            visible.append(row)
+        for row in visible[:250]:
+            key = str(row.get("key") or row.get("slug") or "")
+            paper_rows[key] = row
+            item = qt["QListWidgetItem"](
+                f"{row.get('title')}  -  {key}  [{row.get('pdf')}]"
+            )
+            item.setData(qt["Qt"].ItemDataRole.UserRole, key)
+            paper_list_widget.addItem(item)
+            if key and key == current_paper():
+                item.setSelected(True)
+        if not visible:
+            paper_list_widget.addItem(qt["QListWidgetItem"]("No matching papers."))
+
+    def refresh(_checked: bool = False, *, reset_result: bool = True) -> None:
+        try:
+            model.clear()
+            model.update(_project_workspace_model(resolved_vault))
+        except Exception as exc:
+            message("Project UI Error", str(exc))
+            return
+        populate_projects()
+        populate_papers()
+        if reset_result:
+            result_box.setPlainText(
+                f"Projects: {len(model.get('projects', []))}\n"
+                f"Papers: {len(model.get('papers', []))}"
+            )
+
+    def select_project(item: Any) -> None:
+        slug = item.data(qt["Qt"].ItemDataRole.UserRole)
+        row = project_rows.get(str(slug))
+        if not row:
+            return
+        slug_field.setText(str(row.get("slug") or ""))
+        title_field.setText(str(row.get("title") or ""))
+
+    def select_paper(item: Any) -> None:
+        key = item.data(qt["Qt"].ItemDataRole.UserRole)
+        row = paper_rows.get(str(key))
+        if not row:
+            return
+        paper_field.setText(str(row.get("key") or row.get("slug") or ""))
+
+    def run_scaffold() -> None:
+        if not current_slug():
+            message("Missing Project Slug", "Enter a project slug first.")
+            return
+        try:
+            summary = project_scaffold(resolved_vault, current_slug(), title=current_title())
+            result_box.setPlainText(_project_workspace_action_text("Project scaffold", summary))
+            refresh(reset_result=False)
+        except Exception as exc:
+            message("Project Scaffold Failed", str(exc))
+
+    def run_link_paper() -> None:
+        if not current_slug() or not current_paper():
+            message("Missing Project Or Paper", "Enter a project slug and paper citekey first.")
+            return
+        try:
+            summary = project_link_paper(resolved_vault, current_slug(), current_paper())
+            result_box.setPlainText(_project_workspace_action_text("Project link-paper", summary))
+            refresh(reset_result=False)
+        except Exception as exc:
+            message("Project Link Failed", str(exc))
+
+    def run_map() -> None:
+        if not current_slug():
+            message("Missing Project Slug", "Enter or select a project slug first.")
+            return
+        try:
+            summary = project_map(resolved_vault, current_slug())
+            result_box.setPlainText(_project_workspace_action_text("Project map", summary))
+            refresh(reset_result=False)
+        except Exception as exc:
+            message("Project Map Failed", str(exc))
+
+    def run_audit() -> None:
+        if not current_slug():
+            message("Missing Project Slug", "Enter or select a project slug first.")
+            return
+        try:
+            summary = project_audit(resolved_vault, current_slug())
+            result_box.setPlainText(_project_workspace_action_text("Project audit", summary))
+        except Exception as exc:
+            message("Project Audit Failed", str(exc))
+
+    def open_project() -> None:
+        if not current_slug():
+            message("Missing Project Slug", "Enter or select a project slug first.")
+            return
+        project_path = Path(resolved_vault) / "projects" / current_slug() / "index.md"
+        if not project_path.exists():
+            message("Project Missing", f"Project file does not exist: {project_path}")
+            return
+        _open_path(qt, str(project_path))
+
+    project_list_widget.itemClicked.connect(select_project)
+    paper_list_widget.itemClicked.connect(select_paper)
+    paper_filter.textChanged.connect(populate_papers)
+    refresh_button.clicked.connect(refresh)
+    scaffold_button.clicked.connect(run_scaffold)
+    link_button.clicked.connect(run_link_paper)
+    map_button.clicked.connect(run_map)
+    audit_button.clicked.connect(run_audit)
+    open_button.clicked.connect(open_project)
+    close_button.clicked.connect(dialog.accept)
+    qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.accept)
+
+    refresh()
+    dialog.exec()
+    app.processEvents()
+
+
+def show_skill_sync(
+    source: Path | str,
+    target: Path | str,
+    *,
+    source_agent_guide: Path | str | None = None,
+    target_agent_guide: Path | str | None = None,
+) -> None:
     from .skill_sync import (
         adopt_skill,
         compare_skillsets,
@@ -4359,21 +4722,22 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
     layout.setContentsMargins(28, 24, 28, 22)
     layout.setSpacing(12)
 
-    kicker = qt["QLabel"]("SCHOLAR VAULT // SKILL SYNC")
+    kicker = qt["QLabel"]("SCHOLAR VAULT // SKILL + AGENTS SYNC")
     kicker.setFont(_summary_font(qt, 11, mono=True, bold=True))
     kicker.setStyleSheet("color: #69ffad;")
     layout.addWidget(kicker)
 
-    heading = qt["QLabel"]("Repository -> Vault Skill Sync")
+    heading = qt["QLabel"]("Repository -> Vault Sync")
     heading.setFont(_summary_font(qt, 28, bold=True))
     heading.setStyleSheet("color: #f3fff7;")
     layout.addWidget(heading)
 
     body = qt["QLabel"](
-        "Repository source is the canonical skill set in this tools repo. Vault target is "
-        "the installed skill set used by Codex inside the vault. To update the vault after "
-        "editing skills here, use Update Vault From Repository. Use Pull From Vault Into "
-        "Repository only when a vault-side Codex session made changes you want to keep."
+        "Repository source is the canonical skill set and vault AGENTS template in this "
+        "tools repo. Vault target is the installed skill set and AGENTS.md used by Codex "
+        "inside the vault. To update the vault after editing here, use Update Vault From "
+        "Repository. Use Pull From Vault Into Repository only when a vault-side Codex "
+        "session made changes you want to keep."
     )
     body.setWordWrap(True)
     body.setFont(_summary_font(qt, 12))
@@ -4425,9 +4789,9 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
     hint_layout = qt["QVBoxLayout"](hint_panel)
     hint_layout.setContentsMargins(12, 8, 12, 8)
     direction_hint = qt["QLabel"](
-        "Select the skills you want to copy. The buttons decide direction: update copies "
-        "repository source into the vault target; pull copies the vault target back into "
-        "the repository source. Modification times only choose initial row selection."
+        "Select the skills or AGENTS guide you want to copy. The buttons decide direction: "
+        "update copies repository source into the vault target; pull copies the vault target "
+        "back into the repository source. Modification times only choose initial row selection."
     )
     direction_hint.setWordWrap(True)
     direction_hint.setFont(_summary_font(qt, 10))
@@ -4438,7 +4802,7 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
     skill_panel = _summary_panel(qt, "#69ffad")
     skill_layout = qt["QVBoxLayout"](skill_panel)
     skill_layout.setContentsMargins(12, 10, 12, 12)
-    skill_label = qt["QLabel"]("Skill differences")
+    skill_label = qt["QLabel"]("Skill and AGENTS differences")
     skill_label.setFont(_summary_font(qt, 10, mono=True, bold=True))
     skill_label.setStyleSheet("color: #69ffad; border: none;")
     skill_list = qt["QListWidget"]()
@@ -4466,8 +4830,8 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
 
     buttons = qt["QHBoxLayout"]()
     refresh_button = qt["QPushButton"]("Refresh Comparison")
-    adopt_button = qt["QPushButton"]("Pull Selected Skills Into Repository")
-    publish_button = qt["QPushButton"]("Update Selected Skills From Repository")
+    adopt_button = qt["QPushButton"]("Pull Selected Items Into Repository")
+    publish_button = qt["QPushButton"]("Update Selected Items From Repository")
     close_button = qt["QPushButton"]("Close")
     for button, tone in [
         (refresh_button, "neutral"),
@@ -4529,21 +4893,21 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
         publish_count = len(selected_skill_names(pull=False))
         selected_count = len(selected_skills)
         skill_label.setText(
-            f"Skill differences - {selected_count} selected"
+            f"Skill and AGENTS differences - {selected_count} selected"
             if selected_count
-            else "Skill differences - none selected"
+            else "Skill and AGENTS differences - none selected"
         )
         adopt_button.setEnabled(bool(pull_count))
         publish_button.setEnabled(bool(publish_count))
         adopt_button.setText(
-            f"Pull Selected Skills Into Repository ({pull_count})"
+            f"Pull Selected Items Into Repository ({pull_count})"
             if pull_count
-            else "Pull Selected Skills Into Repository"
+            else "Pull Selected Items Into Repository"
         )
         publish_button.setText(
-            f"Update Selected Skills From Repository ({publish_count})"
+            f"Update Selected Items From Repository ({publish_count})"
             if publish_count
-            else "Update Selected Skills From Repository"
+            else "Update Selected Items From Repository"
         )
 
     def paint_skill_row(skill: str) -> None:
@@ -4620,7 +4984,12 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
 
     def refresh() -> None:
         source_path, target_path = paths()
-        summary = compare_skillsets(source_path, target_path)
+        summary = compare_skillsets(
+            source_path,
+            target_path,
+            source_agent_guide=source_agent_guide,
+            target_agent_guide=target_agent_guide,
+        )
         current_summary["value"] = summary
         summary_text.setPlainText(format_skillset_summary(summary))
         changed_rows = [row for row in summary["skills"] if row["status"] == "changed"]
@@ -4642,6 +5011,9 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
         metric_values["source_only"].setText(str(summary["counts"]["source_only"]))
         metric_values["target_only"].setText(str(summary["counts"]["target_only"]))
         rows = [row for row in summary["skills"] if row["status"] != "identical"]
+        agent_guide = summary.get("agent_guide")
+        if agent_guide and agent_guide["status"] != "identical":
+            rows.append(agent_guide)
         current_rows.clear()
         current_rows.update({str(row["skill"]): row for row in rows})
         selected_skills.clear()
@@ -4654,7 +5026,7 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
             add_skill_row(row)
         update_action_state()
         if not rows:
-            item = qt["QListWidgetItem"]("No skill differences found.")
+            item = qt["QListWidgetItem"]("No skill or AGENTS differences found.")
             item.setForeground(qt["QBrush"](qt["QColor"]("#426b58")))
             skill_list.addItem(item)
 
@@ -4663,10 +5035,10 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
         if not skills:
             return
         if not confirm(
-            "Pull Vault Skills Into Repository",
+            "Pull Vault Items Into Repository",
             (
-                "Copy selected vault target skills back into the repository source?\n\n"
-                f"Skills: {', '.join(skills)}\n\n"
+                "Copy selected vault target items back into the repository source?\n\n"
+                f"Items: {', '.join(skills)}\n\n"
                 "Use this only for vault-side edits you want to keep in the repo."
             ),
         ):
@@ -4681,6 +5053,8 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
                 skill,
                 apply=True,
                 force=force_box.isChecked(),
+                source_agent_guide=source_agent_guide,
+                target_agent_guide=target_agent_guide,
             )
             if result.get("action") == "blocked":
                 blocked.append(f"{skill}: {result.get('reason')}")
@@ -4700,9 +5074,13 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
         skills = selected_skill_names(pull=False)
         if not skills:
             return
+        comparison_rows = list(summary.get("skills", []))
+        agent_guide = summary.get("agent_guide")
+        if agent_guide:
+            comparison_rows.append(agent_guide)
         vault_newer = [
             row["skill"]
-            for row in summary.get("skills", [])
+            for row in comparison_rows
             if row.get("skill") in skills
             and row.get("status") == "changed"
             and row.get("newer") == "target"
@@ -4710,17 +5088,17 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
         warning = ""
         if vault_newer:
             warning = (
-                "\n\nMtime warning: these changed vault target skills look newer than "
+                "\n\nMtime warning: these changed vault target items look newer than "
                 f"the repository source: {', '.join(vault_newer)}. Pull them first if "
                 "those vault-side edits should be preserved."
             )
         if not confirm(
             "Update Vault From Repository",
             (
-                "Copy selected repository source skills into the vault target skill folder?\n\n"
-                f"Skills: {', '.join(skills)}\n\n"
+                "Copy selected repository source items into the vault target?\n\n"
+                f"Items: {', '.join(skills)}\n\n"
                 "Changed vault copies are backed up before being overwritten. Vault-only "
-                "extras are kept unless the archive checkbox is enabled."
+                "skill extras are kept unless the archive checkbox is enabled."
                 f"{warning}"
             ),
         ):
@@ -4732,10 +5110,16 @@ def show_skill_sync(source: Path | str, target: Path | str) -> None:
             apply=True,
             archive_extra=archive_box.isChecked(),
             skills=skills,
+            source_agent_guide=source_agent_guide,
+            target_agent_guide=target_agent_guide,
         )
         copied = ", ".join(result.get("copied") or []) or "none"
+        guide = "yes" if (result.get("agent_guide") or {}).get("copied") else "no"
         archived = ", ".join(result.get("archived") or []) or "none"
-        message("Vault Updated", f"Copied from repository: {copied}\nArchived: {archived}")
+        message(
+            "Vault Updated",
+            f"Copied from repository: {copied}\nAGENTS guide copied: {guide}\nArchived: {archived}",
+        )
         refresh()
 
     refresh_button.clicked.connect(refresh)

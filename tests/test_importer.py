@@ -52,7 +52,7 @@ from scholar_vault.models import (
     ScholarLabsResult,
     SourceCard,
 )
-from scholar_vault.render import render_paper_markdown
+from scholar_vault.render import render_paper_markdown, render_vault_agents
 from scholar_vault.sources import (
     VaultPaths,
     dump_frontmatter,
@@ -906,9 +906,15 @@ def test_initialize_vault_writes_full_agents_template(tmp_path: Path) -> None:
 
     paths = initialize_vault(vault)
     agents = (paths.vault / "AGENTS.md").read_text(encoding="utf-8")
+    template = (Path(__file__).parents[1] / "VAULT_AGENTS_TEMPLATE.md").read_text(
+        encoding="utf-8"
+    )
 
     assert agents.startswith("# Scholar Vault Agent Notes")
+    assert render_vault_agents() == template.rstrip() + "\n"
+    assert agents == render_vault_agents()
     assert "Linked `pdfs/*.pdf` files are the canonical evidence artifacts." in agents
+    assert "skills adopt AGENTS.md" in agents
     assert 'scholar-vault notes-missing --heading "PDF reading notes"' in agents
     assert "scholar-vault project scaffold <slug>" in agents
     assert "Projects are lenses over the shared vault" in agents

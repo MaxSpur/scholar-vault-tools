@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from scholar_vault.skill_sync import (
+    AGENTS_GUIDE_ITEM,
     adopt_skill,
     compare_skillsets,
     format_skillset_summary,
@@ -139,3 +140,94 @@ def test_publish_skillset_can_archive_target_only_skills(tmp_path: Path) -> None
     assert applied["archived"]
     assert not (target / "vault-only").exists()
     assert (target / "repo-skill").exists()
+
+
+def test_compare_skillsets_can_include_vault_agents_guide(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    _write_skill(source, "shared", "repo\n")
+    _write_skill(target, "shared", "repo\n")
+    source_agents = tmp_path / "VAULT_AGENTS_TEMPLATE.md"
+    target_agents = tmp_path / "vault" / "AGENTS.md"
+    source_agents.write_text("repo guide\n", encoding="utf-8")
+    target_agents.parent.mkdir(parents=True)
+    target_agents.write_text("vault guide\n", encoding="utf-8")
+
+    summary = compare_skillsets(
+        source,
+        target,
+        source_agent_guide=source_agents,
+        target_agent_guide=target_agents,
+    )
+    rendered = format_skillset_summary(summary)
+
+    assert summary["counts"]["identical"] == 1
+    assert summary["agent_guide"]["status"] == "changed"
+    assert summary["agent_guide"]["skill"] == AGENTS_GUIDE_ITEM
+    assert "AGENTS.md: changed" in rendered
+    assert "VAULT_AGENTS_TEMPLATE.md" in rendered
+
+
+def test_publish_skillset_can_copy_vault_agents_guide(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source_agents = tmp_path / "VAULT_AGENTS_TEMPLATE.md"
+    target_agents = tmp_path / "vault" / "AGENTS.md"
+    source_agents.write_text("repo guide\n", encoding="utf-8")
+    target_agents.parent.mkdir(parents=True)
+    target_agents.write_text("vault guide\n", encoding="utf-8")
+
+    dry_run = publish_skillset(
+        source,
+        target,
+        source_agent_guide=source_agents,
+        target_agent_guide=target_agents,
+    )
+    applied = publish_skillset(
+        source,
+        target,
+        apply=True,
+        source_agent_guide=source_agents,
+        target_agent_guide=target_agents,
+    )
+
+    assert dry_run["agent_guide"]["copied"] is True
+    assert target_agents.read_text(encoding="utf-8") == "repo guide\n"
+    assert applied["agent_guide"]["copied"] is True
+    assert applied["backups"]
+
+
+def test_adopt_skill_can_copy_vault_agents_guide_with_force(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source_agents = tmp_path / "VAULT_AGENTS_TEMPLATE.md"
+    target_agents = tmp_path / "vault" / "AGENTS.md"
+    source_agents.write_text("repo guide\n", encoding="utf-8")
+    target_agents.parent.mkdir(parents=True)
+    target_agents.write_text("vault guide\n", encoding="utf-8")
+
+    blocked = adopt_skill(
+        source,
+        target,
+        AGENTS_GUIDE_ITEM,
+        apply=True,
+        source_agent_guide=source_agents,
+        target_agent_guide=target_agents,
+    )
+    assert blocked["action"] == "blocked"
+    assert source_agents.read_text(encoding="utf-8") == "repo guide\n"
+
+    applied = adopt_skill(
+        source,
+        target,
+        AGENTS_GUIDE_ITEM,
+        apply=True,
+        force=True,
+        source_agent_guide=source_agents,
+        target_agent_guide=target_agents,
+    )
+
+    assert applied["action"] == "adopted"
+    assert source_agents.read_text(encoding="utf-8") == "vault guide\n"
+    assert applied["agent_guide"]["copied"] is True
+    assert applied["backup"]

@@ -78,9 +78,11 @@ from .rebuild import concept_index, rebuild_vault
 from .skill_sync import (
     adopt_skill,
     compare_skillsets,
+    default_source_agents_path,
     default_source_skills_path,
     format_skillset_summary,
     publish_skillset,
+    vault_agents_path,
     vault_skills_path,
 )
 from .sources import VaultPaths, infer_run_title, load_run_records, load_source_cards
@@ -234,7 +236,7 @@ SkillTargetArg = Annotated[
         help="Installed skills folder. Defaults to <vault>/.agents/skills.",
     ),
 ]
-SkillNameArg = Annotated[str, typer.Argument(help="Skill folder name to adopt.")]
+SkillNameArg = Annotated[str, typer.Argument(help="Skill folder name to adopt, or AGENTS.md.")]
 StagingArg = Annotated[
     Path | None,
     typer.Option("--staging", exists=True, file_okay=False, dir_okay=True, resolve_path=True),
@@ -1060,6 +1062,27 @@ def _resolve_skill_paths(
     return source_path, target_path
 
 
+def _target_agents_path_from_skills(target: Path) -> Path | None:
+    if target.name == "skills" and target.parent.name == ".agents":
+        return target.parent.parent / "AGENTS.md"
+    return None
+
+
+def _resolve_skill_sync_paths(
+    *,
+    source: Path | None,
+    target: Path | None,
+    vault: Path | None,
+) -> tuple[Path, Path, Path | None, Path | None]:
+    source_path, target_path = _resolve_skill_paths(source=source, target=target, vault=vault)
+    source_agent_guide = default_source_agents_path()
+    if target:
+        target_agent_guide = _target_agents_path_from_skills(target_path)
+    else:
+        target_agent_guide = vault_agents_path(_resolve_vault(vault))
+    return source_path, target_path, source_agent_guide, target_agent_guide
+
+
 def _print_skillset_summary(summary: dict[str, Any]) -> None:
     console.print(format_skillset_summary(summary), soft_wrap=True)
 
@@ -1081,6 +1104,9 @@ def _print_skill_action(summary: dict[str, Any]) -> None:
         console.print(f"- To: {summary['to']}")
     if summary.get("copied"):
         console.print(f"- Skills to copy: {', '.join(summary['copied'])}")
+    agent_guide = summary.get("agent_guide") or {}
+    if agent_guide.get("copied"):
+        console.print("- Agent guide: VAULT_AGENTS_TEMPLATE.md -> vault AGENTS.md")
     if summary.get("target_only"):
         console.print(f"- Target-only skills: {', '.join(summary['target_only'])}")
     if summary.get("archived"):
@@ -1091,16 +1117,56 @@ def _print_skill_action(summary: dict[str, Any]) -> None:
         console.print(f"- Backups: {', '.join(summary['backups'])}")
 
 
-def _show_skill_sync_ui(source: Path, target: Path) -> None:
+def _show_skill_sync_ui(
+    source: Path,
+    target: Path,
+    *,
+    source_agent_guide: Path | None = None,
+    target_agent_guide: Path | None = None,
+) -> None:
     try:
         from .gui import GuiUnavailable, show_skill_sync
     except Exception as exc:  # pragma: no cover - defensive optional import path
         console.print(f"Skill sync UI unavailable ({exc}). Falling back to terminal output.")
         return
     try:
-        _call_gui(lambda: show_skill_sync(source, target))
+        _call_gui(
+            lambda: show_skill_sync(
+                source,
+                target,
+                source_agent_guide=source_agent_guide,
+                target_agent_guide=target_agent_guide,
+            )
+        )
     except GuiUnavailable as exc:
         console.print(f"Skill sync UI unavailable ({exc}). Falling back to terminal output.")
+
+
+def _show_project_workspace_ui(
+    vault: Path,
+    *,
+    initial_slug: str | None = None,
+    initial_title: str | None = None,
+    initial_citekey: str | None = None,
+) -> bool:
+    try:
+        from .gui import GuiUnavailable, show_project_workspace
+    except Exception as exc:  # pragma: no cover - defensive optional import path
+        console.print(f"Project UI unavailable ({exc}). Falling back to terminal output.")
+        return False
+    try:
+        _call_gui(
+            lambda: show_project_workspace(
+                vault,
+                initial_slug=initial_slug,
+                initial_title=initial_title,
+                initial_citekey=initial_citekey,
+            )
+        )
+        return True
+    except GuiUnavailable as exc:
+        console.print(f"Project UI unavailable ({exc}). Falling back to terminal output.")
+        return False
 
 
 def _apply_config_options(
@@ -2842,11 +2908,23 @@ def skills_diff_command(
     json_output: JsonOutputArg = False,
     ui: UiArg = False,
 ) -> None:
-    source_path, target_path = _resolve_skill_paths(source=source, target=target, vault=vault)
+    source_path, target_path, source_agent_guide, target_agent_guide = _resolve_skill_sync_paths(
+        source=source, target=target, vault=vault
+    )
     if ui:
-        _show_skill_sync_ui(source_path, target_path)
+        _show_skill_sync_ui(
+            source_path,
+            target_path,
+            source_agent_guide=source_agent_guide,
+            target_agent_guide=target_agent_guide,
+        )
         return
-    summary = compare_skillsets(source_path, target_path)
+    summary = compare_skillsets(
+        source_path,
+        target_path,
+        source_agent_guide=source_agent_guide,
+        target_agent_guide=target_agent_guide,
+    )
     if json_output:
         console.print_json(data=summary)
         return
@@ -2864,7 +2942,9 @@ def skills_adopt_command(
     backup: BackupArg = True,
     json_output: JsonOutputArg = False,
 ) -> None:
-    source_path, target_path = _resolve_skill_paths(source=source, target=target, vault=vault)
+    source_path, target_path, source_agent_guide, target_agent_guide = _resolve_skill_sync_paths(
+        source=source, target=target, vault=vault
+    )
     summary = adopt_skill(
         source_path,
         target_path,
@@ -2872,6 +2952,8 @@ def skills_adopt_command(
         apply=apply,
         force=force,
         backup=backup,
+        source_agent_guide=source_agent_guide,
+        target_agent_guide=target_agent_guide,
     )
     if json_output:
         console.print_json(data=summary)
@@ -2891,13 +2973,17 @@ def skills_publish_command(
     backup: BackupArg = True,
     json_output: JsonOutputArg = False,
 ) -> None:
-    source_path, target_path = _resolve_skill_paths(source=source, target=target, vault=vault)
+    source_path, target_path, source_agent_guide, target_agent_guide = _resolve_skill_sync_paths(
+        source=source, target=target, vault=vault
+    )
     summary = publish_skillset(
         source_path,
         target_path,
         apply=apply,
         archive_extra=archive_extra,
         backup=backup,
+        source_agent_guide=source_agent_guide,
+        target_agent_guide=target_agent_guide,
     )
     if json_output:
         console.print_json(data=summary)
@@ -2913,8 +2999,15 @@ def skills_ui_command(
     source: SkillSourceArg = None,
     target: SkillTargetArg = None,
 ) -> None:
-    source_path, target_path = _resolve_skill_paths(source=source, target=target, vault=vault)
-    _show_skill_sync_ui(source_path, target_path)
+    source_path, target_path, source_agent_guide, target_agent_guide = _resolve_skill_sync_paths(
+        source=source, target=target, vault=vault
+    )
+    _show_skill_sync_ui(
+        source_path,
+        target_path,
+        source_agent_guide=source_agent_guide,
+        target_agent_guide=target_agent_guide,
+    )
 
 
 @app.command("doctor")
@@ -2981,8 +3074,16 @@ def project_scaffold_command(
     vault: VaultArg = None,
     title: ProjectTitleArg = None,
     json_output: JsonOutputArg = False,
+    ui: UiArg = False,
 ) -> None:
-    summary = project_scaffold(_resolve_vault(vault), slug, title=title)
+    resolved_vault = _resolve_vault(vault)
+    if ui and _show_project_workspace_ui(
+        resolved_vault,
+        initial_slug=slug,
+        initial_title=title,
+    ):
+        return
+    summary = project_scaffold(resolved_vault, slug, title=title)
     if json_output:
         _print_json(summary)
     else:
@@ -3020,8 +3121,16 @@ def project_link_paper_command(
     citekey: ProjectCitekeyArg,
     vault: VaultArg = None,
     json_output: JsonOutputArg = False,
+    ui: UiArg = False,
 ) -> None:
-    summary = project_link_paper(_resolve_vault(vault), slug, citekey)
+    resolved_vault = _resolve_vault(vault)
+    if ui and _show_project_workspace_ui(
+        resolved_vault,
+        initial_slug=slug,
+        initial_citekey=citekey,
+    ):
+        return
+    summary = project_link_paper(resolved_vault, slug, citekey)
     if json_output:
         _print_json(summary)
     else:
@@ -3095,6 +3204,36 @@ def project_audit_command(
         _print_json(summary)
     else:
         _print_project_audit(summary)
+
+
+@project_app.command("ui")
+def project_ui_command(
+    vault: VaultArg = None,
+    slug: Annotated[
+        str | None,
+        typer.Option(
+            "--slug",
+            "--project",
+            help="Project slug to preselect or scaffold.",
+        ),
+    ] = None,
+    title: ProjectTitleArg = None,
+    citekey: Annotated[
+        str | None,
+        typer.Option(
+            "--citekey",
+            autocompletion=_complete_citekeys,
+            help="Paper citekey or card slug to preselect.",
+        ),
+    ] = None,
+) -> None:
+    if not _show_project_workspace_ui(
+        _resolve_vault(vault),
+        initial_slug=slug,
+        initial_title=title,
+        initial_citekey=citekey,
+    ):
+        console.print("Project UI unavailable.")
 
 
 @app.command("maintenance-report")

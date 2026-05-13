@@ -531,6 +531,7 @@ scholar-vault doctor --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault maintenance-report --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault notes-missing --vault ~/Documents/Research/scholar-labs-vault --heading "PDF reading notes"
 scholar-vault concept-index --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault project ui --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault project scaffold --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation
 scholar-vault project link-paper --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation Schottler2021_GeospatialNetworks
 scholar-vault project map --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation
@@ -571,6 +572,12 @@ writes `projects/<slug>/project-map.md` with linked paper PDF, metadata, and
 reading-note status plus gaps and next actions. `project audit <slug>` is
 read-only and checks missing linked records, missing PDFs, missing PDF reading
 notes, broken links, and stale project maps.
+
+Use `project ui` for a desktop workflow that lists existing projects and paper
+cards, scaffolds or updates a project, links a selected paper, generates the
+project map, runs the project audit, and opens the project note. `project
+scaffold --ui ...` and `project link-paper --ui ...` open the same UI with the
+project and paper fields prefilled.
 
 Use `projects/` for ongoing research workspaces, implementation planning, and
 topic-specific lenses that need to gather shared vault records without copying
@@ -904,17 +911,20 @@ scholar-vault reset --vault ~/Documents/Research/scholar-labs-vault --yes
 ## Codex Agent Skills
 
 This repository includes optional Codex skills under `.agents/skills/` for
-post-import vault refinement. They are not part of the generated vault by
-default; copy them into the vault when you want to start a Codex project there.
+post-import vault refinement. It also keeps `VAULT_AGENTS_TEMPLATE.md` as the
+source for the vault-local `AGENTS.md` guide. The repository root `AGENTS.md`
+is for agents working on this tools repo, not for agents working inside a
+research vault.
 
 The safer workflow is to compare first, adopt any useful vault-side changes
 back into this repository, then publish from the repository into the vault.
 In this workflow, **source** means this repository's canonical
-`.agents/skills/` folder and **target** means the vault's installed
-`.agents/skills/` folder. If you changed a skill in this repository and want
-the vault to use it, update the target by publishing source to target. If a
-Codex session inside the vault changed a skill and you want to preserve that
-change in this repository, adopt target to source.
+`.agents/skills/` folder plus `VAULT_AGENTS_TEMPLATE.md`, and **target** means
+the vault's installed `.agents/skills/` folder plus vault `AGENTS.md`. If you
+changed a skill or the vault guide template in this repository and want the
+vault to use it, update the target by publishing source to target. If a Codex
+session inside the vault changed a skill or vault `AGENTS.md` and you want to
+preserve that change in this repository, adopt target to source.
 
 ```fish
 scholar-vault skills diff --vault ~/Documents/Research/scholar-labs-vault
@@ -934,11 +944,21 @@ scholar-vault skills adopt scholar-vault-proposal-evidence-sprint \
   --apply
 ```
 
+To adopt intentional vault-local `AGENTS.md` edits back into
+`VAULT_AGENTS_TEMPLATE.md`, use the special item name `AGENTS.md`:
+
+```fish
+scholar-vault skills adopt AGENTS.md \
+  --vault ~/Documents/Research/scholar-labs-vault \
+  --apply \
+  --force
+```
+
 If the same skill exists on both sides and differs, `adopt` asks for
 `--force` before overwriting the repository copy. The overwritten source skill
 is backed up under `.agents/skills/.sync-backups/`.
 
-Then publish repository skills to the vault:
+Then publish repository skills and the vault AGENTS guide template to the vault:
 
 ```fish
 scholar-vault skills publish --vault ~/Documents/Research/scholar-labs-vault
@@ -951,14 +971,15 @@ scholar-vault skills publish --vault ~/Documents/Research/scholar-labs-vault --a
 want the vault to stop carrying target-only skills, use `--archive-extra`; this
 moves them into `.sync-backups/` instead of deleting them.
 
-In the UI, use the single `Skill differences` list. Select the skills you want
-to copy; the buttons decide the direction. `Update Selected Skills From
-Repository` copies selected repository-side changes into the vault, while `Pull
-Selected Skills Into Repository` copies selected vault-side changes back into
-this repo. Deselect all rows to disable both copy buttons.
-Changed-skill rows show modification-time hints such as repository newer or
-vault newer. Treat those as useful guidance, not proof of intent: publishing
-still explicitly updates the vault from this repository, while pulling still
+In the UI, use the single `Skill and AGENTS differences` list. Select the
+skills or guide row you want to copy; the buttons decide the direction.
+`Update Selected Items From Repository` copies selected repository-side changes
+into the vault, while `Pull Selected Items Into Repository` copies selected
+vault-side changes back into this repo. Deselect all rows to disable both copy
+buttons.
+Changed rows show modification-time hints such as repository newer or vault
+newer. Treat those as useful guidance, not proof of intent: publishing still
+explicitly updates the vault from this repository, while pulling still
 explicitly updates this repository from the vault.
 
 For shell-script wrappers, use:

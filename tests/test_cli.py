@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 from click.exceptions import Exit
 from typer.testing import CliRunner
@@ -537,6 +538,85 @@ def test_project_commands_scaffold_list_link_map_and_audit(tmp_path) -> None:
     )
     audit_payload = json.loads(audited.output)
     assert audit_payload["issue_counts"]["linked_papers_without_pdfs"] == 1
+
+
+def test_project_ui_command_opens_workspace_ui(tmp_path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    initialize_vault(vault)
+    calls = []
+
+    def fake_project_ui(vault_path, **kwargs):
+        calls.append((vault_path, kwargs))
+        return True
+
+    monkeypatch.setattr("scholar_vault.cli._show_project_workspace_ui", fake_project_ui)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "project",
+            "ui",
+            "--vault",
+            str(vault),
+            "--slug",
+            "map-lens-deformation",
+            "--citekey",
+            "Schottler2021_GeospatialNetworks",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls
+    assert calls[0][0] == vault
+    assert calls[0][1]["initial_slug"] == "map-lens-deformation"
+    assert calls[0][1]["initial_citekey"] == "Schottler2021_GeospatialNetworks"
+
+
+def test_project_scaffold_and_link_paper_ui_prefill_workspace(tmp_path, monkeypatch) -> None:
+    vault = tmp_path / "vault"
+    initialize_vault(vault)
+    calls = []
+
+    def fake_project_ui(vault_path, **kwargs):
+        calls.append((vault_path, kwargs))
+        return True
+
+    monkeypatch.setattr("scholar_vault.cli._show_project_workspace_ui", fake_project_ui)
+
+    scaffold = CliRunner().invoke(
+        app,
+        [
+            "project",
+            "scaffold",
+            "map-lens-deformation",
+            "--vault",
+            str(vault),
+            "--title",
+            "Map Lens Deformation",
+            "--ui",
+        ],
+    )
+    linked = CliRunner().invoke(
+        app,
+        [
+            "project",
+            "link-paper",
+            "map-lens-deformation",
+            "Schottler2021_GeospatialNetworks",
+            "--vault",
+            str(vault),
+            "--ui",
+        ],
+    )
+
+    assert scaffold.exit_code == 0
+    assert linked.exit_code == 0
+    assert calls[0][1]["initial_slug"] == "map-lens-deformation"
+    assert calls[0][1]["initial_title"] == "Map Lens Deformation"
+    assert calls[0][1].get("initial_citekey") is None
+    assert calls[1][1]["initial_slug"] == "map-lens-deformation"
+    assert calls[1][1].get("initial_title") is None
+    assert calls[1][1]["initial_citekey"] == "Schottler2021_GeospatialNetworks"
 
 
 def test_proposal_sprint_scaffold_command_outputs_json(tmp_path) -> None:
@@ -1528,3 +1608,45 @@ def test_rebuild_command_prints_summary(tmp_path) -> None:
     assert "- Papers: 0 total" in result.output
     assert "- Runs: 0 run notes refreshed" in result.output
     assert "- Derived outputs:" in result.output
+
+
+def test_skills_diff_reports_vault_agents_template_difference(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    initialize_vault(vault)
+    (vault / "AGENTS.md").write_text("# Vault-local edit\n", encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["skills", "diff", "--vault", str(vault)])
+
+    assert result.exit_code == 0
+    assert "AGENTS.md: changed" in result.output
+    assert "VAULT_AGENTS_TEMPLATE.md" in result.output
+
+
+def test_skills_publish_updates_vault_agents_from_template(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    source = tmp_path / "repo" / ".agents" / "skills"
+    target = vault / ".agents" / "skills"
+    (source / "example").mkdir(parents=True)
+    (source / "example" / "SKILL.md").write_text("repo skill\n", encoding="utf-8")
+    vault.mkdir()
+    (vault / "AGENTS.md").write_text("# Vault-local edit\n", encoding="utf-8")
+    template = Path(__file__).parents[1] / "VAULT_AGENTS_TEMPLATE.md"
+    expected_agents = template.read_text(encoding="utf-8").rstrip() + "\n"
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "skills",
+            "publish",
+            "--source",
+            str(source),
+            "--target",
+            str(target),
+            "--apply",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert (target / "example" / "SKILL.md").read_text(encoding="utf-8") == "repo skill\n"
+    assert (vault / "AGENTS.md").read_text(encoding="utf-8") == expected_agents
+    assert "Agent guide" in result.output

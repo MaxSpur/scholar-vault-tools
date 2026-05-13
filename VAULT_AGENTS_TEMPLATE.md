@@ -29,6 +29,30 @@ If activation is unavailable or `scholar-vault` is not on `PATH`, use:
 /Users/MadMax/miniforge3/condabin/conda run -n scholar-vault scholar-vault ...
 ```
 
+## Skill And AGENTS Synchronization
+
+If you edit or create `.agents/skills/` entries or the vault-local `AGENTS.md`
+inside this vault, tell the user to adopt those changes back into the
+`scholar-vault-tools` repository before publishing repository skills or the
+repository vault guide over this vault again. From the tools repository:
+
+```fish
+scholar-vault skills diff --vault /path/to/this/vault
+scholar-vault skills ui --vault /path/to/this/vault
+scholar-vault skills adopt <skill-name> --vault /path/to/this/vault --apply
+scholar-vault skills adopt AGENTS.md --vault /path/to/this/vault --apply --force
+scholar-vault skills publish --vault /path/to/this/vault --apply
+```
+
+`skills publish` updates vault skills and vault `AGENTS.md` from the repository
+source (`.agents/skills/` and `VAULT_AGENTS_TEMPLATE.md`). `skills adopt
+AGENTS.md` copies the vault-local guide back into `VAULT_AGENTS_TEMPLATE.md`;
+use it only when vault-side guide edits are intentional.
+
+Do not recommend raw `rsync --delete` for skill or AGENTS synchronization when
+either side may contain local changes. `skills publish --archive-extra` archives
+vault-only skills into `.sync-backups/` instead of deleting them.
+
 Prefer structured commands for orientation:
 
 ```fish
@@ -54,11 +78,15 @@ scholar-vault references
 ```
 
 After editing only `concepts/`, run `scholar-vault concept-index`. After
-editing paper cards, topics, syntheses, tasks, projects, or proposals, run:
+editing paper cards, topics, syntheses, tasks, or proposal evidence surfaces,
+run:
 
 ```fish
 scholar-vault rebuild
 ```
+
+After editing project links or frontmatter, prefer the focused project commands
+below; do not use a full rebuild unless broader vault content changed.
 
 ## Evidence Rules
 
@@ -138,10 +166,20 @@ When working on a project, read:
 Start or refresh a workspace with:
 
 ```fish
+scholar-vault project ui
 scholar-vault project scaffold <slug>
 scholar-vault project map <slug>
 scholar-vault project audit <slug>
 ```
+
+Use `scholar-vault project link-* <slug> ...` commands to connect existing
+papers, runs, concepts, syntheses, tasks, or proposals. Project scaffold and
+link commands refresh project navigation only; they should not normalize paper
+cards, repair PDFs, or rewrite unrelated run links.
+
+Use `scholar-vault project ui` when a desktop picker is faster for scaffolding
+or updating a project, selecting a paper card, linking it, generating the
+project map, or running the project audit.
 
 Project notes may contain goals, plans, and work-specific synthesis, but factual claims should link to paper cards or syntheses.
 
@@ -189,6 +227,7 @@ Use these project skills when available:
 - `$scholar-vault-curate-topics`: clean topic labels and rebuild generated views.
 - `$scholar-vault-pdf-triage`: inspect active PDF/staging issues.
 - `$scholar-vault-gap-scout`: write follow-up tasks and research gaps.
+- `$scholar-vault-pepr-docx`: render PEPR proposal Markdown drafts into the DOCX template, generate APA references, and verify pagination.
 
 Skills do not need to launch subagents by themselves. Subagents may be useful for parallel read-only PDF passes or verification when available, but final synthesis and file edits should stay coordinated in the main thread.
 

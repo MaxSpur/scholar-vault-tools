@@ -55,6 +55,31 @@ def test_preview_viewport_height_targets_top_third() -> None:
     assert _preview_viewport_height(2400) == 640
 
 
+def test_project_workspace_model_lists_projects_and_papers(tmp_path: Path) -> None:
+    from scholar_vault.gui import _project_workspace_model
+    from scholar_vault.importer import _save_card, initialize_vault
+    from scholar_vault.models import SourceCard
+    from scholar_vault.projects import project_scaffold
+
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(
+        paths,
+        SourceCard(
+            slug="geospatial-networks",
+            citekey="Schottler2021_GeospatialNetworks",
+            title="Geospatial Networks",
+        ),
+    )
+    project_scaffold(vault, "map-lens-deformation")
+
+    model = _project_workspace_model(vault)
+
+    assert model["projects"][0]["slug"] == "map-lens-deformation"
+    assert model["papers"][0]["key"] == "Schottler2021_GeospatialNetworks"
+    assert model["papers"][0]["title"] == "Geospatial Networks"
+
+
 def test_confidence_color_thresholds() -> None:
     from scholar_vault.gui import _confidence_color
 

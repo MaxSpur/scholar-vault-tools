@@ -81,8 +81,10 @@
 - [x] Add BibLaTeX validation, title capitalization protection, clipboard output, `--cite`, `--no-local-fields`, and provider-backed entry-type inference.
 - [x] Add APA-style Markdown/RTF/plain formatted reference commands for one-card and whole-vault bibliography workflows.
 - [x] Add safe Codex skillset diff/adopt/publish commands, wrapper scripts, and an optional UI so repository and vault skills can be synchronized without blind overwrites.
+- [x] Make `VAULT_AGENTS_TEMPLATE.md` the source for vault-local `AGENTS.md`, and include that guide in skills diff/adopt/publish/ui synchronization.
 - [x] Add `import-pdf --ui` for drag-and-drop multi-PDF import with automatic enrichment and follow-up field resolution.
 - [x] Add lightweight `projects/` workspaces with scaffold/link/map/audit commands and generated project indexes.
+- [x] Add a desktop `project ui` wrapper for project scaffold, link-paper, map, audit, and list workflows.
 - [x] Refactor non-import feature families out of `importer.py` into focused rebuild, diagnostics, dashboard, topic, search, neighbor, maintenance, bibliography, enrichment, project, and proposal modules.
 - [x] Run the post-refactor cleanup pass: remove dead importer run-YAML loading code, collapse duplicated CLI alias bodies into shared helpers, route enrichment through its owning implementation, and make project scaffold/link use focused project navigation refreshes instead of full vault rebuilds.
 
