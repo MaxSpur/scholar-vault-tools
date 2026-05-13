@@ -398,6 +398,29 @@ def test_import_run_creates_only_selected_paper_cards(tmp_path: Path) -> None:
     assert len(list(staging.glob("*.pdf"))) == 3
 
 
+def test_import_run_strips_scholar_resource_labels_from_titles(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    export_path = _rewrite_export(
+        _write_export(exports / "sample.json", 1),
+        result_updates={"title": "[PDF][PDF] A Survey on Interactive Lenses"},
+    )
+    _write_pdf_with_title(staging / "paper-1.pdf", "A Survey on Interactive Lenses")
+
+    import_scholar_labs_run(vault, export_path, staging, commit=True)
+    cards = load_source_cards(initialize_vault(vault))
+    run_id = latest_run_id(vault)
+    run_yaml = _run_yaml(vault, run_id)
+
+    assert cards[0].title == "A Survey on Interactive Lenses"
+    assert "[PDF]" not in cards[0].citekey
+    assert "pdfpdf" not in str(cards[0].citekey)
+    assert run_yaml["results"][0]["title"] == "A Survey on Interactive Lenses"
+
+
 def test_import_run_uses_export_title_for_run_note(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     staging = tmp_path / "staging"
@@ -1609,6 +1632,63 @@ def test_rebuild_migrates_pdf_collision_suffix_before_extension(tmp_path: Path) 
     assert migrated.pdf == "pdfs/paper-2.pdf"
     assert not bad_pdf.exists()
     assert (paths.pdfs / "paper-2.pdf").exists()
+
+
+def test_rebuild_cleans_existing_scholar_resource_title_prefixes(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    run_id = "2026-04-22_bad-title-run"
+    run_dir = paths.runs / run_id
+    run_dir.mkdir(parents=True)
+    write_yaml(
+        run_dir / "index.yaml",
+        {
+            "slug": run_id,
+            "date": "2026-04-22",
+            "prompt": "bad title run",
+            "exported_at": "2026-04-22T16:00:00+02:00",
+            "export_file": "/tmp/export.json",
+            "raw_export_file": "raw/scholar-labs/example.json",
+            "result_count": 1,
+            "results": [
+                {
+                    "rank": 1,
+                    "title": "[HTML][HTML] Mapping Digital Solutions",
+                    "status": "selected",
+                    "pdf_status": "attached",
+                    "paper_card": "papers/milovanovic2025htmlhtmlmapping.md",
+                }
+            ],
+        },
+    )
+    (paths.papers / "milovanovic2025htmlhtmlmapping.md").write_text(
+        """---
+type: paper
+citekey: milovanovic2025htmlhtmlmapping
+title: "[HTML][HTML] Mapping Digital Solutions"
+source_kind: scholar_labs
+pdf_status: attached
+---
+
+# [HTML][HTML] Mapping Digital Solutions
+
+## Scholar Labs summary
+No summary yet.
+""",
+        encoding="utf-8",
+    )
+
+    rebuild_vault(vault)
+    card = load_source_cards(initialize_vault(vault))[0]
+    run_yaml = _run_yaml(vault, run_id)
+    card_text = (paths.papers / "milovanovic2025htmlhtmlmapping.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert card.title == "Mapping Digital Solutions"
+    assert run_yaml["results"][0]["title"] == "Mapping Digital Solutions"
+    assert "# Mapping Digital Solutions" in card_text
+    assert "[HTML][HTML]" not in card_text
 
 
 def test_rebuild_migrates_legacy_run_index_links_and_files(tmp_path: Path) -> None:

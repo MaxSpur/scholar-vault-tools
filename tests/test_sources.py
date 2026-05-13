@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from scholar_vault.sources import (
+    build_card_slug,
     build_citekey,
     build_pdf_filename,
     infer_run_title,
@@ -10,6 +11,7 @@ from scholar_vault.sources import (
     parse_people,
     slugify_text,
 )
+from scholar_vault.titles import clean_paper_title
 
 
 def test_slug_generation_normalizes_text() -> None:
@@ -23,6 +25,21 @@ def test_citekey_generation_uses_author_year_and_keywords() -> None:
         2024,
     )
     assert citekey == "smith2024evaluatingretrievalaugmentedgenerationsystems"
+
+
+def test_paper_title_cleaning_strips_scholar_resource_prefixes() -> None:
+    assert clean_paper_title("[HTML][HTML] Mapping Digital Solutions") == (
+        "Mapping Digital Solutions"
+    )
+    assert clean_paper_title("[PDF] [PDF] A Survey on Interactive Lenses") == (
+        "A Survey on Interactive Lenses"
+    )
+    assert build_citekey("[PDF][PDF] A Survey on Interactive Lenses", ["Jane Smith"], 2024) == (
+        "smith2024surveyinteractivelenses"
+    )
+    assert build_card_slug(None, "[HTML][HTML] Mapping Digital Solutions", []) == (
+        "mapping-digital-solutions"
+    )
 
 
 def test_parse_people_handles_comma_and_and() -> None:

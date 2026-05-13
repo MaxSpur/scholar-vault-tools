@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from .titles import clean_paper_title
 
 SourceKind = Literal["scholar_labs", "pdf_drop", "bibtex_import", "doi_import", "manual"]
 RunResultStatus = Literal["selected", "candidate", "unmatched", "skipped"]
@@ -66,6 +68,11 @@ class ScholarLabsResult(BaseModel):
     summary: str | None = ""
     rationale_points: list[RationalePoint] = Field(default_factory=list)
     links: list[Link] = Field(default_factory=list)
+
+    @field_validator("title")
+    @classmethod
+    def clean_title(cls, value: str) -> str:
+        return clean_paper_title(value)
 
     @property
     def venue(self) -> str | None:
@@ -170,6 +177,11 @@ class SourceCard(BaseModel):
     summary_sources: list[SummarySource] = Field(default_factory=list)
     why_this_source_matters: list[RationalePoint] = Field(default_factory=list)
     notes: str = ""
+
+    @field_validator("title")
+    @classmethod
+    def clean_title(cls, value: str) -> str:
+        return clean_paper_title(value)
 
     def frontmatter(self) -> dict[str, Any]:
         return {

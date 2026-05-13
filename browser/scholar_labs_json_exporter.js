@@ -14,6 +14,11 @@
 
   const text = (node) => clean(node ? node.textContent || "" : "");
 
+  const cleanTitle = (value) => {
+    const cleaned = clean(value);
+    return cleaned.replace(/^(\[(?:HTML|PDF)\]\s*)+/i, "").trim() || cleaned;
+  };
+
   const attr = (node, name) => (node ? node.getAttribute(name) || "" : "");
 
   const absoluteUrl = (href) => {
@@ -110,7 +115,9 @@
         const cid = attr(card, "data-cid");
         if (!cid || cid === "gs_citd") return false;
 
-        const title = text(card.querySelector("h3.gs_rt, h3 a, h3"));
+        const titleHeading = card.querySelector("h3.gs_rt, h3");
+        const titleLink = titleHeading?.querySelector("a") || card.querySelector("h3 a");
+        const title = cleanTitle(text(titleLink || titleHeading));
         if (!title) return false;
 
         const cardText = text(card);
@@ -262,7 +269,7 @@
 
     const titleHeading = card.querySelector("h3.gs_rt, h3");
     const titleLink = titleHeading?.querySelector("a") || card.querySelector("h3 a");
-    const title = text(titleHeading || titleLink);
+    const title = cleanTitle(text(titleLink || titleHeading));
 
     if (!cid || !title) continue;
 

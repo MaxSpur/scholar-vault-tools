@@ -18,6 +18,33 @@ def test_sample_export_parses() -> None:
     assert export.results[1].rationale_points[0].label == "Local-first"
 
 
+def test_scholar_labs_export_strips_resource_labels_from_titles() -> None:
+    payload = {
+        "schema_version": "0.3",
+        "source": "google_scholar_labs",
+        "exported_at": "2026-04-22T15:32:20.865Z",
+        "prompt": "Find useful map papers",
+        "results": [
+            {
+                "rank": 1,
+                "scholar_cid": "cid-100",
+                "title": "[HTML][HTML] Mapping Digital Solutions",
+                "authors_preview": "Jane Smith",
+                "year": 2024,
+                "venue_preview": "Test Venue",
+                "publisher_or_host": "ACM",
+                "summary": "Short summary.",
+                "rationale_points": [],
+                "links": [],
+            }
+        ],
+    }
+
+    export = ScholarLabsExport.model_validate(payload)
+
+    assert export.results[0].title == "Mapping Digital Solutions"
+
+
 def test_empty_scholar_labs_export_is_rejected() -> None:
     fixture = Path(__file__).parent / "fixtures" / "failed_empty_scholar_labs_export.json"
 

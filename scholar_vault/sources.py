@@ -13,6 +13,7 @@ from slugify import slugify
 from unidecode import unidecode
 
 from .models import ImportManifest, RationalePoint, RunRecord, SourceCard, SummarySource
+from .titles import clean_paper_title
 
 STOPWORDS = {
     "a",
@@ -343,7 +344,7 @@ def humanize_run_note_stem(stem: str, date: str | None = None) -> str:
 
 
 def normalize_title(text: str | None) -> str:
-    ascii_text = unidecode((text or "").casefold())
+    ascii_text = unidecode(clean_paper_title(text).casefold())
     return re.sub(r"[^a-z0-9]+", " ", ascii_text).strip()
 
 
@@ -373,7 +374,7 @@ def first_author_surname(authors: Sequence[str], authors_preview: str | None = N
 
 
 def title_keywords(title: str, *, minimum: int = 2, maximum: int = 5) -> list[str]:
-    words = re.findall(r"[A-Za-z0-9]+", unidecode(title))
+    words = re.findall(r"[A-Za-z0-9]+", unidecode(clean_paper_title(title)))
     filtered = [word.lower() for word in words if word.lower() not in STOPWORDS and len(word) > 2]
     if len(filtered) < minimum:
         filtered = [word.lower() for word in words if len(word) > 2]
@@ -409,7 +410,7 @@ def build_citekey(
 
 
 def build_card_slug(citekey: str | None, title: str, existing_slugs: Iterable[str]) -> str:
-    preferred = slugify_text(citekey or title)
+    preferred = slugify_text(citekey or clean_paper_title(title))
     return ensure_unique(preferred, existing_slugs)
 
 
