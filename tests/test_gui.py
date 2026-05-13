@@ -121,12 +121,12 @@ def test_project_workspace_model_lists_projects_and_papers(tmp_path: Path) -> No
     assert model["resources"]["Proposal"][0]["target"] == "proposals/pepr-mobidec"
 
 
-def test_project_workspace_rows_have_readable_size_and_compact_badges() -> None:
+def test_project_workspace_rows_are_single_line_without_type_badges() -> None:
     from scholar_vault.gui import (
         _application,
         _load_qt_modules,
+        _project_button_stylesheet,
         _project_list_item_widget,
-        _project_resource_badges,
     )
 
     modules = _load_qt_modules(require_fitz=False)
@@ -150,23 +150,23 @@ def test_project_workspace_rows_have_readable_size_and_compact_badges() -> None:
         modules,
         paper_row,
         selected_callback=lambda _item: None,
-        row_height=48,
+        row_height=38,
     )
     _project_item, project_widget = _project_list_item_widget(
         modules,
         project_row,
         selected_callback=lambda _item: None,
-        show_badges=False,
-        row_height=50,
+        row_height=38,
     )
     project_labels = [label.text() for label in project_widget.findChildren(modules["QLabel"])]
 
-    assert item.sizeHint().height() == 48
-    assert _project_resource_badges(paper_row) == [
-        ("PDF", "#45ffb0", "#021007"),
-        ("OK", "#69ffad", "#021007"),
-    ]
+    assert item.sizeHint().height() == 38
+    assert "map-lens-deformation" in project_labels
+    assert "projects/map-lens-deformation/index.md" not in project_labels
+    assert "PDF" not in [label.text() for label in _widget.findChildren(modules["QLabel"])]
     assert "PROJ" not in project_labels
+    assert "QPushButton:disabled" in _project_button_stylesheet("link")
+    assert "background: #030504" in _project_button_stylesheet("link")
 
 
 def test_confidence_color_thresholds() -> None:

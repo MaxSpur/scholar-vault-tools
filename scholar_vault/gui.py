@@ -4494,38 +4494,6 @@ def _project_workspace_action_text(label: str, summary: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _project_resource_badges(row: dict[str, Any]) -> list[tuple[str, str, str]]:
-    kind = str(row.get("kind") or "")
-    if kind == "Paper":
-        pdf = str(row.get("pdf") or "missing")
-        status = str(row.get("status") or "missing")
-        pdf_badge = (
-            ("PDF", "#45ffb0", "#021007")
-            if pdf == "attached"
-            else ("NO PDF", "#ff3b4f", "#fff4f6")
-        )
-        status_colors = {
-            "complete": ("OK", "#69ffad", "#021007"),
-            "verified": ("VER", "#9ecbff", "#061526"),
-            "resolved": ("RES", "#69ffad", "#021007"),
-            "generated": ("GEN", "#8ce7b8", "#021007"),
-            "incomplete": ("INC", "#ffb000", "#221700"),
-            "ambiguous": ("AMBIG", "#ff6b7a", "#22050a"),
-            "unresolved": ("UNR", "#ff3b4f", "#fff4f6"),
-            "missing": ("META", "#426b58", "#d7ffe8"),
-        }
-        return [pdf_badge, status_colors.get(status, (status.upper()[:5], "#426b58", "#d7ffe8"))]
-    colors = {
-        "Run": ("RUN", "#9ecbff", "#061526"),
-        "Concept": ("CON", "#45ffb0", "#021007"),
-        "Synthesis": ("SYNTH", "#d2a8ff", "#160521"),
-        "Task": ("TASK", "#ffb000", "#221700"),
-        "Proposal": ("PROP", "#ff8bd1", "#230014"),
-        "Project": ("PROJ", "#69ffad", "#021007"),
-    }
-    return [colors.get(kind, (kind.upper()[:8] or "ITEM", "#8ce7b8", "#021007"))]
-
-
 def _project_resource_accent(row: dict[str, Any]) -> str:
     colors = {
         "Paper": "#45ffb0" if row.get("pdf") == "attached" else "#ff3b4f",
@@ -4539,16 +4507,18 @@ def _project_resource_accent(row: dict[str, Any]) -> str:
     return colors.get(str(row.get("kind") or ""), "#8ce7b8")
 
 
-def _project_badge(qt: dict[str, Any], text: str, background: str, color: str) -> Any:
-    badge = qt["QLabel"](text)
-    badge.setFixedWidth(max(34, min(54, 7 * len(text) + 18)))
-    badge.setFixedHeight(18)
-    badge.setAlignment(qt["Qt"].AlignmentFlag.AlignCenter)
-    badge.setFont(_summary_font(qt, 7, mono=True, bold=True))
-    badge.setStyleSheet(
-        f"color: {color}; background: {background}; border: none; padding: 1px 4px;"
-    )
-    return badge
+def _project_row_slug(row: dict[str, Any]) -> str:
+    for key in ["slug", "key", "path", "target"]:
+        value = str(row.get(key) or "").strip()
+        if not value:
+            continue
+        path = Path(value)
+        if value.endswith(".md"):
+            return path.stem
+        if "/" in value:
+            return path.name
+        return value
+    return ""
 
 
 def _project_button_stylesheet(tone: str = "neutral") -> str:
@@ -4578,9 +4548,9 @@ def _project_button_stylesheet(tone: str = "neutral") -> str:
             color: #f3fff7;
         }}
         QPushButton:disabled {{
-            color: #426b58;
-            border-color: #1d3328;
-            background: #050805;
+            color: #52705f;
+            border-color: #244533;
+            background: #030504;
         }}
     """
 
@@ -4594,8 +4564,7 @@ def _project_list_item_widget(
     row: dict[str, Any],
     *,
     selected_callback: Any,
-    show_badges: bool = True,
-    row_height: int = 48,
+    row_height: int = 36,
 ) -> tuple[Any, Any]:
     item = qt["QListWidgetItem"]()
     item.setData(qt["Qt"].ItemDataRole.UserRole, row.get("key"))
@@ -4608,38 +4577,26 @@ def _project_list_item_widget(
     )
     layout = qt["QHBoxLayout"](widget)
     layout.setContentsMargins(8, 4, 10, 4)
-    layout.setSpacing(6)
-    if show_badges:
-        for text, background, color in _project_resource_badges(row):
-            badge = _project_badge(qt, text, background, color)
-            badge.setAttribute(qt["Qt"].WidgetAttribute.WA_TransparentForMouseEvents, True)
-            layout.addWidget(badge, 0)
-    text_layout = qt["QVBoxLayout"]()
-    text_layout.setSpacing(0)
+    layout.setSpacing(10)
     title_text = str(row.get("title") or row.get("key") or "")
     title = qt["QLabel"](title_text)
-    title.setMinimumHeight(18)
-    title.setFont(_summary_font(qt, 10, bold=True))
+    title.setMinimumWidth(0)
+    title.setFont(_summary_font(qt, 12, bold=True))
     title.setStyleSheet("color: #f3fff7; border: none;")
     title.setWordWrap(False)
     title.setToolTip(title_text)
     title.setAttribute(qt["Qt"].WidgetAttribute.WA_TransparentForMouseEvents, True)
-    subtitle_parts = [
-        str(row.get(key) or "")
-        for key in ["key", "path", "date", "type"]
-        if row.get(key)
-    ]
-    subtitle_text = "  -  ".join(dict.fromkeys(subtitle_parts))
-    subtitle = qt["QLabel"](subtitle_text)
-    subtitle.setMinimumHeight(14)
-    subtitle.setFont(_summary_font(qt, 8, mono=True))
-    subtitle.setStyleSheet("color: #8ce7b8; border: none;")
-    subtitle.setWordWrap(False)
-    subtitle.setToolTip(subtitle_text)
-    subtitle.setAttribute(qt["Qt"].WidgetAttribute.WA_TransparentForMouseEvents, True)
-    text_layout.addWidget(title)
-    text_layout.addWidget(subtitle)
-    layout.addLayout(text_layout, 1)
+    slug_text = _project_row_slug(row)
+    slug = qt["QLabel"](slug_text)
+    slug.setMinimumWidth(0)
+    slug.setMaximumWidth(260)
+    slug.setFont(_summary_font(qt, 10, mono=True))
+    slug.setStyleSheet("color: #8ce7b8; border: none;")
+    slug.setWordWrap(False)
+    slug.setToolTip(slug_text)
+    slug.setAttribute(qt["Qt"].WidgetAttribute.WA_TransparentForMouseEvents, True)
+    layout.addWidget(title, 1)
+    layout.addWidget(slug, 0)
 
     def activate(_event: Any) -> None:
         item.setSelected(True)
@@ -4758,7 +4715,53 @@ def show_project_workspace(
     resource_type.addItems(resource_types)
     if initial_citekey:
         resource_type.setCurrentText("Paper")
-    resource_type.setMinimumWidth(130)
+    resource_type.setMinimumWidth(150)
+    resource_type.setMinimumHeight(34)
+    resource_type.setFont(_summary_font(qt, 11))
+    resource_type.setStyleSheet(
+        """
+        QComboBox {
+            background: #07100b;
+            color: #f3fff7;
+            border: 1px solid #9ecbff;
+            padding: 6px 28px 6px 9px;
+            selection-background-color: #1d6f4b;
+        }
+        QComboBox:hover { border-color: #b8dcff; }
+        QComboBox::drop-down {
+            width: 24px;
+            border-left: 1px solid #2f73a5;
+        }
+        QComboBox QAbstractItemView {
+            background: #07100b;
+            color: #f3fff7;
+            border: 1px solid #9ecbff;
+            selection-background-color: #1d6f4b;
+            selection-color: #ffffff;
+            outline: 0;
+        }
+        """
+    )
+    resource_type.view().setFont(_summary_font(qt, 11))
+    resource_type.view().setMinimumWidth(150)
+    resource_type.view().setStyleSheet(
+        """
+        QListView {
+            background: #07100b;
+            color: #f3fff7;
+            border: 1px solid #9ecbff;
+            outline: 0;
+        }
+        QListView::item {
+            min-height: 28px;
+            padding: 6px 10px;
+        }
+        QListView::item:selected {
+            background: #1d6f4b;
+            color: #ffffff;
+        }
+        """
+    )
     resource_filter = qt["QLineEdit"]()
     resource_filter.setPlaceholderText("Filter by title, id, path, status")
     resource_controls.addWidget(resource_heading)
@@ -4845,6 +4848,20 @@ def show_project_workspace(
     def current_target() -> str:
         return target_field.text().strip()
 
+    def project_exists() -> bool:
+        slug = current_slug()
+        return bool(slug and (Path(resolved_vault) / "projects" / slug / "index.md").exists())
+
+    def update_action_buttons() -> None:
+        has_slug = bool(current_slug())
+        has_project = project_exists()
+        has_target = bool(current_target())
+        scaffold_button.setEnabled(has_slug)
+        map_button.setEnabled(has_project)
+        audit_button.setEnabled(has_project)
+        open_button.setEnabled(has_project)
+        link_button.setEnabled(has_project and has_target)
+
     def select_project(item: Any) -> None:
         slug = item.data(qt["Qt"].ItemDataRole.UserRole)
         row = project_rows.get(str(slug))
@@ -4852,6 +4869,7 @@ def show_project_workspace(
             return
         slug_field.setText(str(row.get("slug") or ""))
         title_field.setText(str(row.get("title") or ""))
+        update_action_buttons()
 
     def select_resource(item: Any) -> None:
         key = item.data(qt["Qt"].ItemDataRole.UserRole)
@@ -4859,6 +4877,7 @@ def show_project_workspace(
         if not row:
             return
         target_field.setText(str(row.get("target") or row.get("key") or ""))
+        update_action_buttons()
 
     def populate_projects() -> None:
         project_list_widget.clear()
@@ -4876,8 +4895,7 @@ def show_project_workspace(
                 qt,
                 item_row,
                 selected_callback=select_project,
-                show_badges=False,
-                row_height=50,
+                row_height=38,
             )
             project_list_widget.addItem(item)
             project_list_widget.setItemWidget(item, widget)
@@ -4905,8 +4923,7 @@ def show_project_workspace(
                 qt,
                 row,
                 selected_callback=select_resource,
-                show_badges=True,
-                row_height=48,
+                row_height=38,
             )
             resource_list_widget.addItem(item)
             resource_list_widget.setItemWidget(item, widget)
@@ -4914,6 +4931,11 @@ def show_project_workspace(
                 resource_list_widget.setCurrentItem(item)
         if not visible:
             resource_list_widget.addItem(qt["QListWidgetItem"](f"No matching {kind.lower()}s."))
+
+    def change_resource_type(_value: int | None = None) -> None:
+        target_field.clear()
+        populate_resources()
+        update_action_buttons()
 
     def refresh(_checked: bool = False, *, reset_result: bool = True) -> None:
         try:
@@ -4932,6 +4954,7 @@ def show_project_workspace(
                 for name in ["Paper", "Run", "Concept", "Synthesis", "Task", "Proposal"]
             )
             result_box.setPlainText("\n".join(lines))
+        update_action_buttons()
 
     def run_scaffold() -> None:
         if not current_slug():
@@ -4992,8 +5015,10 @@ def show_project_workspace(
 
     project_list_widget.itemClicked.connect(select_project)
     resource_list_widget.itemClicked.connect(select_resource)
+    slug_field.textChanged.connect(update_action_buttons)
+    target_field.textChanged.connect(update_action_buttons)
     resource_filter.textChanged.connect(populate_resources)
-    resource_type.currentIndexChanged.connect(populate_resources)
+    resource_type.currentIndexChanged.connect(change_resource_type)
     refresh_button.clicked.connect(refresh)
     scaffold_button.clicked.connect(run_scaffold)
     link_button.clicked.connect(run_link_selected)
@@ -5004,6 +5029,7 @@ def show_project_workspace(
     qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.accept)
 
     refresh()
+    update_action_buttons()
     dialog.exec()
     app.processEvents()
 
