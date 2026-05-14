@@ -1021,14 +1021,14 @@ moves them into `.sync-backups/` instead of deleting them.
 
 In the UI, use the single `Skill and AGENTS differences` list. Select the
 skills or guide row you want to copy; the buttons decide the direction.
-`Update Selected Items From Repository` copies selected repository-side changes
-into the vault, while `Pull Selected Items Into Repository` copies selected
+`Update Vault From Repository` copies selected repository-side changes
+into the vault, while `Pull Selected Into Repository` copies selected
 vault-side changes back into this repo. Deselect all rows to disable both copy
 buttons. The same UI also has an `External skill sources` section: use
 the `Built-in` menu to select `obsidian-skills` and fill the visible
 source and repository fields, or enter another source name with `Repository`,
 then preview or install/update that external source into the vault target. Use
-the advanced toggle only when you need a non-default Git ref or skills
+the `Advanced...` dialog only when you need a non-default Git ref or skills
 subdirectory.
 Changed rows show modification-time hints such as repository newer or vault
 newer. Treat those as useful guidance, not proof of intent: publishing still
