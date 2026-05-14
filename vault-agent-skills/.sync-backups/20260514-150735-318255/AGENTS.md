@@ -104,13 +104,6 @@ run Markdown, and project maps are expected. Review canonical changes in
 projects, and proposals before committing. To check determinism, run rebuild a
 second time; it should not introduce additional generated churn.
 
-### Obsidian Skills
-
-- Use `obsidian-markdown` when editing paper cards, project pages, concept cards, syntheses, tasks, or AGENTS.md.
-- Use `json-canvas` when creating or editing `.canvas` project maps.
-- Use `obsidian-bases` only when explicitly creating `.base` views.
-- Use `obsidian-cli` only when Obsidian is open and CLI support is enabled.
-
 ## Evidence Rules
 
 - Read the linked PDF before writing factual claims, methods, findings, limitations, definitions, or source connections.
