@@ -5142,14 +5142,14 @@ def show_skill_sync(
 
     external_panel = _summary_panel(qt, "#9ecbff")
     external_layout = qt["QVBoxLayout"](external_panel)
-    external_layout.setContentsMargins(12, 10, 12, 12)
-    external_layout.setSpacing(8)
+    external_layout.setContentsMargins(12, 8, 12, 10)
+    external_layout.setSpacing(6)
     external_label = qt["QLabel"]("External skill sources")
     external_label.setFont(_summary_font(qt, 10, mono=True, bold=True))
     external_label.setStyleSheet("color: #9ecbff; border: none;")
     external_hint = qt["QLabel"](
-        "Install or update upstream-managed skills into the vault target. "
-        "Built-in source: obsidian-skills. Unknown source names require a repository."
+        "Install upstream-managed skills into the vault target. Built-ins fill "
+        "the visible fields; custom sources require a repository."
     )
     external_hint.setWordWrap(True)
     external_hint.setFont(_summary_font(qt, 10))
@@ -5159,18 +5159,11 @@ def show_skill_sync(
 
     known_external_sources = known_external_skill_sources()
     external_source_select = qt["QComboBox"]()
-    external_source_select.setMinimumHeight(34)
+    external_source_select.setMinimumHeight(32)
     external_source_select.setFont(_summary_font(qt, 10))
     external_source_select.addItem("Custom source", "")
     for source_name in sorted(known_external_sources):
         external_source_select.addItem(source_name, source_name)
-    source_select_row = qt["QHBoxLayout"]()
-    source_select_label = qt["QLabel"]("Built-in")
-    source_select_label.setFont(_summary_font(qt, 9, mono=True, bold=True))
-    source_select_label.setStyleSheet("color: #9ecbff; border: none;")
-    source_select_row.addWidget(source_select_label)
-    source_select_row.addWidget(external_source_select, 1)
-    external_layout.addLayout(source_select_row)
 
     external_grid = qt["QGridLayout"]()
     external_grid.setHorizontalSpacing(10)
@@ -5183,23 +5176,61 @@ def show_skill_sync(
     external_ref_field.setPlaceholderText("Default ref")
     external_subdir_field = qt["QLineEdit"]()
     external_subdir_field.setPlaceholderText("skills")
-    for column, (label_text, field) in enumerate(
+    external_button_box = qt["QWidget"]()
+    external_buttons = qt["QHBoxLayout"](external_button_box)
+    external_buttons.setContentsMargins(0, 0, 0, 0)
+    external_buttons.setSpacing(8)
+    preview_external_button = qt["QPushButton"]("Preview")
+    install_external_button = qt["QPushButton"]("Install / Update")
+    for button, tone in [
+        (preview_external_button, "neutral"),
+        (install_external_button, "primary"),
+    ]:
+        button.setMinimumHeight(32)
+        _style_button(button, tone)
+    external_buttons.addWidget(preview_external_button)
+    external_buttons.addWidget(install_external_button)
+
+    for column, (label_text, widget) in enumerate(
         [
+            ("Built-in", external_source_select),
             ("Source", external_source_field),
             ("Repository", external_repository_field),
-            ("Ref", external_ref_field),
-            ("Subdir", external_subdir_field),
+            ("Actions", external_button_box),
         ]
     ):
         label = qt["QLabel"](label_text)
         label.setFont(_summary_font(qt, 9, mono=True, bold=True))
         label.setStyleSheet("color: #9ecbff; border: none;")
-        field.setMinimumHeight(34)
-        field.setFont(_summary_font(qt, 10))
+        widget.setMinimumHeight(32)
+        if hasattr(widget, "setFont"):
+            widget.setFont(_summary_font(qt, 10))
         external_grid.addWidget(label, 0, column)
-        external_grid.addWidget(field, 1, column)
-    external_grid.setColumnStretch(1, 2)
+        external_grid.addWidget(widget, 1, column)
+    external_grid.setColumnStretch(2, 3)
     external_layout.addLayout(external_grid)
+
+    advanced_box = qt["QCheckBox"]("Advanced: ref and skills subdirectory")
+    advanced_box.setFont(_summary_font(qt, 9))
+    advanced_box.setStyleSheet("color: #d7eaff; border: none;")
+    external_layout.addWidget(advanced_box)
+
+    advanced_widget = qt["QWidget"]()
+    advanced_layout = qt["QGridLayout"](advanced_widget)
+    advanced_layout.setContentsMargins(0, 0, 0, 0)
+    advanced_layout.setHorizontalSpacing(10)
+    for column, (label_text, field) in enumerate(
+        [("Ref", external_ref_field), ("Subdir", external_subdir_field)]
+    ):
+        label = qt["QLabel"](label_text)
+        label.setFont(_summary_font(qt, 9, mono=True, bold=True))
+        label.setStyleSheet("color: #9ecbff; border: none;")
+        field.setMinimumHeight(32)
+        field.setFont(_summary_font(qt, 10))
+        advanced_layout.addWidget(label, 0, column)
+        advanced_layout.addWidget(field, 1, column)
+    advanced_widget.setVisible(False)
+    external_layout.addWidget(advanced_widget)
 
     def fill_external_source_fields(source_name: str) -> None:
         source = known_external_sources.get(source_name)
@@ -5220,22 +5251,14 @@ def show_skill_sync(
         source_name = external_source_select.currentData()
         if source_name:
             fill_external_source_fields(str(source_name))
+        else:
+            external_source_field.clear()
+            external_repository_field.clear()
+            external_ref_field.clear()
+            external_subdir_field.clear()
 
     external_source_select.currentIndexChanged.connect(built_in_source_changed)
-
-    external_buttons = qt["QHBoxLayout"]()
-    preview_external_button = qt["QPushButton"]("Preview External Source")
-    install_external_button = qt["QPushButton"]("Install / Update External Source")
-    for button, tone in [
-        (preview_external_button, "neutral"),
-        (install_external_button, "primary"),
-    ]:
-        button.setMinimumHeight(36)
-        _style_button(button, tone)
-    external_buttons.addWidget(preview_external_button)
-    external_buttons.addWidget(install_external_button)
-    external_buttons.addStretch(1)
-    external_layout.addLayout(external_buttons)
+    advanced_box.toggled.connect(advanced_widget.setVisible)
     layout.addWidget(external_panel)
 
     skill_panel = _summary_panel(qt, "#69ffad")

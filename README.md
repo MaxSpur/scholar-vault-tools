@@ -1026,9 +1026,10 @@ into the vault, while `Pull Selected Items Into Repository` copies selected
 vault-side changes back into this repo. Deselect all rows to disable both copy
 buttons. The same UI also has an `External skill sources` section: use
 the `Built-in` menu to select `obsidian-skills` and fill the visible
-repository/ref/subdir fields, or enter another source name with `Repository`
-and optional `Ref` / `Subdir`, then preview or install/update that external
-source into the vault target.
+source and repository fields, or enter another source name with `Repository`,
+then preview or install/update that external source into the vault target. Use
+the advanced toggle only when you need a non-default Git ref or skills
+subdirectory.
 Changed rows show modification-time hints such as repository newer or vault
 newer. Treat those as useful guidance, not proof of intent: publishing still
 explicitly updates the vault from this repository, while pulling still
