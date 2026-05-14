@@ -53,7 +53,7 @@ scholar-vault skills publish --vault /path/to/this/vault --apply
 ```
 
 `skills publish` updates vault skills and vault `AGENTS.md` from the repository
-source (`.agents/skills/` and `VAULT_AGENTS_TEMPLATE.md`). `skills adopt
+source (`vault-agent-skills/` and `VAULT_AGENTS_TEMPLATE.md`). `skills adopt
 AGENTS.md` copies the vault-local guide back into `VAULT_AGENTS_TEMPLATE.md`;
 use it only when vault-side guide edits are intentional.
 

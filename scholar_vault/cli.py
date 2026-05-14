@@ -92,7 +92,7 @@ from .topics import apply_topic_map, topic_map_report, topic_preset_mapping
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
 project_app = typer.Typer(help="Project workspace helpers.")
 proposal_sprint_app = typer.Typer(help="Proposal sprint workspace helpers.")
-skills_app = typer.Typer(help="Compare, adopt, and publish project-local Codex skills.")
+skills_app = typer.Typer(help="Compare, adopt, and publish vault-agent Codex skills.")
 app.add_typer(project_app, name="project")
 app.add_typer(proposal_sprint_app, name="proposal-sprint")
 app.add_typer(skills_app, name="skills")
@@ -223,7 +223,7 @@ SkillSourceArg = Annotated[
         file_okay=False,
         dir_okay=True,
         resolve_path=True,
-        help="Canonical skills folder. Defaults to this repo's .agents/skills.",
+        help="Canonical vault-agent skills folder. Defaults to this repo's vault-agent-skills.",
     ),
 ]
 SkillTargetArg = Annotated[

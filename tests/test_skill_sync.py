@@ -7,6 +7,7 @@ from scholar_vault.skill_sync import (
     AGENTS_GUIDE_ITEM,
     adopt_skill,
     compare_skillsets,
+    default_source_skills_path,
     format_skillset_summary,
     publish_skillset,
 )
@@ -20,6 +21,14 @@ def _write_skill(root: Path, name: str, body: str) -> None:
         "interface:\n  display_name: Test\n",
         encoding="utf-8",
     )
+
+
+def test_default_source_skills_path_is_vault_agent_source() -> None:
+    source = default_source_skills_path()
+
+    assert source.name == "vault-agent-skills"
+    assert ".agents" not in source.parts
+    assert (source / "scholar-vault-orient" / "SKILL.md").is_file()
 
 
 def test_compare_skillsets_reports_changed_and_target_only(tmp_path: Path) -> None:

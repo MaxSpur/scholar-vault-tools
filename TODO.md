@@ -82,6 +82,7 @@
 - [x] Add APA-style Markdown/RTF/plain formatted reference commands for one-card and whole-vault bibliography workflows.
 - [x] Add safe Codex skillset diff/adopt/publish commands, wrapper scripts, and an optional UI so repository and vault skills can be synchronized without blind overwrites.
 - [x] Make `VAULT_AGENTS_TEMPLATE.md` the source for vault-local `AGENTS.md`, and include that guide in skills diff/adopt/publish/ui synchronization.
+- [x] Separate vault-agent skills into `vault-agent-skills/` so this tools repo can reserve `.agents/skills/` for its own development-agent skills.
 - [x] Add `import-pdf --ui` for drag-and-drop multi-PDF import with automatic enrichment and follow-up field resolution.
 - [x] Add lightweight `projects/` workspaces with scaffold/link/map/audit commands and generated project indexes.
 - [x] Add a desktop `project ui` wrapper for project scaffold, project resource linking, map, audit, and list workflows.

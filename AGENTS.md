@@ -85,11 +85,14 @@
 - `render_vault_agents()` must read `VAULT_AGENTS_TEMPLATE.md`; do not re-create
   a second embedded copy of the vault guide in Python.
 - `scholar-vault skills diff`, `skills adopt`, `skills publish`, and `skills ui`
-  synchronize both `.agents/skills/` and `VAULT_AGENTS_TEMPLATE.md`/vault
+  synchronize both `vault-agent-skills/` and `VAULT_AGENTS_TEMPLATE.md`/vault
   `AGENTS.md`.
-- In sync wording, source means this repository's `.agents/skills/` plus
+- In sync wording, source means this repository's `vault-agent-skills/` plus
   `VAULT_AGENTS_TEMPLATE.md`; target means the vault's `.agents/skills/` plus
   vault `AGENTS.md`.
+- Reserve this repository's `.agents/skills/` path for skills that help agents
+  develop `scholar-vault-tools` itself. Do not put vault-agent skills there,
+  because Codex sessions opened on this tools repo may auto-load that path.
 - Do not use raw `rsync --delete` for skill or AGENTS synchronization. Adopt
   intentional vault-side improvements first, then publish from the repository
   source of truth.

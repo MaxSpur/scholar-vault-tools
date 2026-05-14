@@ -5071,11 +5071,11 @@ def show_skill_sync(
     layout.addWidget(heading)
 
     body = qt["QLabel"](
-        "Repository source is the canonical skill set and vault AGENTS template in this "
-        "tools repo. Vault target is the installed skill set and AGENTS.md used by Codex "
-        "inside the vault. To update the vault after editing here, use Update Vault From "
-        "Repository. Use Pull From Vault Into Repository only when a vault-side Codex "
-        "session made changes you want to keep."
+        "Repository source is the canonical vault-agent skill set and vault AGENTS "
+        "template in this tools repo. Vault target is the installed skill set and "
+        "AGENTS.md used by Codex inside the vault. To update the vault after editing "
+        "here, use Update Vault From Repository. Use Pull From Vault Into Repository "
+        "only when a vault-side Codex session made changes you want to keep."
     )
     body.setWordWrap(True)
     body.setFont(_summary_font(qt, 12))
@@ -5087,7 +5087,7 @@ def show_skill_sync(
     target_field = qt["QLineEdit"]()
     target_field.setText(str(Path(target).expanduser().resolve()))
     for label_text, field in [
-        ("Repository source skills (canonical)", source_field),
+        ("Repository vault-agent skills (canonical)", source_field),
         ("Vault target skills (installed)", target_field),
     ]:
         label = qt["QLabel"](label_text)

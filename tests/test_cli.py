@@ -1681,6 +1681,7 @@ def test_skills_diff_reports_vault_agents_template_difference(tmp_path) -> None:
     assert result.exit_code == 0
     assert "AGENTS.md: changed" in result.output
     assert "VAULT_AGENTS_TEMPLATE.md" in result.output
+    assert "vault-agent-skills" in result.output
 
 
 def test_skills_publish_updates_vault_agents_from_template(tmp_path) -> None:

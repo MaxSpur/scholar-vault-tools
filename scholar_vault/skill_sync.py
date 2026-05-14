@@ -10,6 +10,7 @@ from typing import Any
 
 IGNORED_NAMES = {".DS_Store", ".sync-backups"}
 AGENTS_GUIDE_ITEM = "AGENTS.md"
+VAULT_AGENT_SKILLS_DIR = "vault-agent-skills"
 
 
 @dataclass(frozen=True)
@@ -19,7 +20,7 @@ class SkillSyncPaths:
 
 
 def default_source_skills_path() -> Path:
-    return Path(__file__).resolve().parents[1] / ".agents" / "skills"
+    return Path(__file__).resolve().parents[1] / VAULT_AGENT_SKILLS_DIR
 
 
 def default_source_agents_path() -> Path:
@@ -337,7 +338,7 @@ def format_skillset_summary(summary: dict[str, Any]) -> str:
     )
     lines = [
         "Roles:",
-        f"- Repository source (canonical skills): {summary['source']}",
+        f"- Repository source (canonical vault-agent skills): {summary['source']}",
         f"- Vault target (installed skills): {summary['target']}",
         "Actions:",
         "- Update vault from repository: publish source -> target.",

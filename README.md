@@ -197,8 +197,9 @@ scholar-labs-vault/
 `VAULT_AGENTS_TEMPLATE.md`. Existing vault-level `AGENTS.md` files are preserved
 so local project notes are not overwritten by later commands.
 
-`init` does not install Codex skills. The optional project-local agent skills
-from this repository can be copied into `.agents/skills/` later; see
+`init` does not install Codex skills. The optional vault-agent skills from this
+repository's `vault-agent-skills/` folder can be copied into vault
+`.agents/skills/` later; see
 [Codex Agent Skills](#codex-agent-skills).
 
 ## End-To-End Tutorial
@@ -915,21 +916,24 @@ scholar-vault reset --vault ~/Documents/Research/scholar-labs-vault --yes
 
 ## Codex Agent Skills
 
-This repository includes optional Codex skills under `.agents/skills/` for
-post-import vault refinement. It also keeps `VAULT_AGENTS_TEMPLATE.md` as the
-source for the vault-local `AGENTS.md` guide. The repository root `AGENTS.md`
-is for agents working on this tools repo, not for agents working inside a
-research vault.
+This repository includes optional vault-agent Codex skills under
+`vault-agent-skills/` for post-import vault refinement. It also keeps
+`VAULT_AGENTS_TEMPLATE.md` as the source for the vault-local `AGENTS.md` guide.
+The repository root `AGENTS.md` is for agents working on this tools repo, not
+for agents working inside a research vault. Keep those surfaces separate:
+`vault-agent-skills/` is published into a vault's `.agents/skills/`, while this
+repository's own `.agents/skills/` path is reserved for future tools-repo
+development skills.
 
 The safer workflow is to compare first, adopt any useful vault-side changes
 back into this repository, then publish from the repository into the vault.
 In this workflow, **source** means this repository's canonical
-`.agents/skills/` folder plus `VAULT_AGENTS_TEMPLATE.md`, and **target** means
-the vault's installed `.agents/skills/` folder plus vault `AGENTS.md`. If you
-changed a skill or the vault guide template in this repository and want the
-vault to use it, update the target by publishing source to target. If a Codex
-session inside the vault changed a skill or vault `AGENTS.md` and you want to
-preserve that change in this repository, adopt target to source.
+`vault-agent-skills/` folder plus `VAULT_AGENTS_TEMPLATE.md`, and **target**
+means the vault's installed `.agents/skills/` folder plus vault `AGENTS.md`.
+If you changed a skill or the vault guide template in this repository and want
+the vault to use it, update the target by publishing source to target. If a
+Codex session inside the vault changed a skill or vault `AGENTS.md` and you
+want to preserve that change in this repository, adopt target to source.
 
 ```fish
 scholar-vault skills diff --vault ~/Documents/Research/scholar-labs-vault
@@ -961,7 +965,7 @@ scholar-vault skills adopt AGENTS.md \
 
 If the same skill exists on both sides and differs, `adopt` asks for
 `--force` before overwriting the repository copy. The overwritten source skill
-is backed up under `.agents/skills/.sync-backups/`.
+is backed up under `vault-agent-skills/.sync-backups/`.
 
 Then publish repository skills and the vault AGENTS guide template to the vault:
 
