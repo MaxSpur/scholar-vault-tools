@@ -5045,7 +5045,10 @@ def show_skill_sync(
         adopt_skill,
         compare_skillsets,
         format_skillset_summary,
+        install_external_skill_source,
+        known_external_skill_sources,
         publish_skillset,
+        resolve_external_skill_source,
     )
 
     qt = _load_qt_modules(require_fitz=False)
@@ -5137,6 +5140,104 @@ def show_skill_sync(
     hint_layout.addWidget(direction_hint)
     layout.addWidget(hint_panel)
 
+    external_panel = _summary_panel(qt, "#9ecbff")
+    external_layout = qt["QVBoxLayout"](external_panel)
+    external_layout.setContentsMargins(12, 10, 12, 12)
+    external_layout.setSpacing(8)
+    external_label = qt["QLabel"]("External skill sources")
+    external_label.setFont(_summary_font(qt, 10, mono=True, bold=True))
+    external_label.setStyleSheet("color: #9ecbff; border: none;")
+    external_hint = qt["QLabel"](
+        "Install or update upstream-managed skills into the vault target. "
+        "Built-in source: obsidian-skills. Unknown source names require a repository."
+    )
+    external_hint.setWordWrap(True)
+    external_hint.setFont(_summary_font(qt, 10))
+    external_hint.setStyleSheet("color: #d7eaff; border: none;")
+    external_layout.addWidget(external_label)
+    external_layout.addWidget(external_hint)
+
+    known_external_sources = known_external_skill_sources()
+    external_source_select = qt["QComboBox"]()
+    external_source_select.setMinimumHeight(34)
+    external_source_select.setFont(_summary_font(qt, 10))
+    external_source_select.addItem("Custom source", "")
+    for source_name in sorted(known_external_sources):
+        external_source_select.addItem(source_name, source_name)
+    source_select_row = qt["QHBoxLayout"]()
+    source_select_label = qt["QLabel"]("Built-in")
+    source_select_label.setFont(_summary_font(qt, 9, mono=True, bold=True))
+    source_select_label.setStyleSheet("color: #9ecbff; border: none;")
+    source_select_row.addWidget(source_select_label)
+    source_select_row.addWidget(external_source_select, 1)
+    external_layout.addLayout(source_select_row)
+
+    external_grid = qt["QGridLayout"]()
+    external_grid.setHorizontalSpacing(10)
+    external_grid.setVerticalSpacing(6)
+    external_source_field = qt["QLineEdit"]()
+    external_source_field.setText("obsidian-skills")
+    external_repository_field = qt["QLineEdit"]()
+    external_repository_field.setPlaceholderText("Optional for built-in sources")
+    external_ref_field = qt["QLineEdit"]()
+    external_ref_field.setPlaceholderText("Default ref")
+    external_subdir_field = qt["QLineEdit"]()
+    external_subdir_field.setPlaceholderText("skills")
+    for column, (label_text, field) in enumerate(
+        [
+            ("Source", external_source_field),
+            ("Repository", external_repository_field),
+            ("Ref", external_ref_field),
+            ("Subdir", external_subdir_field),
+        ]
+    ):
+        label = qt["QLabel"](label_text)
+        label.setFont(_summary_font(qt, 9, mono=True, bold=True))
+        label.setStyleSheet("color: #9ecbff; border: none;")
+        field.setMinimumHeight(34)
+        field.setFont(_summary_font(qt, 10))
+        external_grid.addWidget(label, 0, column)
+        external_grid.addWidget(field, 1, column)
+    external_grid.setColumnStretch(1, 2)
+    external_layout.addLayout(external_grid)
+
+    def fill_external_source_fields(source_name: str) -> None:
+        source = known_external_sources.get(source_name)
+        if source is None:
+            return
+        external_source_field.setText(source.name)
+        external_repository_field.setText(source.repository)
+        external_ref_field.setText(source.ref)
+        external_subdir_field.setText(source.skills_subdir)
+
+    for index in range(external_source_select.count()):
+        if external_source_select.itemData(index) == "obsidian-skills":
+            external_source_select.setCurrentIndex(index)
+            fill_external_source_fields("obsidian-skills")
+            break
+
+    def built_in_source_changed(_index: int) -> None:
+        source_name = external_source_select.currentData()
+        if source_name:
+            fill_external_source_fields(str(source_name))
+
+    external_source_select.currentIndexChanged.connect(built_in_source_changed)
+
+    external_buttons = qt["QHBoxLayout"]()
+    preview_external_button = qt["QPushButton"]("Preview External Source")
+    install_external_button = qt["QPushButton"]("Install / Update External Source")
+    for button, tone in [
+        (preview_external_button, "neutral"),
+        (install_external_button, "primary"),
+    ]:
+        button.setMinimumHeight(36)
+        _style_button(button, tone)
+    external_buttons.addWidget(preview_external_button)
+    external_buttons.addWidget(install_external_button)
+    external_buttons.addStretch(1)
+    external_layout.addLayout(external_buttons)
+    layout.addWidget(external_panel)
+
     skill_panel = _summary_panel(qt, "#69ffad")
     skill_layout = qt["QVBoxLayout"](skill_panel)
     skill_layout.setContentsMargins(12, 10, 12, 12)
@@ -5214,6 +5315,90 @@ def show_skill_sync(
         )
         _style_message_box(qt, box)
         return box.exec() == qt["QMessageBox"].StandardButton.Ok
+
+    def _optional_field_text(field: Any) -> str | None:
+        text = field.text().strip()
+        return text or None
+
+    def external_source_from_fields() -> Any | None:
+        source_name = external_source_field.text().strip()
+        if not source_name:
+            message("External Source Required", "Enter an external source name.")
+            return None
+        try:
+            return resolve_external_skill_source(
+                source_name,
+                repository=_optional_field_text(external_repository_field),
+                ref=_optional_field_text(external_ref_field),
+                skills_subdir=_optional_field_text(external_subdir_field),
+            )
+        except ValueError as exc:
+            message("External Source Error", str(exc))
+            return None
+
+    def external_result_text(result: dict[str, Any]) -> str:
+        lines = [
+            f"Source: {result.get('source')}",
+            f"Repository: {result.get('repository')}",
+            f"Ref: {result.get('ref')}",
+            f"Target: {result.get('target')}",
+            f"Skills: {', '.join(result.get('skills') or []) or 'none'}",
+        ]
+        if result.get("commit"):
+            lines.append(f"Commit: {result['commit']}")
+        if result.get("copied"):
+            lines.append(f"Copied: {', '.join(result['copied'])}")
+        if result.get("manifest"):
+            lines.append(f"Manifest: {result['manifest']}")
+        if result.get("backups"):
+            lines.append(f"Backups: {', '.join(result['backups'])}")
+        return "\n".join(lines)
+
+    def install_external(*, apply: bool) -> None:
+        source = external_source_from_fields()
+        if source is None:
+            return
+        target_path = paths()[1]
+        if apply and not confirm(
+            "Install / Update External Source",
+            (
+                "Clone the external source and copy its skill folders into the vault "
+                "target?\n\n"
+                f"Source: {source.name}\n"
+                f"Repository: {source.repository}\n"
+                f"Target: {target_path}\n\n"
+                "Existing skill folders with the same names are backed up before "
+                "being replaced."
+            ),
+        ):
+            return
+        result: dict[str, Any] | None = None
+        error: Exception | None = None
+        cursor_set = False
+        try:
+            qt["QApplication"].setOverrideCursor(qt["Qt"].CursorShape.WaitCursor)
+            cursor_set = True
+            app.processEvents()
+            result = install_external_skill_source(
+                target_path,
+                source,
+                apply=apply,
+                backup=True,
+            )
+        except Exception as exc:  # pragma: no cover - GUI error path
+            error = exc
+        finally:
+            if cursor_set:
+                qt["QApplication"].restoreOverrideCursor()
+        if error is not None:
+            message("External Install Failed", str(error))
+            return
+        if result is None:
+            return
+        title = "External Source Installed" if apply else "External Source Preview"
+        message(title, external_result_text(result))
+        if apply:
+            refresh()
 
     def selected_rows() -> list[dict[str, Any]]:
         return [current_rows[skill] for skill in selected_skills if skill in current_rows]
@@ -5463,6 +5648,8 @@ def show_skill_sync(
     refresh_button.clicked.connect(refresh)
     adopt_button.clicked.connect(adopt_selected)
     publish_button.clicked.connect(publish)
+    preview_external_button.clicked.connect(lambda: install_external(apply=False))
+    install_external_button.clicked.connect(lambda: install_external(apply=True))
     close_button.clicked.connect(dialog.accept)
     qt["QShortcut"](qt["QKeySequence"]("Escape"), dialog).activated.connect(dialog.reject)
 

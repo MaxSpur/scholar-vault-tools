@@ -43,6 +43,10 @@ KNOWN_EXTERNAL_SKILL_SOURCES = {
 }
 
 
+def known_external_skill_sources() -> dict[str, ExternalSkillSource]:
+    return dict(KNOWN_EXTERNAL_SKILL_SOURCES)
+
+
 def resolve_external_skill_source(
     name: str,
     *,
