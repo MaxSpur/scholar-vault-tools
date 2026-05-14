@@ -916,14 +916,20 @@ scholar-vault reset --vault ~/Documents/Research/scholar-labs-vault --yes
 
 ## Codex Agent Skills
 
-This repository includes optional vault-agent Codex skills under
-`vault-agent-skills/` for post-import vault refinement. It also keeps
+This repository includes optional repository-owned vault-agent Codex skills
+under `vault-agent-skills/` for post-import vault refinement. It also keeps
 `VAULT_AGENTS_TEMPLATE.md` as the source for the vault-local `AGENTS.md` guide.
 The repository root `AGENTS.md` is for agents working on this tools repo, not
 for agents working inside a research vault. Keep those surfaces separate:
 `vault-agent-skills/` is published into a vault's `.agents/skills/`, while this
 repository's own `.agents/skills/` path is reserved for future tools-repo
 development skills.
+
+Kepano's Obsidian skills are useful in Scholar Vaults, but they are external
+upstream content from `https://github.com/kepano/obsidian-skills`, not
+repository-owned skills. Do not copy that repository into `vault-agent-skills/`
+or adopt it back into this repository. Install or update external skill sources
+from upstream with the dedicated commands below.
 
 The safer workflow is to compare first, adopt any useful vault-side changes
 back into this repository, then publish from the repository into the vault.
@@ -975,6 +981,39 @@ scholar-vault skills publish --vault ~/Documents/Research/scholar-labs-vault
 # Dry-run by default. Add --apply to copy:
 scholar-vault skills publish --vault ~/Documents/Research/scholar-labs-vault --apply
 ```
+
+Install or update externally managed skills separately. `obsidian-skills` is a
+built-in source name for Kepano's repository:
+
+```fish
+scholar-vault skills install-external obsidian-skills --vault ~/Documents/Research/scholar-labs-vault
+
+# Dry-run by default. Add --apply to clone from upstream and copy into the vault:
+scholar-vault skills install-external obsidian-skills --vault ~/Documents/Research/scholar-labs-vault --apply
+
+# Re-run later to update from the same upstream:
+scholar-vault skills update-external obsidian-skills --vault ~/Documents/Research/scholar-labs-vault --apply
+
+# Convenience aliases for the same built-in source:
+scholar-vault skills install-obsidian --vault ~/Documents/Research/scholar-labs-vault --apply
+scholar-vault skills update-obsidian --vault ~/Documents/Research/scholar-labs-vault --apply
+```
+
+Additional external sources use the same command shape:
+
+```fish
+scholar-vault skills install-external my-source \
+  --repository https://example.com/skills.git \
+  --skills-subdir skills \
+  --vault ~/Documents/Research/scholar-labs-vault \
+  --apply
+```
+
+External install/update commands write a small manifest under the vault's
+`.agents/skills/.external-sources/` folder. Normal `skills diff` and
+`skills publish --archive-extra` ignore externally managed skill names from
+those manifests, so they are not mistaken for vault-only skills that should be
+adopted into this repository or archived.
 
 `publish` does not remove vault-only skills by default. If you intentionally
 want the vault to stop carrying target-only skills, use `--archive-extra`; this
@@ -1061,6 +1100,8 @@ Use $scholar-vault-curate-topics to propose a cleanup of noisy topics.
 Use $scholar-vault-pdf-triage to inspect current staging PDFs and historical unmatched records.
 Use $scholar-vault-read-pdf to read selected PDFs and refine their cards.
 Use $scholar-vault-research-loop to work through this question: <question>.
+Use $obsidian-markdown before substantial edits to Obsidian Markdown/properties.
+Use $json-canvas to create or repair a .canvas project map.
 ```
 
 The skills do not require subagents and do not launch them by themselves. That

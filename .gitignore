@@ -4,3 +4,6 @@ __pycache__/
 tmp/
 *.egg-info/
 .DS_Store
+vault-agent-skills/.sync-backups/
+vault-agent-skills/.external-sources/
+vault-agent-skills/skills/

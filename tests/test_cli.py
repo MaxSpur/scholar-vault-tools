@@ -1007,6 +1007,12 @@ def _write_test_skill(root, name: str, body: str) -> None:
     )
 
 
+def _write_external_test_skill(checkout, name: str, body: str) -> None:
+    skill = checkout / "skills" / name
+    skill.mkdir(parents=True, exist_ok=True)
+    (skill / "SKILL.md").write_text(body, encoding="utf-8")
+
+
 def test_skills_diff_command_reports_target_only(tmp_path) -> None:
     source = tmp_path / "source"
     target = tmp_path / "target"
@@ -1084,6 +1090,72 @@ def test_skills_publish_command_dry_run_and_apply(tmp_path) -> None:
 
     assert applied.exit_code == 0
     assert (target / "repo-skill" / "SKILL.md").exists()
+
+
+def test_skills_install_obsidian_command_uses_external_checkout(tmp_path) -> None:
+    checkout = tmp_path / "upstream"
+    target = tmp_path / "target"
+    _write_external_test_skill(checkout, "obsidian-markdown", "markdown\n")
+
+    dry_run = CliRunner().invoke(
+        app,
+        ["skills", "install-obsidian", "--target", str(target), "--checkout", str(checkout)],
+    )
+
+    assert dry_run.exit_code == 0
+    assert "Dry-run" in dry_run.output
+    assert not (target / "obsidian-markdown").exists()
+
+    applied = CliRunner().invoke(
+        app,
+        [
+            "skills",
+            "install-obsidian",
+            "--target",
+            str(target),
+            "--checkout",
+            str(checkout),
+            "--apply",
+        ],
+    )
+
+    assert applied.exit_code == 0
+    assert (target / "obsidian-markdown" / "SKILL.md").read_text(encoding="utf-8") == "markdown\n"
+    assert (target / ".external-sources" / "obsidian-skills.json").is_file()
+
+    update_dry_run = CliRunner().invoke(
+        app,
+        ["skills", "update-obsidian", "--target", str(target), "--checkout", str(checkout)],
+    )
+
+    assert update_dry_run.exit_code == 0
+    assert "Dry-run" in update_dry_run.output
+
+
+def test_skills_install_external_command_supports_custom_source(tmp_path) -> None:
+    checkout = tmp_path / "custom-upstream"
+    target = tmp_path / "target"
+    _write_external_test_skill(checkout, "custom-skill", "custom\n")
+
+    applied = CliRunner().invoke(
+        app,
+        [
+            "skills",
+            "install-external",
+            "custom-source",
+            "--repository",
+            "https://example.test/custom-source.git",
+            "--target",
+            str(target),
+            "--checkout",
+            str(checkout),
+            "--apply",
+        ],
+    )
+
+    assert applied.exit_code == 0
+    assert (target / "custom-skill" / "SKILL.md").read_text(encoding="utf-8") == "custom\n"
+    assert (target / ".external-sources" / "custom-source.json").is_file()
 
 
 def test_filtered_gui_stderr_suppresses_known_noise(capfd) -> None:

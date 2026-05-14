@@ -93,6 +93,11 @@
 - Reserve this repository's `.agents/skills/` path for skills that help agents
   develop `scholar-vault-tools` itself. Do not put vault-agent skills there,
   because Codex sessions opened on this tools repo may auto-load that path.
+- Treat third-party skills as external upstream content. Install or update
+  them with `scholar-vault skills install-external <source-name>` /
+  `scholar-vault skills update-external <source-name>`; do not adopt or paste
+  them into `vault-agent-skills/` as repository-owned skills. The
+  `obsidian-skills` source is the built-in Kepano Obsidian skills source.
 - Do not use raw `rsync --delete` for skill or AGENTS synchronization. Adopt
   intentional vault-side improvements first, then publish from the repository
   source of truth.

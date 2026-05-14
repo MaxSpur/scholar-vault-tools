@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from scholar_vault.skill_sync import (
     compare_skillsets,
     default_source_skills_path,
     format_skillset_summary,
+    install_obsidian_skills,
     publish_skillset,
 )
 
@@ -23,12 +25,79 @@ def _write_skill(root: Path, name: str, body: str) -> None:
     )
 
 
+def _write_external_skill(checkout: Path, name: str, body: str) -> None:
+    skill = checkout / "skills" / name
+    skill.mkdir(parents=True, exist_ok=True)
+    (skill / "SKILL.md").write_text(body, encoding="utf-8")
+
+
 def test_default_source_skills_path_is_vault_agent_source() -> None:
     source = default_source_skills_path()
 
     assert source.name == "vault-agent-skills"
     assert ".agents" not in source.parts
     assert (source / "scholar-vault-orient" / "SKILL.md").is_file()
+
+
+def test_compare_skillsets_ignores_nested_upstream_checkout(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    _write_external_skill(source, "obsidian-markdown", "upstream\n")
+
+    summary = compare_skillsets(source, target)
+
+    assert summary["counts"]["source_only"] == 0
+    assert summary["skills"] == []
+
+
+def test_compare_skillsets_ignores_manifested_external_target_skills(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    _write_skill(target, "obsidian-markdown", "upstream\n")
+    manifest = target / ".external-sources" / "obsidian-skills.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps({"skills": ["obsidian-markdown"], "repository": "https://example.test"}),
+        encoding="utf-8",
+    )
+
+    summary = compare_skillsets(source, target)
+    rendered = format_skillset_summary(summary)
+
+    assert summary["counts"]["target_only"] == 0
+    assert summary["external_skills"]["target"] == ["obsidian-markdown"]
+    assert "External target skills managed upstream" in rendered
+    assert "obsidian-markdown: target-only" not in rendered
+
+
+def test_install_obsidian_skills_from_checkout_writes_target_and_manifest(tmp_path: Path) -> None:
+    checkout = tmp_path / "upstream"
+    target = tmp_path / "target"
+    _write_external_skill(checkout, "obsidian-markdown", "new\n")
+    _write_external_skill(checkout, "json-canvas", "canvas\n")
+    _write_skill(target, "obsidian-markdown", "old\n")
+
+    dry_run = install_obsidian_skills(target, checkout=checkout)
+
+    assert dry_run["action"] == "install-external"
+    assert dry_run["skills"] == ["json-canvas", "obsidian-markdown"]
+    assert (target / "obsidian-markdown" / "SKILL.md").read_text(encoding="utf-8") == "old\n"
+
+    applied = install_obsidian_skills(target, checkout=checkout, apply=True)
+    manifest = json.loads(
+        (target / ".external-sources" / "obsidian-skills.json").read_text(encoding="utf-8")
+    )
+    summary = compare_skillsets(tmp_path / "empty-source", target)
+
+    assert applied["action"] == "installed-external"
+    assert applied["copied"] == ["json-canvas", "obsidian-markdown"]
+    assert "sync-backups" in applied["backups"][0]
+    assert (target / "obsidian-markdown" / "SKILL.md").read_text(encoding="utf-8") == "new\n"
+    assert (target / "json-canvas" / "SKILL.md").read_text(encoding="utf-8") == "canvas\n"
+    assert not (target / "skills").exists()
+    assert manifest["repository"].endswith("kepano/obsidian-skills.git")
+    assert manifest["skills"] == ["json-canvas", "obsidian-markdown"]
+    assert summary["counts"]["target_only"] == 0
 
 
 def test_compare_skillsets_reports_changed_and_target_only(tmp_path: Path) -> None:

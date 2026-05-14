@@ -77,12 +77,16 @@ from .projects import (
 from .proposals import proposal_audit, proposal_sprint_scaffold
 from .rebuild import concept_index, rebuild_vault
 from .skill_sync import (
+    OBSIDIAN_SKILLS_DEFAULT_REF,
+    OBSIDIAN_SKILLS_REPOSITORY,
     adopt_skill,
     compare_skillsets,
     default_source_agents_path,
     default_source_skills_path,
     format_skillset_summary,
+    install_external_skill_source,
     publish_skillset,
+    resolve_external_skill_source,
     vault_agents_path,
     vault_skills_path,
 )
@@ -92,7 +96,9 @@ from .topics import apply_topic_map, topic_map_report, topic_preset_mapping
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
 project_app = typer.Typer(help="Project workspace helpers.")
 proposal_sprint_app = typer.Typer(help="Proposal sprint workspace helpers.")
-skills_app = typer.Typer(help="Compare, adopt, and publish vault-agent Codex skills.")
+skills_app = typer.Typer(
+    help="Compare, adopt, publish, and install vault-agent Codex skills."
+)
 app.add_typer(project_app, name="project")
 app.add_typer(proposal_sprint_app, name="proposal-sprint")
 app.add_typer(skills_app, name="skills")
@@ -238,6 +244,71 @@ SkillTargetArg = Annotated[
     ),
 ]
 SkillNameArg = Annotated[str, typer.Argument(help="Skill folder name to adopt, or AGENTS.md.")]
+ExternalSkillSourceNameArg = Annotated[
+    str,
+    typer.Argument(
+        help=(
+            "External skill source name, for example obsidian-skills. Unknown names require "
+            "--repository."
+        )
+    ),
+]
+ExternalSkillsRepositoryArg = Annotated[
+    str | None,
+    typer.Option(
+        "--repository",
+        help="External skills Git repository URL or local Git path. Required for unknown sources.",
+    ),
+]
+ExternalSkillsRefArg = Annotated[
+    str | None,
+    typer.Option("--ref", help="Git branch, tag, or ref. Defaults to source default or main."),
+]
+ExternalSkillsSubdirArg = Annotated[
+    str | None,
+    typer.Option(
+        "--skills-subdir",
+        help=(
+            "Repository subdirectory containing skill folders. "
+            "Defaults to source default or skills."
+        ),
+    ),
+]
+ExternalSkillsCheckoutArg = Annotated[
+    Path | None,
+    typer.Option(
+        "--checkout",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        hidden=True,
+        help="Use an existing external skills checkout instead of cloning.",
+    ),
+]
+ObsidianSkillsRepositoryArg = Annotated[
+    str,
+    typer.Option(
+        "--repository",
+        help="Kepano Obsidian skills Git repository URL or local Git path.",
+    ),
+]
+ObsidianSkillsRefArg = Annotated[
+    str,
+    typer.Option("--ref", help="Git branch, tag, or ref to clone from the Obsidian skills repo."),
+]
+ObsidianSkillsCheckoutArg = Annotated[
+    Path | None,
+    typer.Option(
+        "--checkout",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+        hidden=True,
+        help="Use an existing Obsidian skills checkout instead of cloning.",
+    ),
+]
 StagingArg = Annotated[
     Path | None,
     typer.Option("--staging", exists=True, file_okay=False, dir_okay=True, resolve_path=True),
@@ -1067,6 +1138,12 @@ def _resolve_skill_paths(
     return source_path, target_path
 
 
+def _resolve_skill_target_path(*, target: Path | None, vault: Path | None) -> Path:
+    if target:
+        return target.expanduser().resolve()
+    return vault_skills_path(_resolve_vault(vault))
+
+
 def _target_agents_path_from_skills(target: Path) -> Path | None:
     if target.name == "skills" and target.parent.name == ".agents":
         return target.parent.parent / "AGENTS.md"
@@ -1118,6 +1195,26 @@ def _print_skill_action(summary: dict[str, Any]) -> None:
         console.print(f"- Archived: {', '.join(summary['archived'])}")
     if summary.get("backup"):
         console.print(f"- Backup: {summary['backup']}")
+    if summary.get("backups"):
+        console.print(f"- Backups: {', '.join(summary['backups'])}")
+
+
+def _print_external_skill_action(summary: dict[str, Any]) -> None:
+    if summary.get("apply"):
+        console.print(f"Applied: {summary.get('action')}")
+    else:
+        console.print("Dry-run: would install/update external skills")
+    console.print(f"- Source: {summary.get('source')} ({summary.get('repository')})")
+    console.print(f"- Ref: {summary.get('ref')}")
+    if summary.get("commit"):
+        console.print(f"- Commit: {summary['commit']}")
+    console.print(f"- Target: {summary.get('target')}")
+    if summary.get("skills"):
+        console.print(f"- Skills: {', '.join(summary['skills'])}")
+    if summary.get("copied"):
+        console.print(f"- Copied: {', '.join(summary['copied'])}")
+    if summary.get("manifest"):
+        console.print(f"- Manifest: {summary['manifest']}")
     if summary.get("backups"):
         console.print(f"- Backups: {', '.join(summary['backups'])}")
 
@@ -2933,6 +3030,148 @@ def references_command(
         output_format=output_format,
     )
     _print_references_summary(summary)
+
+
+def _skills_install_external(
+    *,
+    source_name: str,
+    vault: Path | None,
+    target: Path | None,
+    repository: str | None,
+    ref: str | None,
+    skills_subdir: str | None,
+    checkout: Path | None,
+    apply: bool,
+    backup: bool,
+    json_output: bool,
+) -> None:
+    target_path = _resolve_skill_target_path(target=target, vault=vault)
+    try:
+        source = resolve_external_skill_source(
+            source_name,
+            repository=repository,
+            ref=ref,
+            skills_subdir=skills_subdir,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    summary = install_external_skill_source(
+        target_path,
+        source,
+        apply=apply,
+        backup=backup,
+        checkout=checkout,
+    )
+    if json_output:
+        console.print_json(data=summary)
+        return
+    _print_external_skill_action(summary)
+    if not apply:
+        console.print("Use --apply to install or update these external skills in the vault.")
+
+
+@skills_app.command("install-external")
+def skills_install_external_command(
+    source_name: ExternalSkillSourceNameArg,
+    vault: VaultArg = None,
+    target: SkillTargetArg = None,
+    repository: ExternalSkillsRepositoryArg = None,
+    ref: ExternalSkillsRefArg = None,
+    skills_subdir: ExternalSkillsSubdirArg = None,
+    checkout: ExternalSkillsCheckoutArg = None,
+    apply: ApplyArg = False,
+    backup: BackupArg = True,
+    json_output: JsonOutputArg = False,
+) -> None:
+    _skills_install_external(
+        source_name=source_name,
+        vault=vault,
+        target=target,
+        repository=repository,
+        ref=ref,
+        skills_subdir=skills_subdir,
+        checkout=checkout,
+        apply=apply,
+        backup=backup,
+        json_output=json_output,
+    )
+
+
+@skills_app.command("update-external")
+def skills_update_external_command(
+    source_name: ExternalSkillSourceNameArg,
+    vault: VaultArg = None,
+    target: SkillTargetArg = None,
+    repository: ExternalSkillsRepositoryArg = None,
+    ref: ExternalSkillsRefArg = None,
+    skills_subdir: ExternalSkillsSubdirArg = None,
+    checkout: ExternalSkillsCheckoutArg = None,
+    apply: ApplyArg = False,
+    backup: BackupArg = True,
+    json_output: JsonOutputArg = False,
+) -> None:
+    _skills_install_external(
+        source_name=source_name,
+        vault=vault,
+        target=target,
+        repository=repository,
+        ref=ref,
+        skills_subdir=skills_subdir,
+        checkout=checkout,
+        apply=apply,
+        backup=backup,
+        json_output=json_output,
+    )
+
+
+@skills_app.command("install-obsidian")
+def skills_install_obsidian_command(
+    vault: VaultArg = None,
+    target: SkillTargetArg = None,
+    repository: ObsidianSkillsRepositoryArg = OBSIDIAN_SKILLS_REPOSITORY,
+    ref: ObsidianSkillsRefArg = OBSIDIAN_SKILLS_DEFAULT_REF,
+    checkout: ObsidianSkillsCheckoutArg = None,
+    apply: ApplyArg = False,
+    backup: BackupArg = True,
+    json_output: JsonOutputArg = False,
+) -> None:
+    _skills_install_external(
+        source_name="obsidian-skills",
+        vault=vault,
+        target=target,
+        repository=repository,
+        ref=ref,
+        skills_subdir=None,
+        checkout=checkout,
+        apply=apply,
+        backup=backup,
+        json_output=json_output,
+    )
+
+
+@skills_app.command("update-obsidian")
+def skills_update_obsidian_command(
+    vault: VaultArg = None,
+    target: SkillTargetArg = None,
+    repository: ObsidianSkillsRepositoryArg = OBSIDIAN_SKILLS_REPOSITORY,
+    ref: ObsidianSkillsRefArg = OBSIDIAN_SKILLS_DEFAULT_REF,
+    checkout: ObsidianSkillsCheckoutArg = None,
+    apply: ApplyArg = False,
+    backup: BackupArg = True,
+    json_output: JsonOutputArg = False,
+) -> None:
+    _skills_install_external(
+        source_name="obsidian-skills",
+        vault=vault,
+        target=target,
+        repository=repository,
+        ref=ref,
+        skills_subdir=None,
+        checkout=checkout,
+        apply=apply,
+        backup=backup,
+        json_output=json_output,
+    )
 
 
 @skills_app.command("diff")

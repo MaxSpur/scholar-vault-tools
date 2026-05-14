@@ -41,8 +41,9 @@ If activation is unavailable or `scholar-vault` is not on `PATH`, use:
 
 If you edit or create `.agents/skills/` entries or the vault-local `AGENTS.md`
 inside this vault, tell the user to adopt those changes back into the
-`scholar-vault-tools` repository before publishing repository skills or the
-repository vault guide over this vault again. From the tools repository:
+`scholar-vault-tools` repository before publishing the repository-owned
+Scholar Vault skills or the repository vault guide over this vault again. From
+the tools repository:
 
 ```fish
 scholar-vault skills diff --vault /path/to/this/vault
@@ -50,12 +51,37 @@ scholar-vault skills ui --vault /path/to/this/vault
 scholar-vault skills adopt <skill-name> --vault /path/to/this/vault --apply
 scholar-vault skills adopt AGENTS.md --vault /path/to/this/vault --apply --force
 scholar-vault skills publish --vault /path/to/this/vault --apply
+scholar-vault skills install-external obsidian-skills --vault /path/to/this/vault --apply
 ```
 
-`skills publish` updates vault skills and vault `AGENTS.md` from the repository
-source (`vault-agent-skills/` and `VAULT_AGENTS_TEMPLATE.md`). `skills adopt
-AGENTS.md` copies the vault-local guide back into `VAULT_AGENTS_TEMPLATE.md`;
-use it only when vault-side guide edits are intentional.
+`skills publish` updates repository-owned Scholar Vault skills and vault
+`AGENTS.md` from the repository source (`vault-agent-skills/` and
+`VAULT_AGENTS_TEMPLATE.md`). `skills adopt AGENTS.md` copies the vault-local
+guide back into `VAULT_AGENTS_TEMPLATE.md`; use it only when vault-side guide
+edits are intentional.
+
+External skill sources are upstream content, not repository-owned Scholar Vault
+skills. Kepano's Obsidian skills are the built-in source
+`obsidian-skills` from `https://github.com/kepano/obsidian-skills`. Do not
+adopt or paste them into `vault-agent-skills/`. Install or update them with
+`scholar-vault skills install-external obsidian-skills --vault /path/to/this/vault
+--apply` or `scholar-vault skills update-external obsidian-skills --vault
+/path/to/this/vault --apply`. The convenience aliases
+`skills install-obsidian` and `skills update-obsidian` do the same thing.
+
+For another external source, use:
+
+```fish
+scholar-vault skills install-external <source-name> \
+  --repository https://example.com/skills.git \
+  --skills-subdir skills \
+  --vault /path/to/this/vault \
+  --apply
+```
+
+External install/update commands clone the upstream repository and mark the
+installed vault skills as externally managed so normal `skills diff` /
+`publish` does not ask to adopt or archive them.
 
 Do not recommend raw `rsync --delete` for skill or AGENTS synchronization when
 either side may contain local changes. `skills publish --archive-extra` archives
@@ -106,10 +132,13 @@ second time; it should not introduce additional generated churn.
 
 ### Obsidian Skills
 
-- Use `obsidian-markdown` when editing paper cards, project pages, concept cards, syntheses, tasks, or AGENTS.md.
-- Use `json-canvas` when creating or editing `.canvas` project maps.
-- Use `obsidian-bases` only when explicitly creating `.base` views.
-- Use `obsidian-cli` only when Obsidian is open and CLI support is enabled.
+When available, use the Obsidian skills explicitly:
+
+- Use `$obsidian-markdown` before substantial edits to paper cards, project pages, concept cards, syntheses, tasks, proposals, or AGENTS.md so YAML properties, wikilinks, callouts, embeds, and Obsidian Markdown stay valid.
+- Use `$json-canvas` only when creating or editing `.canvas` files such as visual project maps.
+- Use `$obsidian-bases` only when the user explicitly asks for `.base` views.
+- Use `$obsidian-cli` only when Obsidian is open and CLI support is enabled.
+- Use `$defuddle` only when the task is to extract clean Markdown from a web page before bringing that text into vault work.
 
 ## Evidence Rules
 
@@ -240,17 +269,19 @@ The audit should pass or be consciously addressed. It checks for:
 
 ## Skills
 
-Use these project skills when available:
+Use project skills deliberately. Name the skill in the prompt when the task
+matches one of these workflows:
 
-- `$scholar-vault-orient`: map current vault state before deeper work.
-- `$scholar-vault-read-pdf`: read linked PDFs and add PDF-grounded notes or connections.
-- `$scholar-vault-research-loop`: run a focused PDF-grounded vault improvement cycle.
-- `$scholar-vault-synthesize`: write cross-paper syntheses under `syntheses/`.
-- `$scholar-vault-refine-card`: safely improve touched paper cards.
-- `$scholar-vault-curate-topics`: clean topic labels and rebuild generated views.
-- `$scholar-vault-pdf-triage`: inspect active PDF/staging issues.
-- `$scholar-vault-gap-scout`: write follow-up tasks and research gaps.
-- `$scholar-vault-pepr-docx`: render PEPR proposal Markdown drafts into the DOCX template, generate APA references, and verify pagination.
+- Start non-trivial orientation with `$scholar-vault-orient` to map current vault state, relevant runs, indexes, staging issues, and candidate source context.
+- Use `$scholar-vault-read-pdf` when the work requires factual claims, methods, findings, limitations, definitions, or source connections from linked PDFs.
+- Use `$scholar-vault-research-loop` for a focused post-import improvement cycle that reads PDFs, refines cards, creates metacards, and rebuilds generated views.
+- Use `$scholar-vault-synthesize` when writing cross-paper synthesis notes under `syntheses/`.
+- Use `$scholar-vault-refine-card` when safely improving touched `papers/*.md` cards.
+- Use `$scholar-vault-curate-topics` when cleaning topic labels or prompt-boilerplate topic noise.
+- Use `$scholar-vault-pdf-triage` for active PDF/staging issues before moving or attaching files.
+- Use `$scholar-vault-gap-scout` to write follow-up tasks and research gaps.
+- Use `$scholar-vault-pepr-docx` only for PEPR proposal DOCX rendering, references, and pagination checks.
+- Use the Obsidian skills from the earlier section for Obsidian syntax and file-format correctness; they complement the Scholar Vault skills but are installed from Kepano's upstream repository, not authored here.
 
 Skills do not need to launch subagents by themselves. Subagents may be useful for parallel read-only PDF passes or verification when available, but final synthesis and file edits should stay coordinated in the main thread.
 

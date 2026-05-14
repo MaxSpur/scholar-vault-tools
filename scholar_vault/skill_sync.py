@@ -1,22 +1,67 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
+import subprocess
+import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-IGNORED_NAMES = {".DS_Store", ".sync-backups"}
 AGENTS_GUIDE_ITEM = "AGENTS.md"
 VAULT_AGENT_SKILLS_DIR = "vault-agent-skills"
+EXTERNAL_SKILL_SOURCES_DIR = ".external-sources"
+OBSIDIAN_SKILLS_SOURCE_NAME = "obsidian-skills"
+OBSIDIAN_SKILLS_REPOSITORY = "https://github.com/kepano/obsidian-skills.git"
+OBSIDIAN_SKILLS_DEFAULT_REF = "main"
+IGNORED_NAMES = {".DS_Store", ".sync-backups", EXTERNAL_SKILL_SOURCES_DIR}
 
 
 @dataclass(frozen=True)
 class SkillSyncPaths:
     source: Path
     target: Path
+
+
+@dataclass(frozen=True)
+class ExternalSkillSource:
+    name: str
+    repository: str
+    ref: str
+    skills_subdir: str = "skills"
+
+
+KNOWN_EXTERNAL_SKILL_SOURCES = {
+    OBSIDIAN_SKILLS_SOURCE_NAME: ExternalSkillSource(
+        name=OBSIDIAN_SKILLS_SOURCE_NAME,
+        repository=OBSIDIAN_SKILLS_REPOSITORY,
+        ref=OBSIDIAN_SKILLS_DEFAULT_REF,
+    )
+}
+
+
+def resolve_external_skill_source(
+    name: str,
+    *,
+    repository: str | None = None,
+    ref: str | None = None,
+    skills_subdir: str | None = None,
+) -> ExternalSkillSource:
+    source = KNOWN_EXTERNAL_SKILL_SOURCES.get(name)
+    if source is None and repository is None:
+        raise ValueError(f"--repository is required for unknown external skill source: {name}")
+    resolved_repository = repository if repository is not None else source.repository
+    resolved_ref = ref or (source.ref if source else OBSIDIAN_SKILLS_DEFAULT_REF)
+    resolved_skills_subdir = skills_subdir or (source.skills_subdir if source else "skills")
+    return ExternalSkillSource(
+        name=name,
+        repository=resolved_repository,
+        ref=resolved_ref,
+        skills_subdir=resolved_skills_subdir,
+    )
 
 
 def default_source_skills_path() -> Path:
@@ -39,25 +84,66 @@ def _is_ignored(path: Path) -> bool:
     return any(part in IGNORED_NAMES for part in path.parts)
 
 
-def _files(root: Path) -> dict[str, Path]:
+def _external_manifest_dir(root: Path) -> Path:
+    return root / EXTERNAL_SKILL_SOURCES_DIR
+
+
+def _external_manifest_path(root: Path, source_name: str) -> Path:
+    return _external_manifest_dir(root) / f"{source_name}.json"
+
+
+def _external_skill_names(root: Path) -> set[str]:
+    manifest_dir = _external_manifest_dir(root)
+    if not manifest_dir.exists():
+        return set()
+    names: set[str] = set()
+    for path in sorted(manifest_dir.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        skills = data.get("skills")
+        if isinstance(skills, list):
+            names.update(str(skill) for skill in skills if skill)
+    return names
+
+
+def _files(
+    root: Path,
+    *,
+    skill_names: set[str] | None = None,
+    external_skills: set[str] | None = None,
+) -> dict[str, Path]:
     if not root.exists():
         return {}
+    external_skills = external_skills or set()
     files: dict[str, Path] = {}
     for path in root.rglob("*"):
         if path.is_file():
             relative = path.relative_to(root)
-            if not _is_ignored(relative):
-                files[relative.as_posix()] = path
+            if _is_ignored(relative):
+                continue
+            if relative.parts and relative.parts[0] in external_skills:
+                continue
+            if skill_names is not None and (
+                not relative.parts or relative.parts[0] not in skill_names
+            ):
+                continue
+            files[relative.as_posix()] = path
     return files
 
 
-def _skill_dirs(root: Path) -> set[str]:
+def _skill_dirs(root: Path, *, external_skills: set[str] | None = None) -> set[str]:
     if not root.exists():
         return set()
+    external_skills = external_skills or set()
     return {
         path.name
         for path in root.iterdir()
-        if path.is_dir() and not _is_ignored(Path(path.name))
+        if path.is_dir()
+        and not _is_ignored(Path(path.name))
+        and path.name not in external_skills
+        and (path / "SKILL.md").is_file()
     }
 
 
@@ -117,6 +203,15 @@ def _copy_file(source_file: Path, target_file: Path) -> None:
     shutil.copy2(source_file, target_file)
 
 
+def _replace_skill(source_skill: Path, target_skill: Path) -> None:
+    if target_skill.exists():
+        if target_skill.is_dir():
+            shutil.rmtree(target_skill)
+        else:
+            target_skill.unlink()
+    _copy_skill(source_skill, target_skill)
+
+
 def _copy_backup(existing: Path, backup_root: Path, skill: str) -> Path | None:
     if not existing.exists():
         return None
@@ -133,6 +228,175 @@ def _copy_file_backup(existing: Path, backup_root: Path, name: str) -> Path | No
     backup.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(existing, backup)
     return backup
+
+
+def _run_git(args: list[str], *, cwd: Path | None = None) -> str:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("git is required to install external skills") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip()
+        message = f"git {' '.join(args)} failed"
+        if detail:
+            message = f"{message}: {detail}"
+        raise RuntimeError(message) from exc
+    return result.stdout.strip()
+
+
+def _clone_external_source(source: ExternalSkillSource, checkout: Path) -> None:
+    _run_git(["clone", "--depth", "1", source.repository, str(checkout)])
+    if source.ref:
+        try:
+            _run_git(["checkout", source.ref], cwd=checkout)
+        except RuntimeError:
+            _run_git(["fetch", "--depth", "1", "origin", source.ref], cwd=checkout)
+            _run_git(["checkout", "FETCH_HEAD"], cwd=checkout)
+
+
+def _git_commit(checkout: Path) -> str | None:
+    try:
+        return _run_git(["rev-parse", "HEAD"], cwd=checkout)
+    except RuntimeError:
+        return None
+
+
+def _external_skill_dirs(checkout: Path, skills_subdir: str) -> dict[str, Path]:
+    skills_root = checkout / skills_subdir
+    if not skills_root.is_dir():
+        raise FileNotFoundError(f"External skills folder does not exist: {skills_root}")
+    return {
+        path.name: path
+        for path in sorted(skills_root.iterdir())
+        if path.is_dir() and not _is_ignored(Path(path.name)) and (path / "SKILL.md").is_file()
+    }
+
+
+def _write_external_manifest(
+    target_root: Path,
+    source: ExternalSkillSource,
+    *,
+    commit: str | None,
+    skills: list[str],
+) -> Path:
+    manifest_path = _external_manifest_path(target_root, source.name)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "source": source.name,
+        "repository": source.repository,
+        "ref": source.ref,
+        "commit": commit,
+        "skills_subdir": source.skills_subdir,
+        "skills": skills,
+        "installed_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
+def _install_external_skill_source_from_checkout(
+    target: Path | str,
+    source: ExternalSkillSource,
+    checkout: Path,
+    *,
+    apply: bool,
+    backup: bool,
+) -> dict[str, Any]:
+    target_root = Path(target).expanduser().resolve()
+    checkout_root = Path(checkout).expanduser().resolve()
+    skill_dirs = _external_skill_dirs(checkout_root, source.skills_subdir)
+    skill_names = sorted(skill_dirs)
+    commit = _git_commit(checkout_root)
+    result: dict[str, Any] = {
+        "action": "install-external",
+        "source": source.name,
+        "repository": source.repository,
+        "ref": source.ref,
+        "commit": commit,
+        "target": str(target_root),
+        "apply": apply,
+        "skills": skill_names,
+        "copied": [],
+        "backups": [],
+        "manifest": str(_external_manifest_path(target_root, source.name)),
+    }
+    if not apply:
+        return result
+    target_root.mkdir(parents=True, exist_ok=True)
+    for skill in skill_names:
+        target_skill = target_root / skill
+        if target_skill.exists() and backup:
+            if target_skill.is_dir():
+                backup_path = _copy_backup(target_skill, target_root, skill)
+            else:
+                backup_path = _copy_file_backup(target_skill, target_root, skill)
+            if backup_path:
+                result["backups"].append(str(backup_path))
+        _replace_skill(skill_dirs[skill], target_skill)
+        result["copied"].append(skill)
+    _write_external_manifest(target_root, source, commit=commit, skills=skill_names)
+    result["action"] = "installed-external"
+    return result
+
+
+def install_external_skill_source(
+    target: Path | str,
+    source: ExternalSkillSource,
+    *,
+    apply: bool = False,
+    backup: bool = True,
+    checkout: Path | str | None = None,
+) -> dict[str, Any]:
+    if checkout is not None:
+        return _install_external_skill_source_from_checkout(
+            target,
+            source,
+            Path(checkout),
+            apply=apply,
+            backup=backup,
+        )
+    with tempfile.TemporaryDirectory(prefix=f"{source.name}-") as directory:
+        checkout_path = Path(directory) / source.name
+        _clone_external_source(source, checkout_path)
+        return _install_external_skill_source_from_checkout(
+            target,
+            source,
+            checkout_path,
+            apply=apply,
+            backup=backup,
+        )
+
+
+def install_obsidian_skills(
+    target: Path | str,
+    *,
+    repository: str = OBSIDIAN_SKILLS_REPOSITORY,
+    ref: str = OBSIDIAN_SKILLS_DEFAULT_REF,
+    apply: bool = False,
+    backup: bool = True,
+    checkout: Path | str | None = None,
+) -> dict[str, Any]:
+    source = resolve_external_skill_source(
+        OBSIDIAN_SKILLS_SOURCE_NAME,
+        repository=repository,
+        ref=ref,
+    )
+    return install_external_skill_source(
+        target,
+        source,
+        apply=apply,
+        backup=backup,
+        checkout=checkout,
+    )
 
 
 def _skill_status(summary: dict[str, Any], skill: str) -> str:
@@ -216,10 +480,20 @@ def compare_skillsets(
 ) -> dict[str, Any]:
     source_root = Path(source).expanduser().resolve()
     target_root = Path(target).expanduser().resolve()
-    source_files = _files(source_root)
-    target_files = _files(target_root)
-    source_skills = _skill_dirs(source_root)
-    target_skills = _skill_dirs(target_root)
+    source_external_skills = _external_skill_names(source_root)
+    target_external_skills = _external_skill_names(target_root)
+    source_skills = _skill_dirs(source_root, external_skills=source_external_skills)
+    target_skills = _skill_dirs(target_root, external_skills=target_external_skills)
+    source_files = _files(
+        source_root,
+        skill_names=source_skills,
+        external_skills=source_external_skills,
+    )
+    target_files = _files(
+        target_root,
+        skill_names=target_skills,
+        external_skills=target_external_skills,
+    )
 
     file_rows: list[dict[str, Any]] = []
     for relative in sorted(set(source_files) | set(target_files)):
@@ -318,6 +592,10 @@ def compare_skillsets(
         if target_agent_guide is not None
         else None,
         "agent_guide": agent_guide,
+        "external_skills": {
+            "source": sorted(source_external_skills),
+            "target": sorted(target_external_skills),
+        },
         "counts": counts,
         "skills": skills,
         "files": file_rows,
@@ -368,6 +646,12 @@ def format_skillset_summary(summary: dict[str, Any]) -> str:
                 f"- Repository source agent guide: {agent_guide['source']}",
                 f"- Vault target agent guide: {agent_guide['target']}",
             ]
+        )
+    target_external_skills = summary.get("external_skills", {}).get("target") or []
+    if target_external_skills:
+        lines.append(
+            "- External target skills managed upstream (ignored by publish/adopt): "
+            f"{', '.join(target_external_skills)}"
         )
     difference_count = 0
     for row in summary["skills"]:
