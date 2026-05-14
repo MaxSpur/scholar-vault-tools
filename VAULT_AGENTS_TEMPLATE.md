@@ -9,7 +9,15 @@ These instructions apply inside this research vault. They are for agents working
 - Linked `pdfs/*.pdf` files are the canonical evidence artifacts.
 - `papers/*.md` cards are the durable metadata, provenance, index, and notes layer over those PDFs.
 - Scholar Labs `runs/` are discovery provenance. They explain why sources were found, but they are not evidence by themselves.
-- `topics/`, `_indexes/`, `_exports/`, `llms.txt`, and `llms-full.txt` are generated or derived views.
+- Canonical files are `papers/`, `pdfs/`, run YAML/manifests under `runs/`,
+  `raw/` inputs, `concepts/`, `syntheses/`, `tasks/`, `projects/`, and
+  `proposals/`.
+- Derived files are `_indexes/`, `topics/`, `llms.txt`, `llms-full.txt`, and
+  `_exports/`. Rendered run Markdown under `runs/` and
+  `projects/*/project-map.md` are generated views as well.
+- Generated files should not be hand-edited unless the user or a tool-specific
+  workflow explicitly allows it. Regenerate them with the appropriate
+  `scholar-vault` command instead.
 - Durable agent-written work belongs in non-generated folders such as `concepts/`, `syntheses/`, `tasks/`, `projects/`, and `proposals/`.
 - Projects are lenses over shared papers, runs, concepts, syntheses, tasks, and optional proposals. They link to paper cards instead of duplicating source content.
 - Do not create new top-level folders unless the user explicitly instructs you to.
@@ -58,6 +66,7 @@ Prefer structured commands for orientation:
 ```fish
 scholar-vault status --json
 scholar-vault pdf-doctor --json
+scholar-vault git-summary
 scholar-vault notes-missing --heading "PDF reading notes"
 scholar-vault maintenance-report
 scholar-vault project list
@@ -87,6 +96,13 @@ scholar-vault rebuild
 
 After editing project links or frontmatter, prefer the focused project commands
 below; do not use a full rebuild unless broader vault content changed.
+
+Before committing after a rebuild, run `scholar-vault git-summary`. Large
+generated diffs under `_indexes/`, `topics/`, `llms*.txt`, `_exports/`, rendered
+run Markdown, and project maps are expected. Review canonical changes in
+`papers/`, `pdfs/`, run YAML/manifests, `raw/`, concepts, syntheses, tasks,
+projects, and proposals before committing. To check determinism, run rebuild a
+second time; it should not introduce additional generated churn.
 
 ## Evidence Rules
 

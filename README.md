@@ -528,6 +528,7 @@ Inspect vault health for an agent or for manual triage:
 scholar-vault status --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault status --vault ~/Documents/Research/scholar-labs-vault --json
 scholar-vault doctor --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault git-summary --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault maintenance-report --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault notes-missing --vault ~/Documents/Research/scholar-labs-vault --heading "PDF reading notes"
 scholar-vault concept-index --vault ~/Documents/Research/scholar-labs-vault
@@ -1129,6 +1130,55 @@ normal research workflow is:
 - `_indexes/*.md`: navigation and maintenance views.
 - `llms.txt` and `llms-full.txt`: short and expanded agent navigation summaries.
 - `_exports/library.*`: plain-file exports for Zotero migration or other tools.
+
+## Git workflow for the vault
+
+Rebuilds can produce large but expected diffs. Treat the vault as a mix of
+canonical records and generated views:
+
+- Commit canonical changes when they reflect intentional work: `papers/`,
+  `pdfs/`, `raw/`, run YAML/manifests under `runs/`, and durable notes under
+  `concepts/`, `syntheses/`, `tasks/`, `projects/`, and `proposals/`.
+- Treat `_indexes/`, `topics/`, `llms.txt`, `llms-full.txt`, `_exports/`,
+  rendered run Markdown under `runs/`, and `projects/*/project-map.md` as
+  generated output. Do not hand-edit these unless a workflow explicitly says to.
+- Paper cards in `papers/` are canonical records, but their generated section
+  layout is tool-managed. Use CLI commands for metadata/abstract/keyword fixes
+  and keep manual reading notes under `## Notes`.
+
+Use `git-summary` before reviewing or committing a large vault diff:
+
+```fish
+scholar-vault git-summary --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault git-summary --vault ~/Documents/Research/scholar-labs-vault --json
+```
+
+The command groups changed files by top-level path and classifies them as
+`canonical`, `generated`, or `other`. Large generated counts after `rebuild` are
+normal. Unexpected canonical changes deserve review.
+
+To check rebuild determinism, run `scholar-vault rebuild`, inspect
+`git-summary`, then run `scholar-vault rebuild` again. The second rebuild should
+not introduce new changed files or churn the generated diff. If the second pass
+changes timestamps, ordering, or generated content again, treat that as a
+nondeterminism bug before committing.
+
+Optional `.gitattributes` examples for making high-churn generated files less
+noisy in GitHub or local diffs:
+
+```gitattributes
+_indexes/** -diff
+topics/** -diff
+_exports/library.* -diff
+_exports/semantic-neighbors.json -diff
+llms.txt -diff
+llms-full.txt -diff
+runs/**/*.md -diff
+projects/*/project-map.md -diff
+```
+
+This repository does not install those rules automatically. Add them to a vault
+only if you prefer hiding generated diff bodies while still tracking the files.
 
 ## Verification
 

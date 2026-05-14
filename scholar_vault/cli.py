@@ -27,7 +27,7 @@ from .bibliography import (
     export_references,
 )
 from .config import configured_path, latest_export_json, load_user_config, save_user_config
-from .diagnostics import doctor_vault, notes_missing, pdf_doctor
+from .diagnostics import doctor_vault, git_summary, notes_missing, pdf_doctor
 from .enrichment import (
     confirm_no_publication_keywords,
     enrich_citations,
@@ -1520,6 +1520,36 @@ def _print_pdf_doctor_summary(summary: dict[str, Any]) -> None:
             f"{staging['duplicate_count']} duplicate vault copies; "
             f"{staging['actionable_pdf_count']} actionable PDFs."
         )
+
+
+def _print_git_summary(summary: dict[str, Any]) -> None:
+    console.print(f"Vault: {summary.get('vault')}")
+    console.print(f"Git root: {summary.get('git_root')}")
+    counts = summary.get("by_class") or {}
+    console.print(
+        "Changed files: {changed} "
+        "(canonical={canonical}, generated={generated}, other={other})".format(
+            changed=summary.get("changed", 0),
+            canonical=counts.get("canonical", 0),
+            generated=counts.get("generated", 0),
+            other=counts.get("other", 0),
+        )
+    )
+    table = Table(title="Changed Files By Top-Level Path", show_lines=False)
+    table.add_column("Path")
+    table.add_column("Canonical", justify="right")
+    table.add_column("Generated", justify="right")
+    table.add_column("Other", justify="right")
+    table.add_column("Total", justify="right")
+    for folder, values in (summary.get("by_top_level") or {}).items():
+        table.add_row(
+            str(folder),
+            str(values.get("canonical", 0)),
+            str(values.get("generated", 0)),
+            str(values.get("other", 0)),
+            str(values.get("total", 0)),
+        )
+    console.print(table)
 
 
 def _print_topic_report(summary: dict[str, Any]) -> None:
@@ -3046,6 +3076,18 @@ def pdf_doctor_command(
         _print_json(summary)
     else:
         _print_pdf_doctor_summary(summary)
+
+
+@app.command("git-summary")
+def git_summary_command(
+    vault: VaultArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = git_summary(_resolve_vault(vault))
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_git_summary(summary)
 
 
 @app.command("notes-missing")

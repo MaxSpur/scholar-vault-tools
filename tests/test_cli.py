@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 
 from click.exceptions import Exit
@@ -293,6 +294,46 @@ def test_pdf_doctor_command_outputs_summary(tmp_path) -> None:
     assert result.exit_code == 0
     assert "Orphan PDFs" in result.output
     assert "pdfs/orphan.pdf" in result.output
+
+
+def test_git_summary_command_classifies_vault_changes(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    subprocess.run(["git", "-C", str(vault), "init"], check=True, capture_output=True)
+    for path, text in [
+        ("papers/source.md", "# Source\n"),
+        ("runs/2026-04-22_run/index.yaml", "slug: 2026-04-22_run\n"),
+        ("runs/2026-04-22_run/Run Note.md", "# Run\n"),
+        ("projects/map-lens/index.md", "# Project\n"),
+        ("projects/map-lens/project-map.md", "# Project map\n"),
+        ("_indexes/papers.md", "# Papers\n"),
+        ("topics/maps.md", "# Maps\n"),
+        ("_exports/library.bib", "% bib\n"),
+        ("llms.txt", "summary\n"),
+        ("notes.md", "# Note\n"),
+    ]:
+        target = vault / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+
+    result = CliRunner().invoke(app, ["git-summary", "--vault", str(vault), "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["changed"] == 10
+    assert payload["by_class"] == {"canonical": 3, "generated": 6, "other": 1}
+    assert payload["by_top_level"]["runs"] == {
+        "canonical": 1,
+        "generated": 1,
+        "other": 0,
+        "total": 2,
+    }
+    assert payload["by_top_level"]["projects"] == {
+        "canonical": 1,
+        "generated": 1,
+        "other": 0,
+        "total": 2,
+    }
 
 
 def test_topic_map_command_dry_runs_mapping(tmp_path) -> None:

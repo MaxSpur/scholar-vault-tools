@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import subprocess
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,20 @@ from .sources import (
     load_source_cards,
 )
 from .topics import _topic_report
+
+CANONICAL_TOP_LEVELS = {
+    "papers",
+    "pdfs",
+    "raw",
+    "concepts",
+    "syntheses",
+    "tasks",
+    "projects",
+    "proposals",
+}
+GENERATED_TOP_LEVELS = {"_indexes", "topics", "_exports"}
+GENERATED_FILES = {"llms.txt", "llms-full.txt"}
+RUN_CANONICAL_FILES = {"index.yaml", "import-manifest.yaml"}
 
 
 def _parse_datetime(value: str | None) -> datetime:
@@ -151,6 +166,95 @@ def _repeated_unmatched_files(
     ]
     repeated.sort(key=lambda item: (int(item["count"]), int(item["best_score"])), reverse=True)
     return repeated
+
+
+def _git_path_top_level(path: str) -> str:
+    clean = path.strip("/")
+    if not clean:
+        return "."
+    return clean.split("/", 1)[0]
+
+
+def _classify_git_path(path: str) -> str:
+    clean = path.strip("/")
+    top_level = _git_path_top_level(clean)
+    if clean in GENERATED_FILES or top_level in GENERATED_TOP_LEVELS:
+        return "generated"
+    if top_level == "runs":
+        name = Path(clean).name
+        return "canonical" if name in RUN_CANONICAL_FILES else "generated"
+    if top_level == "projects" and Path(clean).name == "project-map.md":
+        return "generated"
+    if top_level in CANONICAL_TOP_LEVELS:
+        return "canonical"
+    return "other"
+
+
+def _parse_git_status_porcelain_z(raw: bytes) -> list[dict[str, str]]:
+    parts = raw.decode("utf-8", errors="replace").split("\0")
+    entries: list[dict[str, str]] = []
+    index = 0
+    while index < len(parts):
+        item = parts[index]
+        index += 1
+        if not item:
+            continue
+        status = item[:2]
+        path = item[3:]
+        if "R" in status or "C" in status:
+            if index < len(parts) and parts[index]:
+                path = parts[index]
+                index += 1
+        entries.append({"status": status, "path": path})
+    return entries
+
+
+def git_summary(vault: Path | str) -> dict[str, Any]:
+    root = Path(vault).expanduser().resolve()
+    try:
+        git_root = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            check=True,
+            capture_output=True,
+        ).stdout.decode("utf-8", errors="replace").strip()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise ValueError(f"Vault is not a git repository: {root}") from exc
+
+    status = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+        check=True,
+        capture_output=True,
+    )
+    rows = []
+    by_top_level: dict[str, dict[str, int]] = {}
+    by_class: Counter[str] = Counter()
+    for entry in _parse_git_status_porcelain_z(status.stdout):
+        path = entry["path"]
+        classification = _classify_git_path(path)
+        top_level = _git_path_top_level(path)
+        by_class[classification] += 1
+        folder_counts = by_top_level.setdefault(
+            top_level,
+            {"canonical": 0, "generated": 0, "other": 0, "total": 0},
+        )
+        folder_counts[classification] += 1
+        folder_counts["total"] += 1
+        rows.append(
+            {
+                "path": path,
+                "status": entry["status"],
+                "top_level": top_level,
+                "classification": classification,
+            }
+        )
+    return {
+        "vault": str(root),
+        "git_root": git_root,
+        "changed": len(rows),
+        "by_class": {key: by_class.get(key, 0) for key in ["canonical", "generated", "other"]},
+        "by_top_level": dict(sorted(by_top_level.items())),
+        "files": sorted(rows, key=lambda row: row["path"]),
+    }
 
 
 def pdf_doctor(

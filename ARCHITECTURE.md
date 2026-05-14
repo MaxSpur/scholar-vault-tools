@@ -35,6 +35,7 @@
 - `runs` / `list-runs`: lists previous Scholar Labs run records with the run ID, exported date, selected/result counts, unresolved count, and title. `install-fish-completion` writes a Fish completion file directly, while `install-zsh-completion` writes a canonical zsh `_scholar-vault` completion function for `fpath`. Both delegate command, option, `--run`, `--citekey`, `--only`, and `--folder-mode` completion back to Typer so custom callbacks use the explicit or configured vault.
 - `status` / `doctor`: read-only vault health reports for humans and agents. The command summarizes canonical-card issues, run records, topic noise, optional candidate discovery backlog, historical unmatched manifest entries, active staging counts, and PDF inventory issues, with `--json` for Codex-friendly structured output. Candidate results without cards are not defects in the selected-only workflow.
 - `pdf-doctor`: read-only PDF inventory report for `pdfs/` and the optional staging folder. It flags orphan vault PDFs, missing card PDF files, duplicate hashes, duplicate-style filenames, repeated historical unmatched staged filenames, staged files already present in the vault by hash, and non-duplicate PDFs still actionable in staging.
+- `git-summary`: read-only Git status summary for a vault. It groups changed files by top-level path and classifies them as canonical, generated, or other so rebuild-sized diffs can be reviewed without reading every generated file body.
 - `notes-missing`: read-only paper-card report for selected/attached cards that lack a requested notes subheading such as `PDF reading notes`. It is meant to produce PDF-reading queues for actual vault improvement work.
 - `maintenance-report`: read-only triage composition that writes `_indexes/maintenance-report.md` and `tasks/<date>-maintenance.md` from the current `status`, `pdf-doctor`, `notes-missing`, enrichment, staging, topic-noise, concept, synthesis, and task signals without mutating paper cards, PDFs, run manifests, or metadata.
 - `concept-index`: regenerates `_indexes/concepts.md` from durable `concepts/*.md` metacards and refreshes `llms.txt` / `llms-full.txt` without a full card/runs/topics rebuild.
@@ -68,6 +69,31 @@
 - Raw citation cache: `raw/metadata/<citekey>/`
 - Derived indexes and exports: `_indexes/`, `_exports/`, `llms.txt`, `llms-full.txt`. The generated Obsidian-facing navigation layer includes `_indexes/dashboard.md`, `paper-status.md`, `reading-queue.md`, `metadata-issues.md`, `pdf-issues.md`, `synthesis-dashboard.md`, `search-index.md`, and `_exports/semantic-neighbors.json`.
 - Optional agent-written metacards and workspaces: `concepts/`, `syntheses/`, `tasks/`, `projects/`, and `proposals/`
+
+## Generated output and version control
+
+The vault is intended to be versioned, but rebuilds intentionally rewrite many
+derived views. Version-control policy is based on file responsibility:
+
+- Canonical records: `papers/`, `pdfs/`, run YAML/manifests under `runs/`,
+  `raw/`, `concepts/`, `syntheses/`, `tasks/`, `projects/`, and `proposals/`.
+  These should be reviewed as durable user or tool state. Paper cards are
+  canonical records, even though rebuild rerenders their tool-managed sections.
+- Generated output: `_indexes/`, `topics/`, `llms.txt`, `llms-full.txt`,
+  `_exports/`, rendered run Markdown under `runs/`, and
+  `projects/*/project-map.md`. These should be regenerated rather than
+  hand-edited unless a task explicitly permits an exception.
+- Other files: vault-local configuration, guide files, or ad hoc notes that do
+  not match the canonical/generated sets. Review these manually.
+
+`scholar-vault git-summary` uses the same classification to summarize
+`git status --porcelain` counts. It does not change files and does not decide
+what to commit. It is meant to separate expected rebuild churn from canonical
+changes that need careful review.
+
+To detect nondeterministic rebuilds, run rebuild twice. The second run should
+not change generated output again. Repeated ordering, timestamp, or export churn
+after a second rebuild is a bug in the generator, not a normal Git workflow.
 
 ## Merge Strategy
 
