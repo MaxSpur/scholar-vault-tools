@@ -165,8 +165,15 @@ scholar-labs-vault/
   concepts/
   syntheses/
   tasks/
+  queries/
   projects/
   proposals/
+  bases/
+    papers.base
+    queries.base
+    synthesis-workbench.base
+    scholar-labs-workbench.base
+    self-improvement.base
   _indexes/
     prompts.md
     papers.md
@@ -184,6 +191,7 @@ scholar-labs-vault/
     concepts.md
     syntheses.md
     tasks.md
+    queries.md
     projects.md
     proposals.md
   _exports/
@@ -533,6 +541,12 @@ scholar-vault git-summary --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault maintenance-report --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault notes-missing --vault ~/Documents/Research/scholar-labs-vault --heading "PDF reading notes"
 scholar-vault concept-index --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault query create --vault ~/Documents/Research/scholar-labs-vault "How do collaborative map workbenches support mobility decisions?" --project map-lens-deformation --slug collaborative-map-workbenches
+scholar-vault query link-paper --vault ~/Documents/Research/scholar-labs-vault collaborative-map-workbenches Schottler2021_GeospatialNetworks
+scholar-vault query link-run --vault ~/Documents/Research/scholar-labs-vault collaborative-map-workbenches 2026-05-01_mobility
+scholar-vault query status --vault ~/Documents/Research/scholar-labs-vault collaborative-map-workbenches
+scholar-vault bases rebuild --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault bases doctor --vault ~/Documents/Research/scholar-labs-vault --json
 scholar-vault project ui --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault project scaffold --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation
 scholar-vault project link-paper --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation Schottler2021_GeospatialNetworks
@@ -564,6 +578,59 @@ concept, and synthesis checks without modifying paper cards or run data.
 `concept-index` regenerates `_indexes/concepts.md` from durable concept cards
 and refreshes `llms.txt` / `llms-full.txt` so future agents can find those
 metacards without a full rebuild.
+
+`query create` creates a durable `queries/<slug>.md` research-query note with
+frontmatter for status, project, question, linked runs, linked papers, linked
+syntheses, linked concepts, prompt packs, priority, and review state. Query
+notes are not generated-only files; they are the Obsidian place to launch and
+track a specific research question. Link sources with `query link-paper`, link
+Scholar Labs provenance with `query link-run`, link outputs with
+`query link-synthesis`, and inspect the workbench with `query show` or
+`query status`.
+
+A new query note starts with Obsidian Bases embeds:
+
+```markdown
+---
+type: research_query
+status: open
+project: map-lens-deformation
+question: How do collaborative map workbenches support mobility decisions?
+linked_runs: []
+linked_papers: []
+linked_syntheses: []
+linked_concepts: []
+scholar_labs_prompt_pack: []
+priority: normal
+review_status: unreviewed
+---
+
+# How do collaborative map workbenches support mobility decisions?
+
+## Workbench
+![[bases/queries.base#Query outputs]]
+![[bases/queries.base#Queries needing Scholar Labs]]
+![[bases/papers.base#Needs reading]]
+```
+
+Open `queries/collaborative-map-workbenches.md` in Obsidian to work from the
+question instead of from a daily note. The `Query outputs` view uses Obsidian
+Bases `this.file` behavior when embedded, so files that link to the current
+query note or list the current query path in `linked_queries` appear in the
+view. If Obsidian changes active-file behavior, the explicit `linked_*`
+frontmatter remains the fallback source of truth for CLI status and filtering.
+
+`bases init` and `bases rebuild` write deterministic `.base` files under
+`bases/`: `papers.base`, `queries.base`, `synthesis-workbench.base`,
+`scholar-labs-workbench.base`, and `self-improvement.base`. `bases doctor`
+validates the generated YAML and required view names without requiring Obsidian
+to be open. No Dataview dependency is added. Paper-card frontmatter exposes the
+workbench fields `reading_status`, `compiled_status`, `review_status`,
+`last_read_at`, `last_compiled_at`, `evidence_level`, `linked_queries`, and
+`linked_projects` for these views. Bases are a user-facing interface over
+existing vault state, not an alternative canonical data model: PDFs and
+`papers/*.md` remain canonical evidence records, query notes are durable
+workbench notes, and `_indexes/` / `bases/` are deterministic navigation layers.
 
 `project scaffold <slug>` creates `projects/<slug>/index.md`. A project is a
 lightweight lens over shared papers, runs, concepts, syntheses, tasks, and
@@ -1147,15 +1214,17 @@ normal research workflow is:
    tensions, and literature-review prose.
 10. Create `tasks/<date>-research-gaps.md` for open questions, unclear
    evidence, gaps, follow-up reading, or next Scholar Labs prompts.
-11. For ongoing workspaces, use `projects/<slug>/index.md` as a lens over
+11. For question-centered work, use `queries/<slug>.md` as the workbench note
+   and link papers, runs, and syntheses with `scholar-vault query link-*`.
+12. For ongoing workspaces, use `projects/<slug>/index.md` as a lens over
    shared papers, runs, concepts, syntheses, tasks, and optional proposals.
    Link to the shared records instead of copying paper cards into the project.
-12. For proposal workspaces, start with
+13. For proposal workspaces, start with
    `scholar-vault proposal-sprint scaffold <slug>`, then run
    `scholar-vault proposal-audit proposals/<slug>` before treating the draft
    evidence layer as ready. Do not treat proposal workflows as the primary
    workflow for all vault work.
-13. Run `scholar-vault concept-index` after concept-only edits, or
+14. Run `scholar-vault concept-index` after concept-only edits, or
    `scholar-vault rebuild` after broader paper, topic, synthesis, task, or
    project/proposal edits, so generated context files include the new durable
    notes and connections.
@@ -1167,6 +1236,7 @@ normal research workflow is:
 - `concepts/*.md`: optional agent-written concept/metacards that connect papers by method, dataset, visual encoding, evaluation protocol, or terminology.
 - `syntheses/*.md`: optional agent-written cross-paper syntheses grounded in PDFs.
 - `tasks/*.md`: optional agent-written follow-up tasks and research gaps.
+- `queries/*.md`: durable research-query workbench notes with linked papers, runs, syntheses, concepts, prompt packs, and Obsidian Bases embeds.
 - `projects/<slug>/index.md`: optional project lens over shared papers, runs, concepts, syntheses, tasks, and proposals.
 - `projects/<slug>/project-map.md`: generated project map summarizing linked record status, gaps, and next actions.
 - `proposals/*.md` or `proposals/<slug>/*.md`: optional proposal workspaces, outlines, source matrices, and draft evidence layers.
@@ -1178,6 +1248,7 @@ normal research workflow is:
 - `raw/metadata/<citekey>/citation.bib` and `citation.csl.json`: preferred provider-backed sources for one-card and whole-library BibLaTeX export.
 - `topics/*.md`: simple topic pages derived from prompt keywords and rationale labels.
 - `_indexes/*.md`: navigation and maintenance views.
+- `bases/*.base`: generated Obsidian Bases workbench views over existing vault state.
 - `llms.txt` and `llms-full.txt`: short and expanded agent navigation summaries.
 - `_exports/library.*`: plain-file exports for Zotero migration or other tools.
 
@@ -1188,10 +1259,12 @@ canonical records and generated views:
 
 - Commit canonical changes when they reflect intentional work: `papers/`,
   `pdfs/`, `raw/`, run YAML/manifests under `runs/`, and durable notes under
-  `concepts/`, `syntheses/`, `tasks/`, `projects/`, and `proposals/`.
+  `concepts/`, `syntheses/`, `tasks/`, `queries/`, `projects/`, and
+  `proposals/`.
 - Treat `_indexes/`, `topics/`, `llms.txt`, `llms-full.txt`, `_exports/`,
-  rendered run Markdown under `runs/`, and `projects/*/project-map.md` as
-  generated output. Do not hand-edit these unless a workflow explicitly says to.
+  `bases/`, rendered run Markdown under `runs/`, and
+  `projects/*/project-map.md` as generated output. Do not hand-edit these
+  unless a workflow explicitly says to.
 - Paper cards in `papers/` are canonical records, but their generated section
   layout is tool-managed. Use CLI commands for metadata/abstract/keyword fixes
   and keep manual reading notes under `## Notes`.

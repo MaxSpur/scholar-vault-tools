@@ -89,6 +89,7 @@ def render_search_index(paths: VaultPaths, cards: list[SourceCard]) -> str:
         ("concepts", "Concepts"),
         ("syntheses", "Syntheses"),
         ("tasks", "Tasks"),
+        ("queries", "Research Queries"),
         ("projects", "Projects"),
         ("proposals", "Proposals"),
     ]:

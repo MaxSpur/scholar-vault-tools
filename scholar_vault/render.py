@@ -227,9 +227,9 @@ def render_vault_readme() -> str:
         "# scholar-vault research vault\n\n"
         "This vault is a local-first source wiki. Paper card records live in `papers/`, "
         "canonical evidence PDFs live in `pdfs/`, Scholar Labs runs live in `runs/`, durable "
-        "agent-written concepts/syntheses/tasks/projects/proposals live in their named "
-        "folders, and derived navigation lives in "
-        "`_indexes/`, `_exports/`, `llms.txt`, and `llms-full.txt`.\n"
+        "agent-written concepts/syntheses/tasks/queries/projects/proposals live in their "
+        "named folders, and derived navigation lives in "
+        "`bases/`, `_indexes/`, `_exports/`, `llms.txt`, and `llms-full.txt`.\n"
     )
 
 
@@ -266,8 +266,10 @@ def render_llms_txt() -> str:
         "- Concepts and method cards: concepts/ and _indexes/concepts.md\n"
         "- Synthesis notes: syntheses/ and _indexes/syntheses.md\n"
         "- Open questions and research gaps: tasks/ and _indexes/tasks.md\n"
+        "- Query workbench notes: queries/ and _indexes/queries.md\n"
         "- Project workspaces: projects/ and _indexes/projects.md\n"
         "- Proposal workspaces: proposals/ and _indexes/proposals.md\n"
+        "- Obsidian Bases workbenches: bases/\n"
         "- Scholar Labs provenance: runs/\n"
         "- Optional candidate discovery backlog: _indexes/missing-pdfs.md\n"
         "- Historical unmatched staging records: _indexes/unmatched.md\n"
@@ -300,6 +302,8 @@ def render_llms_full(
             "evaluation protocols, and terminology.",
             "- Use syntheses/ for evidence-backed cross-paper answers and literature-review prose.",
             "- Use tasks/ for open questions, gaps, and next searches.",
+            "- Use queries/ for active research questions with linked papers, runs, syntheses, "
+            "and Obsidian Bases workbench embeds.",
             "- Use projects/ as lenses over shared papers, runs, concepts, syntheses, tasks, "
             "and optional proposals.",
             "- Do not treat Scholar Labs summaries, generated indexes, or semantic-neighbor "
@@ -314,7 +318,9 @@ def render_llms_full(
             "- _indexes/pdf-issues.md",
             "- _indexes/synthesis-dashboard.md",
             "- _indexes/search-index.md",
+            "- _indexes/queries.md",
             "- _indexes/projects.md",
+            "- bases/",
             "- _exports/semantic-neighbors.json",
             "",
         ]
@@ -376,6 +382,7 @@ def render_llms_full(
             ("concepts", "Concepts"),
             ("syntheses", "Syntheses"),
             ("tasks", "Tasks"),
+            ("queries", "Research Queries"),
             ("projects", "Projects"),
             ("proposals", "Proposals"),
         ]:

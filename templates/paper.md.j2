@@ -74,6 +74,22 @@ No run-specific summaries captured yet.
 - PDF: Missing
 {% endif %}
 
+{% if card.linked_queries or card.linked_projects %}
+## Workbench links
+{% if card.linked_queries %}
+### Queries
+{% for query in card.linked_queries -%}
+- [{{ query }}](../{{ query }})
+{% endfor %}
+{% endif %}
+{% if card.linked_projects %}
+### Projects
+{% for project in card.linked_projects -%}
+- [{{ project }}](../{{ project }})
+{% endfor %}
+{% endif %}
+
+{% endif %}
 ## Links
 {% if card.links %}
 {% for link in card.links -%}

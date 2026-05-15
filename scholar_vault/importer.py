@@ -607,6 +607,7 @@ def reset_vault(vault: Path | str) -> dict[str, int]:
         paths.papers,
         paths.runs,
         paths.topics,
+        paths.bases,
         paths.indexes,
         paths.exports,
     ):

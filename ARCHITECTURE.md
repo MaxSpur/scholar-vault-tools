@@ -12,6 +12,10 @@
   and external upstream skill install/update commands.
 - `scholar_vault/cli_projects.py`: `project ...` command group, including
   scaffold, map, audit, link helpers, and the project workspace UI launcher.
+- `scholar_vault/cli_queries.py`: `query ...` command group for durable
+  research-query notes and query-to-run/paper/synthesis links.
+- `scholar_vault/cli_bases.py`: `bases ...` command group for generated
+  Obsidian Bases initialization, rebuild, and doctor validation.
 - `scholar_vault/config.py`: user-level default path storage and latest Scholar Labs export selection.
 - `scholar_vault/models.py`: typed records for exports, paper cards, runs, logs, and PDF candidates. Paper cards are the durable metadata/provenance/notes layer; linked PDFs are the canonical evidence artifacts.
 - `scholar_vault/sources.py`: vault path management, slug and citekey utilities, Markdown parsing, and frontmatter helpers.
@@ -28,6 +32,12 @@
 - `scholar_vault/bibliography.py`: BibLaTeX and formatted reference export commands.
 - `scholar_vault/enrichment.py`: standalone `enrich` / `enrich-citations` orchestration plus safe manual citation, abstract, and keyword correction workflows. Import workflows still coordinate touched-card enrichment from `importer.py`.
 - `scholar_vault/projects.py`: lightweight project workspace scaffold/link/map/audit workflows. Scaffold/link commands use a focused project navigation refresh for `_indexes/projects.md` and LLM context files rather than a full vault rebuild, so they do not normalize unrelated paper cards, repair PDFs, or sync run links.
+- `scholar_vault/queries.py`: durable query workspace creation, listing,
+  linking, status reports, and query-derived unread-linked-paper refreshes.
+  Query notes live in `queries/` and remain user-facing Markdown, not
+  generated-only records.
+- `scholar_vault/bases.py`: deterministic `.base` YAML generation under
+  `bases/` plus read-only validation for required Base files and views.
 - `scholar_vault/proposals.py`: proposal sprint scaffolding and proposal evidence audits.
 - `scholar_vault/render.py`: Jinja-backed Markdown rendering for cards, run pages, indexes, topics, and LLM summary files. Vault-local `AGENTS.md` initialization reads `VAULT_AGENTS_TEMPLATE.md`; the repository root `AGENTS.md` is only for agents working on this tools repo.
 - `scholar_vault/bibtex.py`: BibTeX parsing plus BibLaTeX-oriented rendering, validation, and export helpers.
@@ -70,6 +80,18 @@
 - `concept-index`: regenerates `_indexes/concepts.md` from durable `concepts/*.md` metacards and refreshes `llms.txt` / `llms-full.txt` without a full card/runs/topics rebuild.
 - `topic-map`: read-only topic-frequency/noise report by default. With a YAML mapping, or with `--preset prompt-boilerplate`, it can dry-run or `--apply` exact topic frontmatter removals/renames on canonical `papers/*.md` cards, then rebuild derived topic pages and indexes.
 - `project scaffold/list/map/link-*` / `project audit` / `project ui`: lightweight project workspace commands for `projects/<slug>/index.md`. Projects are lenses over shared papers, runs, concepts, syntheses, tasks, and optional proposals; link commands update project frontmatter without duplicating paper cards, refresh only project navigation, `map` writes `project-map.md` including manually linked proposal paths, and `audit` is read-only. The project UI is a thin desktop wrapper over scaffold, all project link commands, map, audit, and list behavior.
+- `query create/list/show/link-run/link-paper/link-synthesis/status`: durable
+  question-centered workbench commands for `queries/<slug>.md`. Query notes
+  store the research question, status, project, linked runs, linked papers,
+  linked syntheses, linked concepts, Scholar Labs prompt pack, priority, review
+  state, and a tool-refreshed unread-linked-paper list for Bases. `link-paper`
+  also adds the query path to the paper card's `linked_queries` frontmatter
+  while preserving the existing paper-card body.
+- `bases init/rebuild/doctor`: generates `bases/papers.base`,
+  `bases/queries.base`, `bases/synthesis-workbench.base`,
+  `bases/scholar-labs-workbench.base`, and `bases/self-improvement.base`.
+  `doctor --json` checks that those files parse as YAML and contain required
+  views; it does not require Obsidian to be open.
 - `proposal-audit`: read-only evidence audit for a `proposals/<slug>` workspace. It checks outline citations against PDF reading notes, read-paper proposal roles, source-matrix links, raw idea notes, and draft claims that still cite Scholar Labs summaries instead of PDF-grounded evidence. Source matrices include proposal-local `*matrix*.md` files plus Markdown files named by outline frontmatter `evidence_matrix` / `evidence_matrices`, including shared matrices under `syntheses/`.
 - `proposal-sprint scaffold`: idempotently creates or updates a proposal workspace with an index, outline, source matrix, reading log, and raw idea card, then rebuilds derived navigation.
 - `skills diff` / `skills adopt` / `skills publish` / `skills ui`: safe synchronization for repository-owned vault-agent Codex skills and the vault agent guide between this repository and a vault. The repository source folder is `vault-agent-skills/` plus `VAULT_AGENTS_TEMPLATE.md`; the vault target folder is `.agents/skills/` plus vault-local `AGENTS.md`. This keeps vault-agent skills out of the tools repo's own `.agents/skills/` auto-scan path. The terminal commands dry-run by default, `adopt` copies vault-side target skills or `AGENTS.md` back into the repository source of truth, `publish` updates the vault target from repository source skills and the vault guide template, and vault-only skill extras are kept unless explicitly archived into `.sync-backups/`. Diff rows include source/target modification-time hints and recommendations, but copying remains explicit. The UI uses one scrollable per-item checklist of differing skills/guide items; buttons label and execute the copy direction as `Update Vault From Repository` or `Pull Selected Into Repository`, and it includes compact external-source preview/install controls backed by the generic external installer.
@@ -91,14 +113,21 @@
 ## Canonical Data Model
 
 - Canonical evidence artifact: linked `pdfs/*.pdf`
-- Canonical card/index record: `papers/<slug>.md`
+- Canonical card/index record: `papers/<slug>.md`. Paper frontmatter includes
+  workbench fields for Obsidian Bases: `reading_status`, `compiled_status`,
+  `review_status`, `last_read_at`, `last_compiled_at`, `evidence_level`,
+  `linked_queries`, and `linked_projects`.
 - Scholar Labs provenance record: `runs/<run_id>/<Short Title.md>` for Obsidian plus `index.yaml` for machine-readable state.
 - Run IDs remain stable and prompt-derived for idempotence. Run note filenames use `note_file` when present, otherwise the `title` field from the Scholar Labs JSON, a `--title` override, an import-time prompt for older untitled JSON, `rename-run`, or an Obsidian filename rename.
 - Raw inputs: `raw/`
 - Staging scan cache: `.scholar-vault-pdf-scan-cache` beside staged PDFs, keyed by filename plus size/mtime and ignored by JSON export discovery.
 - Raw citation cache: `raw/metadata/<citekey>/`
+- Durable query workbenches: `queries/<slug>.md`
 - Derived indexes and exports: `_indexes/`, `_exports/`, `llms.txt`, `llms-full.txt`. The generated Obsidian-facing navigation layer includes `_indexes/dashboard.md`, `paper-status.md`, `reading-queue.md`, `metadata-issues.md`, `pdf-issues.md`, `synthesis-dashboard.md`, `search-index.md`, and `_exports/semantic-neighbors.json`.
-- Optional agent-written metacards and workspaces: `concepts/`, `syntheses/`, `tasks/`, `projects/`, and `proposals/`
+- Generated Obsidian Bases: `bases/*.base`. Bases are a view layer over
+  existing frontmatter, file links, and canonical records; they are not an
+  alternative data model.
+- Optional agent-written metacards and workspaces: `concepts/`, `syntheses/`, `tasks/`, `queries/`, `projects/`, and `proposals/`
 
 ## Generated output and version control
 
@@ -106,10 +135,11 @@ The vault is intended to be versioned, but rebuilds intentionally rewrite many
 derived views. Version-control policy is based on file responsibility:
 
 - Canonical records: `papers/`, `pdfs/`, run YAML/manifests under `runs/`,
-  `raw/`, `concepts/`, `syntheses/`, `tasks/`, `projects/`, and `proposals/`.
+  `raw/`, `concepts/`, `syntheses/`, `tasks/`, `queries/`, `projects/`, and
+  `proposals/`.
   These should be reviewed as durable user or tool state. Paper cards are
   canonical records, even though rebuild rerenders their tool-managed sections.
-- Generated output: `_indexes/`, `topics/`, `llms.txt`, `llms-full.txt`,
+- Generated output: `_indexes/`, `topics/`, `bases/`, `llms.txt`, `llms-full.txt`,
   `_exports/`, rendered run Markdown under `runs/`, and
   `projects/*/project-map.md`. These should be regenerated rather than
   hand-edited unless a task explicitly permits an exception.

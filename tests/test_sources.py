@@ -105,6 +105,69 @@ No abstract yet.
     assert card.keywords == ["Immersive Analytics", "Collaboration"]
 
 
+def test_load_source_card_applies_workbench_defaults(tmp_path: Path) -> None:
+    card_path = tmp_path / "old-card.md"
+    card_path.write_text(
+        """---
+type: paper
+title: Old Card
+---
+
+# Old Card
+
+## Scholar Labs summary
+No summary yet.
+""",
+        encoding="utf-8",
+    )
+
+    card = load_source_card(card_path)
+
+    assert card.reading_status == "unread"
+    assert card.compiled_status == "uncompiled"
+    assert card.review_status == "unreviewed"
+    assert card.evidence_level == "unknown"
+    assert card.linked_queries == []
+    assert card.linked_projects == []
+
+
+def test_load_source_card_preserves_workbench_fields(tmp_path: Path) -> None:
+    card_path = tmp_path / "workbench-card.md"
+    card_path.write_text(
+        """---
+type: paper
+title: Workbench Card
+reading_status: skimmed
+compiled_status: draft
+review_status: needs_fix
+last_read_at: 2026-05-01T12:00:00+02:00
+last_compiled_at: 2026-05-02T12:00:00+02:00
+evidence_level: primary
+linked_queries:
+  - queries/example-query.md
+linked_projects: projects/map-lens/index.md
+---
+
+# Workbench Card
+
+## Scholar Labs summary
+No summary yet.
+""",
+        encoding="utf-8",
+    )
+
+    card = load_source_card(card_path)
+
+    assert card.reading_status == "skimmed"
+    assert card.compiled_status == "draft"
+    assert card.review_status == "needs_fix"
+    assert card.last_read_at == "2026-05-01T12:00:00+02:00"
+    assert card.last_compiled_at == "2026-05-02T12:00:00+02:00"
+    assert card.evidence_level == "primary"
+    assert card.linked_queries == ["queries/example-query.md"]
+    assert card.linked_projects == ["projects/map-lens/index.md"]
+
+
 def test_infer_run_title_uses_prompt_topic_phrase() -> None:
     prompt = (
         "Find peer-reviewed papers that would support a postdoctoral research proposal "
@@ -135,6 +198,8 @@ citation_last_checked: 2026-04-23T12:36:12+02:00
 citation_enriched_at: 2026-04-23T12:36:12+02:00
 abstract_last_checked: 2026-04-23T16:00:20+02:00
 abstract_enriched_at: 2026-04-23T16:00:20+02:00
+last_read_at: 2026-04-24T09:00:00+02:00
+last_compiled_at: 2026-04-25T09:00:00+02:00
 ---
 
 # Timestamped Paper
@@ -151,3 +216,5 @@ No summary yet.
     assert card.citation_enriched_at == "2026-04-23T12:36:12+02:00"
     assert card.abstract_last_checked == "2026-04-23T16:00:20+02:00"
     assert card.abstract_enriched_at == "2026-04-23T16:00:20+02:00"
+    assert card.last_read_at == "2026-04-24T09:00:00+02:00"
+    assert card.last_compiled_at == "2026-04-25T09:00:00+02:00"

@@ -10,15 +10,16 @@ These instructions apply inside this research vault. They are for agents working
 - `papers/*.md` cards are the durable metadata, provenance, index, and notes layer over those PDFs.
 - Scholar Labs `runs/` are discovery provenance. They explain why sources were found, but they are not evidence by themselves.
 - Canonical files are `papers/`, `pdfs/`, run YAML/manifests under `runs/`,
-  `raw/` inputs, `concepts/`, `syntheses/`, `tasks/`, `projects/`, and
-  `proposals/`.
+  `raw/` inputs, `concepts/`, `syntheses/`, `tasks/`, `queries/`,
+  `projects/`, and `proposals/`.
 - Derived files are `_indexes/`, `topics/`, `llms.txt`, `llms-full.txt`, and
-  `_exports/`. Rendered run Markdown under `runs/` and
+  `_exports/`. Generated `bases/*.base`, rendered run Markdown under `runs/`, and
   `projects/*/project-map.md` are generated views as well.
 - Generated files should not be hand-edited unless the user or a tool-specific
   workflow explicitly allows it. Regenerate them with the appropriate
   `scholar-vault` command instead.
-- Durable agent-written work belongs in non-generated folders such as `concepts/`, `syntheses/`, `tasks/`, `projects/`, and `proposals/`.
+- Durable agent-written work belongs in non-generated folders such as `concepts/`, `syntheses/`, `tasks/`, `queries/`, `projects/`, and `proposals/`.
+- Query notes are question-centered workbenches over shared papers, runs, syntheses, and prompt packs. They are not daily notes and do not replace canonical paper cards.
 - Projects are lenses over shared papers, runs, concepts, syntheses, tasks, and optional proposals. They link to paper cards instead of duplicating source content.
 - Do not create new top-level folders unless the user explicitly instructs you to.
 - Proposal workspaces are one workflow, not the primary vault workflow.
@@ -113,6 +114,7 @@ scholar-vault references
 ```
 
 After editing only `concepts/`, run `scholar-vault concept-index`. After
+editing query notes or Base views, run `scholar-vault bases rebuild`. After
 editing paper cards, topics, syntheses, tasks, or proposal evidence surfaces,
 run:
 
@@ -124,17 +126,17 @@ After editing project links or frontmatter, prefer the focused project commands
 below; do not use a full rebuild unless broader vault content changed.
 
 Before committing after a rebuild, run `scholar-vault git-summary`. Large
-generated diffs under `_indexes/`, `topics/`, `llms*.txt`, `_exports/`, rendered
-run Markdown, and project maps are expected. Review canonical changes in
+generated diffs under `_indexes/`, `topics/`, `bases/`, `llms*.txt`, `_exports/`,
+rendered run Markdown, and project maps are expected. Review canonical changes in
 `papers/`, `pdfs/`, run YAML/manifests, `raw/`, concepts, syntheses, tasks,
-projects, and proposals before committing. To check determinism, run rebuild a
+queries, projects, and proposals before committing. To check determinism, run rebuild a
 second time; it should not introduce additional generated churn.
 
 ### Obsidian Skills
 
 When available, use the Obsidian skills explicitly:
 
-- Use `$obsidian-markdown` before substantial edits to paper cards, project pages, concept cards, syntheses, tasks, proposals, or AGENTS.md so YAML properties, wikilinks, callouts, embeds, and Obsidian Markdown stay valid.
+- Use `$obsidian-markdown` before substantial edits to paper cards, query notes, project pages, concept cards, syntheses, tasks, proposals, or AGENTS.md so YAML properties, wikilinks, callouts, embeds, and Obsidian Markdown stay valid.
 - Use `$json-canvas` only when creating or editing `.canvas` files such as visual project maps.
 - Use `$obsidian-bases` only when the user explicitly asks for `.base` views.
 - Use `$obsidian-cli` only when Obsidian is open and CLI support is enabled.
@@ -189,9 +191,9 @@ scholar-vault resolve-citation --citekey <citekey> \
 For actual vault improvement after import and enrichment:
 
 1. Use `$scholar-vault-research-loop` for a focused question, concept, method, dataset, proposal section, or paper cluster.
-2. Start general work from `llms.txt`, `_indexes/dashboard.md`, relevant `projects/`, relevant `concepts/`, relevant `syntheses/`, and then focused paper cards.
+2. Start general work from `llms.txt`, `_indexes/dashboard.md`, relevant `queries/`, relevant `projects/`, relevant `concepts/`, relevant `syntheses/`, and then focused paper cards.
 3. Use `scholar-vault maintenance-report` when you need a broad triage pass.
-4. Orient from `status --json`, relevant cards, runs, topics, and existing `concepts/`, `syntheses/`, `tasks/`, `projects/`, and `proposals/`.
+4. Orient from `status --json`, relevant cards, runs, topics, and existing `concepts/`, `syntheses/`, `tasks/`, `queries/`, `projects/`, and `proposals/`.
 5. Build a reading set from selected paper cards with attached PDFs.
 6. Use `scholar-vault notes-missing --heading "PDF reading notes"` when you need the unread selected-card queue.
 7. Read PDFs as primary evidence.
@@ -199,7 +201,8 @@ For actual vault improvement after import and enrichment:
 9. Create `concepts/<slug>.md` for reusable concepts, methods, algorithms, datasets, visual encodings, evaluation protocols, or terminology.
 10. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers and literature-review prose.
 11. Create `tasks/<date>-research-gaps.md` for open questions, unclear evidence, gaps, follow-up reading, or next Scholar Labs prompts.
-12. Run `scholar-vault concept-index` after concept-only edits, or `scholar-vault rebuild` after broader paper/topic/synthesis/task/project/proposal edits.
+12. Use `queries/<slug>.md` for focused research questions and link papers, runs, and syntheses with `scholar-vault query link-*`.
+13. Run `scholar-vault concept-index` after concept-only edits, `scholar-vault bases rebuild` after query/Base edits, or `scholar-vault rebuild` after broader paper/topic/synthesis/task/project/proposal edits.
 
 ## Project Workflow
 

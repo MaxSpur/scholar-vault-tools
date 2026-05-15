@@ -97,6 +97,7 @@
 ## Obsidian usability and vault navigation
 
 - [x] Add generated Obsidian-facing Markdown dashboards for paper-library, reading-queue, metadata-issues, PDF issues, and synthesis/source-matrix workflows.
+- [x] Add durable query notes and generated Obsidian Bases for query-centered paper/run/synthesis workbenches.
 - [ ] Add an Obsidian setup command that writes safe default graph/search settings, including graph filters that hide generated run/topic/index scaffolding by default.
 - [ ] Reduce paper-card search noise by moving full Scholar Labs prompts out of generated paper cards while preserving run links and run-local provenance.
 - [x] Add a search-facing plain-text index over paper titles, abstracts, summaries, keywords, PDF reading notes, concepts, syntheses, tasks, projects, and proposals without full PDF text.

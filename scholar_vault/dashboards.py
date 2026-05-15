@@ -213,6 +213,7 @@ def _render_dashboard_index(
     concepts = artifacts.get("concepts") or []
     syntheses = artifacts.get("syntheses") or []
     tasks = artifacts.get("tasks") or []
+    queries = artifacts.get("queries") or []
     projects = artifacts.get("projects") or []
     issue_counts = {
         "Reading queue": len(reading_rows),
@@ -225,6 +226,7 @@ def _render_dashboard_index(
         "Concepts": len(concepts),
         "Syntheses": len(syntheses),
         "Tasks": len(tasks),
+        "Queries": len(queries),
         "Projects": len(projects),
     }
     lines = [
@@ -244,6 +246,7 @@ def _render_dashboard_index(
         "- [PDF issues](pdf-issues.md)",
         "- [Synthesis dashboard](synthesis-dashboard.md)",
         "- [Search index](search-index.md)",
+        "- [Research queries](queries.md)",
         "- [Projects](projects.md)",
         "",
         "## Open queues",

@@ -59,6 +59,12 @@ def test_render_paper_markdown_contains_required_sections() -> None:
     assert "### Run-specific Scholar Labs summaries" in rendered
     assert "Run-specific summary." in rendered
     frontmatter = rendered.split("---", 2)[1]
+    assert "reading_status: unread" in frontmatter
+    assert "compiled_status: uncompiled" in frontmatter
+    assert "review_status: unreviewed" in frontmatter
+    assert "evidence_level: unknown" in frontmatter
+    assert "linked_queries: []" in frontmatter
+    assert "linked_projects: []" in frontmatter
     assert "\nabstract:" not in frontmatter
     assert "\nsummary_sources:" not in frontmatter
     assert "## Why this source matters" in rendered

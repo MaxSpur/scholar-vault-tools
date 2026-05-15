@@ -105,8 +105,10 @@ class VaultPaths:
     concepts: Path
     syntheses: Path
     tasks: Path
+    queries: Path
     projects: Path
     proposals: Path
+    bases: Path
     indexes: Path
     exports: Path
 
@@ -132,8 +134,10 @@ class VaultPaths:
             concepts=root / "concepts",
             syntheses=root / "syntheses",
             tasks=root / "tasks",
+            queries=root / "queries",
             projects=root / "projects",
             proposals=root / "proposals",
+            bases=root / "bases",
             indexes=indexes,
             exports=exports,
         )
@@ -155,8 +159,10 @@ class VaultPaths:
             self.concepts,
             self.syntheses,
             self.tasks,
+            self.queries,
             self.projects,
             self.proposals,
+            self.bases,
             self.indexes,
             self.exports,
         ):

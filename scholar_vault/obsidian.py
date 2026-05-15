@@ -18,6 +18,7 @@ ARTIFACT_INDEXES = {
     "concepts": ("Concepts", "No concept cards have been created yet."),
     "syntheses": ("Syntheses", "No synthesis notes have been created yet."),
     "tasks": ("Tasks", "No follow-up task notes have been created yet."),
+    "queries": ("Research Queries", "No research query notes have been created yet."),
     "projects": ("Projects", "No project workspaces have been created yet."),
     "proposals": ("Proposals", "No proposal workspaces have been created yet."),
 }
@@ -25,6 +26,7 @@ ARTIFACT_DEFAULT_TYPES = {
     "concepts": "concept",
     "syntheses": "synthesis",
     "tasks": "task",
+    "queries": "research_query",
     "projects": "project",
     "proposals": "proposal",
 }
@@ -36,6 +38,7 @@ VAULT_NOTE_ROOTS = {
     "papers",
     "projects",
     "proposals",
+    "queries",
     "runs",
     "syntheses",
     "tasks",

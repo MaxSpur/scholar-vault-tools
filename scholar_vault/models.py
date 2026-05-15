@@ -149,6 +149,14 @@ class SourceCard(BaseModel):
     publication_keywords_source: str | None = None
     status: str = "active"
     pdf_status: str = "missing"
+    reading_status: str = "unread"
+    compiled_status: str = "uncompiled"
+    review_status: str = "unreviewed"
+    last_read_at: str | None = None
+    last_compiled_at: str | None = None
+    evidence_level: str = "unknown"
+    linked_queries: list[str] = Field(default_factory=list)
+    linked_projects: list[str] = Field(default_factory=list)
     doi_status: DoiStatus = "missing"
     doi_source: str | None = None
     doi_confidence: float | None = None
@@ -183,6 +191,17 @@ class SourceCard(BaseModel):
     def clean_title(cls, value: str) -> str:
         return clean_paper_title(value)
 
+    @field_validator("linked_queries", "linked_projects", mode="before")
+    @classmethod
+    def coerce_link_lists(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item) for item in value if str(item).strip()]
+        if isinstance(value, str) and value.strip():
+            return [value.strip()]
+        return []
+
     def frontmatter(self) -> dict[str, Any]:
         return {
             "type": self.type,
@@ -204,6 +223,14 @@ class SourceCard(BaseModel):
             "publication_keywords_source": self.publication_keywords_source,
             "status": self.status,
             "pdf_status": self.pdf_status,
+            "reading_status": self.reading_status,
+            "compiled_status": self.compiled_status,
+            "review_status": self.review_status,
+            "last_read_at": self.last_read_at,
+            "last_compiled_at": self.last_compiled_at,
+            "evidence_level": self.evidence_level,
+            "linked_queries": self.linked_queries,
+            "linked_projects": self.linked_projects,
             "doi_status": self.doi_status,
             "doi_source": self.doi_source,
             "doi_confidence": self.doi_confidence,

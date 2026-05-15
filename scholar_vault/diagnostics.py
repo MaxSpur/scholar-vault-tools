@@ -34,10 +34,11 @@ CANONICAL_TOP_LEVELS = {
     "concepts",
     "syntheses",
     "tasks",
+    "queries",
     "projects",
     "proposals",
 }
-GENERATED_TOP_LEVELS = {"_indexes", "topics", "_exports"}
+GENERATED_TOP_LEVELS = {"_indexes", "topics", "_exports", "bases"}
 GENERATED_FILES = {"llms.txt", "llms-full.txt"}
 RUN_CANONICAL_FILES = {"index.yaml", "import-manifest.yaml"}
 
