@@ -4,6 +4,11 @@
 
 {{ run.prompt }}
 
+## Workbench Links
+
+- Prompt pack: {% if run.prompt_pack %}[{{ run.prompt_pack }}](../../{{ run.prompt_pack }}){% else %}Not linked{% endif %}
+- Query: {% if run.query %}[{{ run.query }}](../../{{ run.query }}){% else %}Not linked{% endif %}
+
 ## Selected Papers
 
 {% set selected = run.results | selectattr("status", "equalto", "selected") | list %}

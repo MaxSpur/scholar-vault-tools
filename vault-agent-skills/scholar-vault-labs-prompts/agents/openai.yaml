@@ -1,0 +1,4 @@
+agent:
+  display_name: "Scholar Vault Labs Prompts"
+  short_description: "Create and track Scholar Labs prompt packs"
+  default_prompt: "Use $scholar-vault-labs-prompts to generate, inspect, mark, or link Scholar Labs prompt packs while keeping Labs output discovery-only."

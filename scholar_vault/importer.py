@@ -979,6 +979,8 @@ def import_scholar_labs_run(
     auto_enrich: bool = False,
     upgrade_pdfs: bool = False,
     title: str | None = None,
+    prompt_pack: str | None = None,
+    query: str | None = None,
     confirm: ConfirmCallback | None = None,
     review_match: MatchReviewCallback | None = None,
     progress: ProgressCallback | None = None,
@@ -998,6 +1000,21 @@ def import_scholar_labs_run(
     run_note_file = (
         existing_run.note_file if existing_run and not title_changes_existing else None
     )
+    resolved_prompt_pack = clean_markdown_text(
+        prompt_pack or (existing_run.prompt_pack if existing_run else None)
+    )
+    resolved_query = clean_markdown_text(query or (existing_run.query if existing_run else None))
+    if resolved_prompt_pack:
+        from .labs_prompts import resolve_prompt_pack
+
+        pack_frontmatter, pack_path, _ = resolve_prompt_pack(paths, resolved_prompt_pack)
+        resolved_prompt_pack = ensure_relative(pack_path, paths.vault)
+        if not resolved_query:
+            resolved_query = clean_markdown_text(pack_frontmatter.get("query"))
+    if resolved_query and not resolved_query.startswith("queries/"):
+        from .queries import _query_slug
+
+        resolved_query = f"queries/{_query_slug(resolved_query)}.md"
     run_ref = _run_ref_from_parts(run_slug, run_date, run_title, export.prompt, run_note_file)
     if existing_run and not dry_run and not commit and confirm is not None:
         if not confirm(f"Run {run_slug} already exists. Resume and update it?"):
@@ -1665,6 +1682,8 @@ def import_scholar_labs_run(
         prompt=export.prompt,
         title=run_title,
         note_file=run_note_file,
+        prompt_pack=resolved_prompt_pack or None,
+        query=resolved_query or None,
         exported_at=export.exported_at,
         export_file=str(export_file),
         raw_export_file=ensure_relative(raw_export_file, paths.vault),
@@ -1792,6 +1811,22 @@ def import_scholar_labs_run(
             _write_manifest(paths, manifest)
             _write_run(paths, run_record, load_source_cards(paths))
 
+    prompt_pack_linked = False
+    query_linked = False
+    if not dry_run:
+        if resolved_prompt_pack:
+            from .labs_prompts import link_prompt_pack_run
+
+            prompt_link = link_prompt_pack_run(paths.vault, resolved_prompt_pack, run_slug)
+            prompt_pack_linked = bool(prompt_link.get("changed"))
+            query_linked = bool(prompt_link.get("query_changed"))
+        elif resolved_query:
+            from .queries import query_link_run
+
+            query_linked = bool(
+                query_link_run(paths.vault, Path(resolved_query).stem, run_slug).get("changed")
+            )
+
     return {
         "papers": len([result for result in run_results if result.paper_card]),
         "selected": len([result for result in run_results if result.status == "selected"]),
@@ -1820,6 +1855,10 @@ def import_scholar_labs_run(
         "abstract_details": abstract_details,
         "keyword_details": keyword_details,
         "run": run_slug,
+        "prompt_pack": resolved_prompt_pack,
+        "prompt_pack_linked": prompt_pack_linked,
+        "query": resolved_query,
+        "query_linked": query_linked,
         "vault": str(paths.vault),
         "staging_folder": str(staging_dir),
         "staging_pdfs_remaining": len(sorted(staging_dir.glob("*.pdf"))),

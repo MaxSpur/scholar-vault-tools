@@ -293,6 +293,8 @@ class RunRecord(BaseModel):
     prompt: str
     title: str | None = None
     note_file: str | None = None
+    prompt_pack: str | None = None
+    query: str | None = None
     source: str = "google_scholar_labs"
     exported_at: str
     export_file: str

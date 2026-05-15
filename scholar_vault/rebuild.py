@@ -7,6 +7,7 @@ from typing import Any
 from .bibtex import write_library_bib
 from .citations import refresh_metadata_completeness
 from .dashboards import _write_dashboard_indexes
+from .labs_prompts import render_prompt_packs_index
 from .models import RunRecord, SourceCard
 from .neighbors import semantic_neighbors_export
 from .obsidian import ARTIFACT_INDEXES, _collect_research_artifacts
@@ -211,6 +212,7 @@ def _rebuild_indexes(
 
     _manual_save_step(progress, "Writing index pages")
     write_text(paths.indexes / "prompts.md", render_prompts_index(runs))
+    write_text(paths.indexes / "scholar-labs-prompts.md", render_prompt_packs_index(paths.vault))
     write_text(paths.indexes / "papers.md", render_papers_index(cards))
     write_text(paths.indexes / "topics.md", render_topics_index(topic_cards))
     write_text(paths.indexes / "missing-pdfs.md", render_missing_pdfs(runs))
@@ -262,7 +264,7 @@ def _rebuild_indexes(
         "cards_normalized": cards_normalized,
         "pdf_filenames_normalized": pdf_filenames_normalized,
         "cross_run_links_synced": cross_run_links_synced,
-        "index_files_written": 7 + len(ARTIFACT_INDEXES) + dashboard_files_written + 1,
+        "index_files_written": 8 + len(ARTIFACT_INDEXES) + dashboard_files_written + 1,
         "self_improvement_dashboard_changed": int(self_improvement_dashboard["changed"]),
         "llm_files_written": 2,
         "export_files_written": 4,

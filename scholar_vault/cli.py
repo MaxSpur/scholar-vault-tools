@@ -21,6 +21,7 @@ from typer.completion import get_completion_script
 
 from . import cli_bases as _cli_bases
 from . import cli_compile as _cli_compile
+from . import cli_labs_prompts as _cli_labs_prompts
 from . import cli_projects as _cli_projects
 from . import cli_queries as _cli_queries
 from . import cli_self_improvement as _cli_self_improvement
@@ -77,6 +78,7 @@ app = typer.Typer(help="Local-first research source wiki and vault manager.")
 bases_app = _cli_bases.bases_app
 compile_app = _cli_compile.compile_app
 feedback_app = _cli_self_improvement.feedback_app
+labs_prompts_app = _cli_labs_prompts.labs_prompts_app
 operations_app = _cli_self_improvement.operations_app
 project_app = _cli_projects.project_app
 proposal_sprint_app = typer.Typer(help="Proposal sprint workspace helpers.")
@@ -87,6 +89,7 @@ tools_task_app = _cli_self_improvement.tools_task_app
 app.add_typer(bases_app, name="bases")
 app.add_typer(compile_app, name="compile")
 app.add_typer(feedback_app, name="feedback")
+app.add_typer(labs_prompts_app, name="labs-prompts")
 app.add_typer(operations_app, name="operations")
 app.add_typer(project_app, name="project")
 app.add_typer(proposal_sprint_app, name="proposal-sprint")
@@ -124,6 +127,13 @@ compile_scaffold_command = _cli_compile.compile_scaffold_command
 compile_queue_command = _cli_compile.compile_queue_command
 compile_mark_command = _cli_compile.compile_mark_command
 compile_doctor_command = _cli_compile.compile_doctor_command
+labs_prompts_generate_command = _cli_labs_prompts.labs_prompts_generate_command
+labs_prompts_list_command = _cli_labs_prompts.labs_prompts_list_command
+labs_prompts_show_command = _cli_labs_prompts.labs_prompts_show_command
+labs_prompts_mark_used_command = _cli_labs_prompts.labs_prompts_mark_used_command
+labs_prompts_link_run_command = _cli_labs_prompts.labs_prompts_link_run_command
+labs_prompts_retire_command = _cli_labs_prompts.labs_prompts_retire_command
+labs_prompts_doctor_command = _cli_labs_prompts.labs_prompts_doctor_command
 query_create_command = _cli_queries.query_create_command
 query_list_command = _cli_queries.query_list_command
 query_show_command = _cli_queries.query_show_command
@@ -417,6 +427,14 @@ OptionalRunIdArg = Annotated[
 TitleArg = Annotated[
     str | None,
     typer.Option("--title", help="Short run title used for Obsidian run-note names."),
+]
+PromptPackArg = Annotated[
+    str | None,
+    typer.Option("--prompt-pack", help="Scholar Labs prompt-pack id or vault-relative path."),
+]
+ImportQueryArg = Annotated[
+    str | None,
+    typer.Option("--query", help="Research query slug to link to the imported run."),
 ]
 MatchTitleArg = Annotated[
     str | None,
@@ -2550,6 +2568,8 @@ def import_run_command(
     archive_export: ArchiveExportArg = False,
     upgrade_pdfs: UpgradePdfsArg = True,
     title: TitleArg = None,
+    prompt_pack: PromptPackArg = None,
+    query: ImportQueryArg = None,
     ui: UiArg = False,
 ) -> None:
     resolved_title = _resolve_import_title(title, export, ui=ui)
@@ -2569,6 +2589,8 @@ def import_run_command(
             archive_export=archive_export,
             upgrade_pdfs=upgrade_pdfs,
             title=resolved_title,
+            prompt_pack=prompt_pack,
+            query=query,
             confirm=confirm,
             review_match=review_match,
             progress=report,
@@ -2591,6 +2613,8 @@ def import_labs_command(
     upgrade_pdfs: UpgradePdfsArg = True,
     archive_export: ArchiveExportArg = True,
     title: TitleArg = None,
+    prompt_pack: PromptPackArg = None,
+    query: ImportQueryArg = None,
     ui: UiArg = False,
 ) -> None:
     _run_import_labs_workflow(
@@ -2604,6 +2628,8 @@ def import_labs_command(
         upgrade_pdfs=upgrade_pdfs,
         archive_export=archive_export,
         title=title,
+        prompt_pack=prompt_pack,
+        query=query,
         ui=ui,
     )
 
@@ -2620,6 +2646,8 @@ def import_alias_command(
     upgrade_pdfs: UpgradePdfsArg = True,
     archive_export: ArchiveExportArg = True,
     title: TitleArg = None,
+    prompt_pack: PromptPackArg = None,
+    query: ImportQueryArg = None,
     ui: UiArg = False,
 ) -> None:
     _run_import_labs_workflow(
@@ -2633,6 +2661,8 @@ def import_alias_command(
         upgrade_pdfs=upgrade_pdfs,
         archive_export=archive_export,
         title=title,
+        prompt_pack=prompt_pack,
+        query=query,
         ui=ui,
     )
 
@@ -2649,6 +2679,8 @@ def _run_import_labs_workflow(
     upgrade_pdfs: bool,
     archive_export: bool,
     title: str | None,
+    prompt_pack: str | None,
+    query: str | None,
     ui: bool,
 ) -> None:
     review_match = _match_reviewer(ui) if not dry_run and not commit else None
@@ -2672,6 +2704,8 @@ def _run_import_labs_workflow(
             auto_enrich=auto_enrich,
             upgrade_pdfs=upgrade_pdfs,
             title=resolved_title,
+            prompt_pack=prompt_pack,
+            query=query,
             confirm=confirm,
             review_match=review_match,
             progress=report,

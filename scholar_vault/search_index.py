@@ -32,7 +32,7 @@ def _artifact_search_rows(paths: VaultPaths, folder: str) -> list[dict[str, str]
     for path in sorted(root.rglob("*.md")):
         if any(part.startswith(".") for part in path.relative_to(root).parts):
             continue
-        if not _should_index_artifact_path(folder, path):
+        if not _should_index_artifact_path(folder, path, root):
             continue
         frontmatter, body = read_frontmatter_markdown(path)
         sources = _as_string_list(frontmatter.get("sources"))

@@ -7,6 +7,13 @@
 - Semantic-neighbor exports are navigation hints only. Keep deterministic reasons visible and repeat the PDF evidence warning so shared metadata is not mistaken for evidence.
 - Project workspaces should stay as lenses over shared vault records. Keep source truth in paper cards, PDFs, syntheses, concepts, tasks, runs, and proposals; project folders should link and map those records instead of copying them.
 - Query workbenches should stay question-centered overlays. Keep PDFs and paper cards canonical, keep Scholar Labs as discovery provenance, and use Bases as deterministic Obsidian views over existing frontmatter and links instead of creating a second database model.
+- Scholar Labs prompt packs are discovery-planning artifacts, not evidence.
+  Link packs to queries and runs, keep Labs summaries non-canonical, and treat
+  OpenAlex/Semantic Scholar seed candidates as prompt wording aids unless they
+  later enter through the normal PDF, DOI, BibTeX, or manual import paths.
+- When adding a new vault workflow, update both `VAULT_AGENTS_TEMPLATE.md` and
+  repository-owned `vault-agent-skills/` so Codex sessions opened inside a vault
+  inherit the new workflow instead of following stale ad hoc notes.
 - Compiled paper digests should be durable PDF-grounded artifacts under `paper-digests/`, while paper cards keep compact status, timestamps, and pointers. Scaffolding can create structure, but only an agent/user PDF read should fill claims or mark evidence as grounded.
 - Preserve existing Scholar Labs summaries and provenance when merging later provider BibTeX/CSL or DOI enrichment.
 - Idempotence is easiest when run slugs depend on export metadata and when merges happen before any new card slug is allocated.

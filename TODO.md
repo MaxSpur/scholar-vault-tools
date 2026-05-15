@@ -98,6 +98,13 @@
 
 - [x] Add generated Obsidian-facing Markdown dashboards for paper-library, reading-queue, metadata-issues, PDF issues, and synthesis/source-matrix workflows.
 - [x] Add durable query notes and generated Obsidian Bases for query-centered paper/run/synthesis workbenches.
+- [x] Add a human-in-the-loop Scholar Labs prompt workbench with prompt packs,
+  run/query linking, import provenance, Obsidian index/Base support, and
+  optional OpenAlex/Semantic Scholar seed candidates that do not create
+  canonical paper cards.
+- [x] Update the vault AGENTS template and repository-owned vault-agent skills
+  so vault-local Codex agents know to use Scholar Labs prompt packs instead of
+  ad hoc prompt drafts.
 - [x] Add PDF-grounded paper digest scaffolding, status/doctor commands, compile dashboard, and a compile-paper vault-agent skill.
 - [x] Add typed self-improvement queue, operation log, feedback records,
   dashboard, and tool-improvement task bridge.

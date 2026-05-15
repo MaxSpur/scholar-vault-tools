@@ -167,7 +167,9 @@ scholar-labs-vault/
   syntheses/
   tasks/
     queue/
+    scholar-labs-prompts/
   queries/
+    <query-slug>/prompt-packs/
   projects/
   proposals/
   _operations/
@@ -183,6 +185,7 @@ scholar-labs-vault/
     self-improvement.base
   _indexes/
     prompts.md
+    scholar-labs-prompts.md
     papers.md
     topics.md
     missing-pdfs.md
@@ -300,6 +303,60 @@ Use `llms.txt`, `llms-full.txt`, `_indexes/`, `papers/`, and `runs/` as the
 agent navigation surface. Install the optional Codex skills when you want guided
 agent refinement workflows.
 
+## Scholar Labs Prompt Workbench
+
+Use prompt packs when you want to plan a Scholar Labs run before opening
+Scholar. Prompt packs are Markdown artifacts with frontmatter status, query or
+project links, and structured prompts for coverage gaps, related seed papers,
+method/dataset relations, contradiction checks, negative evidence, review
+updates, benchmarks, proposal gaps, synthesis expansion, and failure modes.
+
+Generate a query-specific pack:
+
+```fish
+scholar-vault labs-prompts generate --query mobility-evidence
+```
+
+Generate from a project or from open gap/proposal tasks:
+
+```fish
+scholar-vault labs-prompts generate --project map-lens-deformation
+scholar-vault labs-prompts generate --from-gaps
+```
+
+By default, prompt generation is local and offline. Optional API seed support
+can call OpenAlex or Semantic Scholar only to suggest seed titles and query
+terms for the prompt text:
+
+```fish
+scholar-vault labs-prompts generate --query mobility-evidence --seed-api openalex
+```
+
+These API candidates are not paper cards. They become canonical only through
+the existing PDF, DOI, BibTeX, or manual import paths.
+
+List, inspect, and track prompt packs:
+
+```fish
+scholar-vault labs-prompts list
+scholar-vault labs-prompts show query-mobility-evidence-scholar-labs-prompts
+scholar-vault labs-prompts mark-used query-mobility-evidence-scholar-labs-prompts --notes "Ran in Labs on 2026-05-15"
+scholar-vault labs-prompts link-run query-mobility-evidence-scholar-labs-prompts 2026-05-15_mobility
+scholar-vault labs-prompts retire query-mobility-evidence-scholar-labs-prompts
+scholar-vault labs-prompts doctor --json
+```
+
+When importing a Labs export created from a pack, link the provenance directly:
+
+```fish
+scholar-vault import-labs --commit --prompt-pack query-mobility-evidence-scholar-labs-prompts --query mobility-evidence
+```
+
+The run note links back to the prompt pack and query, the prompt pack moves to
+`imported`, the query note gets the linked run, and
+`_indexes/scholar-labs-prompts.md` plus `bases/scholar-labs-workbench.base`
+surface active packs and import status.
+
 ## Scholar Labs Workflow
 
 1. Run a Google Scholar Labs search.
@@ -333,6 +390,8 @@ Default Scholar Labs behavior is now selected-only:
 
 - The raw Scholar Labs export is always preserved under `raw/scholar-labs/`.
 - The run page stores all candidate results from the export.
+- Runs imported with `--prompt-pack` and/or `--query` link back to the prompt
+  pack and query note, and linked prompt packs are marked `imported`.
 - Canonical `papers/*.md` cards are created only for results with matched PDFs.
 - If a later Scholar Labs run returns a paper that already has a canonical card and attached PDF, the run links to the existing card and adds that run's summary to the card instead of creating a duplicate.
 - Candidate results stay on the run page unless you explicitly opt in with `--include-without-pdf`.
@@ -1176,6 +1235,8 @@ Available skills:
   staged PDFs, then choose safe CLI repair workflows.
 - `$scholar-vault-gap-scout`: write `tasks/<date>-research-gaps.md` with next
   active staging, metadata, import, and synthesis actions.
+- `$scholar-vault-labs-prompts`: generate, inspect, mark, retire, or link
+  Scholar Labs prompt packs while keeping Labs output discovery-only.
 - `$scholar-vault-read-pdf`: read linked PDFs as the primary evidence and add
   evidence-grounded notes, topics, metadata fixes, syntheses, or metacards.
 - `$scholar-vault-compile-paper`: fill a reusable PDF-grounded

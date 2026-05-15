@@ -12,6 +12,10 @@ These instructions apply inside this research vault. They are for agents working
   digests compiled from linked PDFs for reuse in syntheses, concepts, queries,
   projects, and proposals.
 - Scholar Labs `runs/` are discovery provenance. They explain why sources were found, but they are not evidence by themselves.
+- Scholar Labs prompt packs under `queries/<slug>/prompt-packs/` or
+  `tasks/scholar-labs-prompts/` are human-in-the-loop discovery-planning
+  artifacts. They help a user run better Google Scholar Labs prompts, but they
+  are not evidence and do not create canonical paper cards by themselves.
 - Canonical files are `papers/`, `paper-digests/`, `pdfs/`, run
   YAML/manifests under `runs/`, `raw/` inputs, `concepts/`, `syntheses/`,
   `tasks/`, `queries/`, `projects/`, and `proposals/`.
@@ -100,6 +104,8 @@ scholar-vault git-summary
 scholar-vault notes-missing --heading "PDF reading notes"
 scholar-vault maintenance-report
 scholar-vault compile status --json
+scholar-vault labs-prompts list
+scholar-vault labs-prompts doctor --json
 scholar-vault project list
 scholar-vault runs
 ```
@@ -186,9 +192,48 @@ scholar-vault resolve-citation --citekey <citekey> \
 
 - Candidate results without paper cards are optional discovery context in the selected-only workflow. They are not maintenance defects.
 - `_indexes/missing-pdfs.md` is not an action queue unless explicitly revisiting Scholar Labs candidates.
+- `_indexes/scholar-labs-prompts.md` tracks active prompt packs and import
+  status. It is a planning/dashboard surface, not a source of evidence.
 - Historical unmatched manifest entries are audit records. They matter only when non-duplicate PDFs still exist in staging.
 - Use `scholar-vault pdf-doctor --json` before treating PDF/staging issues as actionable.
 - For one-off leftover PDFs, use `scholar-vault match-staging --ui`: enter the likely title, choose the PDF path, inspect candidate run summaries, then click `Import PDF` for the matching run result instead of rerunning the whole run.
+
+## Scholar Labs Prompt Workbench
+
+Use prompt packs for systematic Scholar Labs follow-up instead of hand-writing
+long prompt drafts into task notes. Prompt packs should be specific to a query,
+project, or known evidence gap and should remain discovery context until the
+user downloads PDFs and imports selected sources.
+
+Useful commands:
+
+```fish
+scholar-vault labs-prompts generate --query <query-slug>
+scholar-vault labs-prompts generate --project <project-slug>
+scholar-vault labs-prompts generate --from-gaps
+scholar-vault labs-prompts list
+scholar-vault labs-prompts show <prompt-pack-id>
+scholar-vault labs-prompts mark-used <prompt-pack-id> --notes "..."
+scholar-vault labs-prompts link-run <prompt-pack-id> <run-id>
+scholar-vault labs-prompts doctor --json
+```
+
+Default prompt generation is local and offline. Optional `--seed-api openalex`
+or `--seed-api semantic-scholar` may suggest seed titles and terms for prompt
+wording only. Do not treat those API candidates as canonical papers unless they
+later enter the vault through the PDF, DOI, BibTeX, or manual import path.
+
+When importing a Google Scholar Labs export that came from a prompt pack, keep
+the provenance linked:
+
+```fish
+scholar-vault import-labs --commit --prompt-pack <prompt-pack-id> --query <query-slug>
+```
+
+This records the prompt pack and query on the run, marks the prompt pack
+`imported`, and links the run back to the query note. It does not change the
+selected-only import rule: paper cards are still canonical only after an
+accepted PDF, DOI, BibTeX, or manual import path.
 
 ## Research Workflow
 
@@ -206,7 +251,7 @@ For actual vault improvement after import and enrichment:
 10. Update only touched paper cards with concise `## Notes`.
 11. Create `concepts/<slug>.md` for reusable concepts, methods, algorithms, datasets, visual encodings, evaluation protocols, or terminology.
 12. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers and literature-review prose.
-13. Create `tasks/<date>-research-gaps.md` for open questions, unclear evidence, gaps, follow-up reading, or next Scholar Labs prompts.
+13. Create `tasks/<date>-research-gaps.md` for open questions, unclear evidence, gaps, or follow-up reading. Use `$scholar-vault-labs-prompts` / `scholar-vault labs-prompts generate ...` for next Scholar Labs prompt packs.
 14. Use `queries/<slug>.md` for focused research questions and link papers, runs, and syntheses with `scholar-vault query link-*`.
 15. Run `scholar-vault concept-index` after concept-only edits, `scholar-vault bases rebuild` after query/Base edits, or `scholar-vault rebuild` after broader paper/topic/synthesis/task/project/proposal edits.
 
@@ -290,6 +335,8 @@ matches one of these workflows:
 - Use `$scholar-vault-curate-topics` when cleaning topic labels or prompt-boilerplate topic noise.
 - Use `$scholar-vault-pdf-triage` for active PDF/staging issues before moving or attaching files.
 - Use `$scholar-vault-gap-scout` to write follow-up tasks and research gaps.
+- Use `$scholar-vault-labs-prompts` when creating, inspecting, marking,
+  retiring, or linking Scholar Labs prompt packs.
 - Use `$scholar-vault-pepr-docx` only for PEPR proposal DOCX rendering, references, and pagination checks.
 - Use the Obsidian skills from the earlier section for Obsidian syntax and file-format correctness; they complement the Scholar Vault skills but are installed from Kepano's upstream repository, not authored here.
 

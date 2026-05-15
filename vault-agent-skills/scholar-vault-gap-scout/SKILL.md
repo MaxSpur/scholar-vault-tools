@@ -1,6 +1,6 @@
 ---
 name: scholar-vault-gap-scout
-description: Scout research, metadata, PDF, and synthesis gaps in a Scholar Vault. Use when Codex is asked what to import next, which PDFs or metadata need attention, which candidate Scholar Labs results deserve follow-up, or how to draft next Scholar Labs prompts after import and enrichment.
+description: Scout research, metadata, PDF, and synthesis gaps in a Scholar Vault. Use when Codex is asked what to import next, which PDFs or metadata need attention, which candidate Scholar Labs results deserve follow-up, or what prompt packs should be generated after import and enrichment.
 ---
 
 # Scholar Vault Gap Scout
@@ -33,6 +33,9 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 5. Read relevant `runs/**/index.yaml` or run notes to understand candidate rank, prompt context, and rationale.
 6. Check existing `syntheses/` and `tasks/` if present to avoid duplicating active work.
 7. Write `tasks/<YYYY-MM-DD>-research-gaps.md`. Create `tasks/` if it does not exist.
+8. When the next action is a Google Scholar Labs search, prefer a durable prompt
+   pack via `$scholar-vault-labs-prompts` / `scholar-vault labs-prompts generate`
+   instead of embedding full prompt text only in the gap report.
 
 ## What To Prioritize
 
@@ -57,6 +60,8 @@ conda activate scholar-vault
 scholar-vault status --json
 scholar-vault pdf-doctor --json
 scholar-vault runs
+scholar-vault labs-prompts list
+scholar-vault labs-prompts doctor --json
 scholar-vault match-staging
 scholar-vault enrich --dry-run
 scholar-vault enrich --only missing-abstract --dry-run
@@ -94,10 +99,10 @@ created: "<YYYY-MM-DD>"
 ## Synthesis gaps
 - <theme> - <why the vault is thin or conflicted>
 
-## Scholar Labs prompt drafts
-```text
-<prompt draft>
-```
+## Scholar Labs prompt-pack recommendations
+- <query/project/gap that should get a prompt pack> - Suggested command:
+  `scholar-vault labs-prompts generate --query <slug>` / `--project <slug>` /
+  `--from-gaps`
 ````
 
 Keep tasks concrete enough that a later agent can execute them without rediscovering the whole vault.

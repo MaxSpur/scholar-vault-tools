@@ -150,9 +150,11 @@ def _as_string_list(value: Any) -> list[str]:
     return []
 
 
-def _should_index_artifact_path(folder: str, path: Path) -> bool:
+def _should_index_artifact_path(folder: str, path: Path, root: Path) -> bool:
     if folder == "projects":
         return path.name == "index.md"
+    if folder == "queries":
+        return len(path.relative_to(root).parts) == 1
     return True
 
 
@@ -164,7 +166,7 @@ def _collect_artifacts(paths: VaultPaths, folder: str) -> list[dict[str, Any]]:
     for path in sorted(root.rglob("*.md")):
         if any(part.startswith(".") for part in path.relative_to(root).parts):
             continue
-        if not _should_index_artifact_path(folder, path):
+        if not _should_index_artifact_path(folder, path, root):
             continue
         frontmatter, body = read_frontmatter_markdown(path)
         sources = _as_string_list(frontmatter.get("sources"))

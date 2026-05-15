@@ -252,6 +252,7 @@ def _render_dashboard_index(
         "- [Metadata issues](metadata-issues.md)",
         "- [PDF issues](pdf-issues.md)",
         "- [Synthesis dashboard](synthesis-dashboard.md)",
+        "- [Scholar Labs prompt packs](scholar-labs-prompts.md)",
         "- [Search index](search-index.md)",
         "- [Research queries](queries.md)",
         "- [Projects](projects.md)",

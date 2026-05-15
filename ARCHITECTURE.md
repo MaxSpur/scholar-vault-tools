@@ -14,6 +14,9 @@
   scaffold, map, audit, link helpers, and the project workspace UI launcher.
 - `scholar_vault/cli_queries.py`: `query ...` command group for durable
   research-query notes and query-to-run/paper/synthesis links.
+- `scholar_vault/cli_labs_prompts.py`: `labs-prompts ...` command group for
+  Scholar Labs prompt-pack generation, tracking, run linking, retirement, and
+  prompt-pack diagnostics.
 - `scholar_vault/cli_self_improvement.py`: `queue ...`, `operations ...`,
   `feedback ...`, and `tools-task ...` command groups for typed
   self-improvement state.
@@ -50,6 +53,14 @@
   linking, status reports, and query-derived unread-linked-paper refreshes.
   Query notes live in `queries/` and remain user-facing Markdown, not
   generated-only records.
+- `scholar_vault/labs_prompts.py`: human-in-the-loop Scholar Labs prompt
+  workbench helpers. It writes prompt packs under query-local
+  `queries/<slug>/prompt-packs/` or `tasks/scholar-labs-prompts/`, derives
+  prompts from query/project/gap context, tracks status transitions, links
+  import runs back to packs and queries, renders `_indexes/scholar-labs-prompts.md`,
+  and can optionally use OpenAlex or Semantic Scholar seed candidates only for
+  prompt wording. It does not call Google Scholar or create paper cards from API
+  candidates.
 - `scholar_vault/bases.py`: deterministic `.base` YAML generation under
   `bases/` plus read-only validation for required Base files and views.
 - `scholar_vault/proposals.py`: proposal sprint scaffolding and proposal evidence audits.
@@ -113,6 +124,15 @@
   state, and a tool-refreshed unread-linked-paper list for Bases. `link-paper`
   also adds the query path to the paper card's `linked_queries` frontmatter
   while preserving the existing paper-card body.
+- `labs-prompts generate/list/show/mark-used/link-run/retire/doctor`: durable
+  Scholar Labs prompt-pack workbench. `generate` accepts exactly one of
+  `--query`, `--project`, or `--from-gaps`; generated packs include structured
+  prompts for coverage gaps, seed-neighbor discovery, methods/datasets,
+  contradictions, negative evidence, review updates, benchmarks, proposal
+  evidence gaps, synthesis expansion, and failure modes. `--seed-api openalex`
+  or `--seed-api semantic-scholar` may add non-canonical seed candidates to the
+  prompt text. `link-run` marks a pack imported, links the run on the pack and
+  query note, and backfills `prompt_pack` / `query` onto the run record.
 - `bases init/rebuild/doctor`: generates `bases/papers.base`,
   `bases/queries.base`, `bases/synthesis-workbench.base`,
   `bases/scholar-labs-workbench.base`, and `bases/self-improvement.base`.
@@ -130,6 +150,10 @@
 - `skills install-external <source-name>` / `skills update-external <source-name>`: external upstream skill installation. The built-in source `obsidian-skills` points to Kepano's `https://github.com/kepano/obsidian-skills`, while additional sources can pass `--repository` and `--skills-subdir`. These commands clone the upstream repo, copy its `skills/<skill-name>/` children directly into the vault `.agents/skills/` folder, and write `.external-sources/<source-name>.json` in the vault target so later diff/publish operations ignore those externally managed skill names instead of treating them as repository-owned source or target-only drift. `skills install-obsidian` and `skills update-obsidian` are thin convenience aliases for the built-in `obsidian-skills` source.
 - `match-staging` / `staging-matches`: cross-run discovery and targeted repair for leftover staging PDFs. The terminal form is read-only and scores all staged PDFs, one `--pdf`, a typed `--title`, or a title plus PDF path against stored Scholar Labs results. `--ui` opens a desktop picker with the same search modes, candidate summaries from prior runs, direct PDF/card actions, staging-trash cleanup for already attached rows, and an `Import PDF` action that attaches the chosen PDF to one selected run result without rerunning the whole run. The targeted action copies the PDF into `pdfs/`, archives the staging original after verification, updates the run manifest, syncs matching prior runs, and enriches only the touched card. GUI import reports offer this picker when PDFs remain in staging.
 - `import-labs`: Scholar Labs convenience flow. It keeps all JSON results on the run record, creates canonical paper cards only for selected results by default, archives matched PDFs out of staging only after the verified vault copy exists, enriches selected paper cards by default, and moves used browser-export JSON unchanged into a sibling `used/` folder after successful non-dry-run imports. If `--export` is omitted, it imports the newest top-level `.json` file from the configured exports folder when that folder has one, otherwise from the staging folder.
+- `import-labs --prompt-pack <id> --query <query-slug>` records prompt-pack and
+  query provenance on the run, marks the prompt pack `imported`, links the run
+  back to the pack and query note, and leaves the existing selected-only import
+  behavior unchanged.
 - Import summaries report decision provenance separately: prior selections reused from an existing manifest, existing vault cards linked, newly accepted staged PDFs, review prompts, unresolved results, staged-file cleanup, and enrichment processing.
 - When a PDF is accepted for a canonical paper card, matching previous run results with the same Scholar CID or exact normalized title are updated to `selected` / `attached` and pointed at the same card.
 - `--upgrade-pdfs` on Scholar Labs import/resume/rerun commands makes staged PDFs eligible to replace already attached PDFs through the normal match-review path. Accepted upgrades repoint the canonical paper card, preserve the previous card state in the import manifest, and mark citation enrichment for refresh so DOI-bearing publisher PDFs can repair preprint metadata.
@@ -155,6 +179,11 @@
   frontmatter, and reusable PDF-grounded sections.
 - Scholar Labs provenance record: `runs/<run_id>/<Short Title.md>` for Obsidian plus `index.yaml` for machine-readable state.
 - Run IDs remain stable and prompt-derived for idempotence. Run note filenames use `note_file` when present, otherwise the `title` field from the Scholar Labs JSON, a `--title` override, an import-time prompt for older untitled JSON, `rename-run`, or an Obsidian filename rename.
+- Scholar Labs prompt packs: query-local
+  `queries/<slug>/prompt-packs/<pack-id>.md` or shared
+  `tasks/scholar-labs-prompts/<pack-id>.md`, with frontmatter
+  `type: scholar_labs_prompt_pack`, status, source context links, and linked
+  run/task/synthesis/concept fields. Prompt text stays in the Markdown body.
 - Raw inputs: `raw/`
 - Staging scan cache: `.scholar-vault-pdf-scan-cache` beside staged PDFs, keyed by filename plus size/mtime and ignored by JSON export discovery.
 - Raw citation cache: `raw/metadata/<citekey>/`

@@ -61,6 +61,8 @@ def render_run_markdown(run: RunRecord, cards_by_slug: dict[str, SourceCard]) ->
             "run_id": run.slug,
             "title": title,
             "note_file": run.note_file,
+            "prompt_pack": run.prompt_pack,
+            "query": run.query,
             "date": run.date,
             "prompt": run.prompt,
             "result_count": run.result_count,

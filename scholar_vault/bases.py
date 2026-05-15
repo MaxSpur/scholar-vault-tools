@@ -324,8 +324,11 @@ def _base_documents() -> dict[str, dict[str, Any]]:
             "filters": {"and": ['file.ext == "md"']},
             "properties": {
                 "file.name": {"displayName": "File"},
+                "status": {"displayName": "Status"},
                 "question": {"displayName": "Question"},
                 "prompt": {"displayName": "Prompt"},
+                "query": {"displayName": "Query"},
+                "project": {"displayName": "Project"},
                 "scholar_labs_prompt_pack": {"displayName": "Prompt pack"},
                 "linked_runs": {"displayName": "Linked runs"},
                 "selected_count": {"displayName": "Selected"},
@@ -338,16 +341,16 @@ def _base_documents() -> dict[str, dict[str, Any]]:
                     "name": "Prompt drafts",
                     "filters": {
                         "and": [
-                            'type == "research_query"',
-                            'file.hasProperty("scholar_labs_prompt_pack")',
-                            "!scholar_labs_prompt_pack.isEmpty()",
+                            'type == "scholar_labs_prompt_pack"',
+                            'status == "draft" || status == "ready"',
                         ]
                     },
                     "order": [
                         "file.name",
-                        "question",
-                        "scholar_labs_prompt_pack",
+                        "status",
+                        "query",
                         "project",
+                        "linked_runs",
                     ],
                 },
                 {
@@ -355,17 +358,16 @@ def _base_documents() -> dict[str, dict[str, Any]]:
                     "name": "Prompts awaiting import",
                     "filters": {
                         "and": [
-                            'type == "research_query"',
-                            'file.hasProperty("scholar_labs_prompt_pack")',
-                            "!scholar_labs_prompt_pack.isEmpty()",
+                            'type == "scholar_labs_prompt_pack"',
+                            'status == "ready" || status == "used"',
                             '(!file.hasProperty("linked_runs") || linked_runs.isEmpty())',
                         ]
                     },
                     "order": [
                         "file.name",
-                        "question",
-                        "scholar_labs_prompt_pack",
-                        "priority",
+                        "status",
+                        "query",
+                        "project",
                     ],
                 },
                 {
