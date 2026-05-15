@@ -21,6 +21,17 @@ from .gui_common import (
     _style_standard_dialog_button,
     _summary_font,
     _summary_panel,
+    make_action_button,  # noqa: F401 - re-exported for compatibility
+    make_body_label,  # noqa: F401 - re-exported for compatibility
+    make_compact_counter,  # noqa: F401 - re-exported for compatibility
+    make_kicker_label,  # noqa: F401 - re-exported for compatibility
+    make_labeled_field,  # noqa: F401 - re-exported for compatibility
+    make_list_widget,  # noqa: F401 - re-exported for compatibility
+    make_section_label,  # noqa: F401 - re-exported for compatibility
+    make_text_panel,  # noqa: F401 - re-exported for compatibility
+    make_title_label,  # noqa: F401 - re-exported for compatibility
+    style_compact_combo_box,  # noqa: F401 - re-exported for compatibility
+    style_compact_field,  # noqa: F401 - re-exported for compatibility
 )
 from .gui_project_workspace import (
     _project_button_stylesheet,  # noqa: F401 - re-exported for compatibility

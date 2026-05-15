@@ -1,12 +1,33 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 
 class GuiUnavailable(RuntimeError):
     """Raised when desktop GUI dependencies are not installed or usable."""
+
+
+_TONE_COLORS = {
+    "green": "#69ffad",
+    "soft": "#8ce7b8",
+    "body": "#baffdc",
+    "white": "#f3fff7",
+    "blue": "#9ecbff",
+    "warning": "#fff4cf",
+    "danger": "#ff6b7a",
+    "dim-blue": "#d7eaff",
+    "muted": "#426b58",
+}
+
+
+def _tone_color(tone: str) -> str:
+    if tone.startswith("#"):
+        return tone
+    return _TONE_COLORS.get(tone, tone)
+
 
 def _load_qt_modules(*, require_fitz: bool) -> dict[str, Any]:
     try:
@@ -287,3 +308,244 @@ def _summary_panel(qt: dict[str, Any], border: str = "#2b6748") -> Any:
         f"QFrame {{ background: #07100b; border: 1px solid {border}; }}"
     )
     return frame
+
+
+def make_kicker_label(qt: dict[str, Any], text: str, *, size: int = 10) -> Any:
+    label = qt["QLabel"](text)
+    label.setFont(_summary_font(qt, size, mono=True, bold=True))
+    label.setStyleSheet(f"color: {_tone_color('green')};")
+    return label
+
+
+def make_title_label(qt: dict[str, Any], text: str, *, size: int = 24) -> Any:
+    label = qt["QLabel"](text)
+    label.setFont(_summary_font(qt, size, bold=True))
+    label.setStyleSheet(f"color: {_tone_color('white')};")
+    return label
+
+
+def make_section_label(
+    qt: dict[str, Any],
+    text: str,
+    *,
+    tone: str = "soft",
+    size: int = 10,
+    mono: bool = True,
+    bold: bool = True,
+    borderless: bool = False,
+) -> Any:
+    label = qt["QLabel"](text)
+    label.setFont(_summary_font(qt, size, mono=mono, bold=bold))
+    border = " border: none;" if borderless else ""
+    label.setStyleSheet(f"color: {_tone_color(tone)};{border}")
+    return label
+
+
+def make_body_label(
+    qt: dict[str, Any],
+    text: str,
+    *,
+    tone: str = "body",
+    size: int = 10,
+    word_wrap: bool = True,
+    borderless: bool = False,
+) -> Any:
+    label = qt["QLabel"](text)
+    label.setWordWrap(word_wrap)
+    label.setFont(_summary_font(qt, size))
+    border = " border: none;" if borderless else ""
+    label.setStyleSheet(f"color: {_tone_color(tone)};{border}")
+    return label
+
+
+def style_compact_field(
+    qt: dict[str, Any],
+    field: Any,
+    *,
+    min_height: int = 30,
+    size: int = 10,
+    mono: bool = False,
+) -> Any:
+    field.setMinimumHeight(min_height)
+    field.setFont(_summary_font(qt, size, mono=mono))
+    return field
+
+
+def make_labeled_field(
+    qt: dict[str, Any],
+    label_text: str,
+    field: Any,
+    *,
+    label_tone: str = "soft",
+    field_min_height: int = 30,
+    field_size: int = 10,
+    field_mono: bool = False,
+) -> tuple[Any, Any]:
+    layout = qt["QVBoxLayout"]()
+    label = make_section_label(qt, label_text, tone=label_tone, size=9)
+    style_compact_field(
+        qt,
+        field,
+        min_height=field_min_height,
+        size=field_size,
+        mono=field_mono,
+    )
+    layout.addWidget(label)
+    layout.addWidget(field)
+    return layout, label
+
+
+def make_action_button(
+    qt: dict[str, Any],
+    text: str,
+    *,
+    tone: str = "neutral",
+    min_height: int = 34,
+    stylesheet: Callable[[str], str] | None = None,
+) -> Any:
+    button = qt["QPushButton"](text)
+    button.setMinimumHeight(min_height)
+    button.setStyleSheet((stylesheet or _button_stylesheet)(tone))
+    return button
+
+
+def make_compact_counter(
+    qt: dict[str, Any],
+    label: str,
+    value: int,
+    color: str,
+) -> tuple[Any, Any]:
+    panel = _summary_panel(qt, color)
+    panel.setMinimumHeight(34)
+    panel.setMaximumHeight(38)
+    layout = qt["QHBoxLayout"](panel)
+    layout.setContentsMargins(10, 5, 10, 5)
+    layout.setSpacing(7)
+    number = qt["QLabel"](str(value))
+    number.setMinimumWidth(18)
+    number.setAlignment(
+        qt["Qt"].AlignmentFlag.AlignRight | qt["Qt"].AlignmentFlag.AlignVCenter
+    )
+    number.setFont(_summary_font(qt, 14, mono=True, bold=True))
+    number.setStyleSheet(f"color: {color}; border: none;")
+    title = qt["QLabel"](label.lower())
+    title.setFont(_summary_font(qt, 9, mono=True, bold=True))
+    title.setStyleSheet(f"color: {_tone_color('body')}; border: none;")
+    title.setAlignment(qt["Qt"].AlignmentFlag.AlignVCenter)
+    layout.addWidget(number, 0)
+    layout.addWidget(title, 1)
+    return panel, number
+
+
+def make_text_panel(
+    qt: dict[str, Any],
+    *,
+    min_height: int = 120,
+    border: str = "#006b45",
+    color: str = "#d7ffe8",
+    background: str = "#00120b",
+    padding: int = 8,
+    mono: bool = True,
+    size: int = 10,
+    read_only: bool = True,
+) -> Any:
+    panel = qt["QTextEdit"]()
+    panel.setReadOnly(read_only)
+    panel.setMinimumHeight(min_height)
+    panel.setFont(_summary_font(qt, size, mono=mono))
+    panel.setStyleSheet(
+        f"QTextEdit {{ color: {color}; background: {background}; "
+        f"border: 1px solid {border}; padding: {padding}px; }}"
+    )
+    return panel
+
+
+def make_list_widget(
+    qt: dict[str, Any],
+    *,
+    min_height: int = 120,
+    border: str = "#1d6f4b",
+    selected: str = "#0b3f2a",
+    font_size: int = 10,
+    selection_mode: str = "single",
+    spacing: int = 2,
+    item_padding: int = 0,
+    item_border: str = "none",
+) -> Any:
+    widget = qt["QListWidget"]()
+    widget.setMinimumHeight(min_height)
+    widget.setFont(_summary_font(qt, font_size))
+    widget.setSpacing(spacing)
+    modes = qt["QListWidget"].SelectionMode
+    if selection_mode == "none":
+        widget.setSelectionMode(modes.NoSelection)
+    elif selection_mode == "multi":
+        widget.setSelectionMode(modes.MultiSelection)
+    else:
+        widget.setSelectionMode(modes.SingleSelection)
+    widget.setStyleSheet(
+        f"QListWidget {{ border: 1px solid {border}; background: #020806; color: #f3fff7; }}"
+        f"QListWidget::item {{ padding: {item_padding}px; border: {item_border}; }}"
+        f"QListWidget::item:selected {{ background: {selected}; }}"
+    )
+    return widget
+
+
+def style_compact_combo_box(
+    qt: dict[str, Any],
+    combo: Any,
+    *,
+    border: str = "#9ecbff",
+    dropdown_border: str = "#2f73a5",
+    min_width: int = 150,
+    min_height: int = 34,
+    size: int = 11,
+) -> Any:
+    combo.setMinimumWidth(min_width)
+    combo.setMinimumHeight(min_height)
+    combo.setFont(_summary_font(qt, size))
+    combo.setStyleSheet(
+        f"""
+        QComboBox {{
+            background: #07100b;
+            color: #f3fff7;
+            border: 1px solid {border};
+            padding: 6px 28px 6px 9px;
+            selection-background-color: #1d6f4b;
+        }}
+        QComboBox:hover {{ border-color: #b8dcff; }}
+        QComboBox::drop-down {{
+            width: 24px;
+            border-left: 1px solid {dropdown_border};
+        }}
+        QComboBox QAbstractItemView {{
+            background: #07100b;
+            color: #f3fff7;
+            border: 1px solid {border};
+            selection-background-color: #1d6f4b;
+            selection-color: #ffffff;
+            outline: 0;
+        }}
+        """
+    )
+    combo.view().setFont(_summary_font(qt, size))
+    combo.view().setMinimumWidth(min_width)
+    combo.view().setStyleSheet(
+        f"""
+        QListView {{
+            background: #07100b;
+            color: #f3fff7;
+            border: 1px solid {border};
+            outline: 0;
+        }}
+        QListView::item {{
+            min-height: 28px;
+            padding: 6px 10px;
+        }}
+        QListView::item:selected {{
+            background: #1d6f4b;
+            color: #ffffff;
+        }}
+        """
+    )
+    return combo

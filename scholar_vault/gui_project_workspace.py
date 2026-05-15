@@ -10,6 +10,14 @@ from .gui_common import (
     _open_path,
     _style_message_box,
     _summary_font,
+    make_action_button,
+    make_kicker_label,
+    make_labeled_field,
+    make_list_widget,
+    make_section_label,
+    make_text_panel,
+    make_title_label,
+    style_compact_combo_box,
 )
 
 
@@ -313,15 +321,8 @@ def show_project_workspace(
     layout.setContentsMargins(26, 22, 26, 20)
     layout.setSpacing(10)
 
-    kicker = qt["QLabel"]("SCHOLAR VAULT // PROJECT WORKSPACE")
-    kicker.setFont(_summary_font(qt, 11, mono=True, bold=True))
-    kicker.setStyleSheet("color: #69ffad;")
-    layout.addWidget(kicker)
-
-    heading = qt["QLabel"]("Project Workspace")
-    heading.setFont(_summary_font(qt, 28, bold=True))
-    heading.setStyleSheet("color: #f3fff7;")
-    layout.addWidget(heading)
+    layout.addWidget(make_kicker_label(qt, "SCHOLAR VAULT // PROJECT WORKSPACE", size=11))
+    layout.addWidget(make_title_label(qt, "Project Workspace", size=28))
 
     vault_label = qt["QLabel"](resolved_vault)
     vault_label.setFont(_summary_font(qt, 10, mono=True))
@@ -345,14 +346,14 @@ def show_project_workspace(
         ("Title", title_field, 3),
         ("Link target", target_field, 3),
     ]:
-        group = qt["QVBoxLayout"]()
-        label = qt["QLabel"](label_text)
-        label.setFont(_summary_font(qt, 9, mono=True, bold=True))
-        label.setStyleSheet("color: #8ce7b8;")
-        field.setMinimumHeight(34)
-        field.setFont(_summary_font(qt, 11))
-        group.addWidget(label)
-        group.addWidget(field)
+        group, _label = make_labeled_field(
+            qt,
+            label_text,
+            field,
+            label_tone="soft",
+            field_min_height=34,
+            field_size=11,
+        )
         form.addLayout(group, stretch)
     layout.addLayout(form)
 
@@ -363,93 +364,29 @@ def show_project_workspace(
     right_column = qt["QVBoxLayout"]()
     right_column.setSpacing(6)
 
-    project_heading = qt["QLabel"]("Projects")
-    project_heading.setFont(_summary_font(qt, 10, mono=True, bold=True))
-    project_heading.setStyleSheet("color: #69ffad;")
-    project_list_widget = qt["QListWidget"]()
-    project_list_widget.setMinimumHeight(250)
-    project_list_widget.setFont(_summary_font(qt, 10))
-    project_list_widget.setSpacing(2)
-    project_list_widget.setSelectionMode(qt["QListWidget"].SelectionMode.SingleSelection)
-    project_list_widget.setStyleSheet(
-        "QListWidget { border: 1px solid #1d6f4b; background: #020806; color: #f3fff7; }"
-        "QListWidget::item { padding: 0; border: none; }"
-        "QListWidget::item:selected { background: #0b3f2a; }"
+    project_heading = make_section_label(qt, "Projects", tone="green")
+    project_list_widget = make_list_widget(
+        qt, min_height=250, border="#1d6f4b", selected="#0b3f2a"
     )
     left_column.addWidget(project_heading)
     left_column.addWidget(project_list_widget, 1)
 
     resource_controls = qt["QHBoxLayout"]()
-    resource_heading = qt["QLabel"]("Link Resource")
-    resource_heading.setFont(_summary_font(qt, 10, mono=True, bold=True))
-    resource_heading.setStyleSheet("color: #9ecbff;")
+    resource_heading = make_section_label(qt, "Link Resource", tone="blue")
     resource_type = qt["QComboBox"]()
     resource_types = ["Paper", "Run", "Concept", "Synthesis", "Task", "Proposal"]
     resource_type.addItems(resource_types)
     if initial_citekey:
         resource_type.setCurrentText("Paper")
-    resource_type.setMinimumWidth(150)
-    resource_type.setMinimumHeight(34)
-    resource_type.setFont(_summary_font(qt, 11))
-    resource_type.setStyleSheet(
-        """
-        QComboBox {
-            background: #07100b;
-            color: #f3fff7;
-            border: 1px solid #9ecbff;
-            padding: 6px 28px 6px 9px;
-            selection-background-color: #1d6f4b;
-        }
-        QComboBox:hover { border-color: #b8dcff; }
-        QComboBox::drop-down {
-            width: 24px;
-            border-left: 1px solid #2f73a5;
-        }
-        QComboBox QAbstractItemView {
-            background: #07100b;
-            color: #f3fff7;
-            border: 1px solid #9ecbff;
-            selection-background-color: #1d6f4b;
-            selection-color: #ffffff;
-            outline: 0;
-        }
-        """
-    )
-    resource_type.view().setFont(_summary_font(qt, 11))
-    resource_type.view().setMinimumWidth(150)
-    resource_type.view().setStyleSheet(
-        """
-        QListView {
-            background: #07100b;
-            color: #f3fff7;
-            border: 1px solid #9ecbff;
-            outline: 0;
-        }
-        QListView::item {
-            min-height: 28px;
-            padding: 6px 10px;
-        }
-        QListView::item:selected {
-            background: #1d6f4b;
-            color: #ffffff;
-        }
-        """
-    )
+    style_compact_combo_box(qt, resource_type)
     resource_filter = qt["QLineEdit"]()
     resource_filter.setPlaceholderText("Filter by title, id, path, status")
     resource_controls.addWidget(resource_heading)
     resource_controls.addWidget(resource_type)
     resource_controls.addWidget(resource_filter, 1)
 
-    resource_list_widget = qt["QListWidget"]()
-    resource_list_widget.setMinimumHeight(250)
-    resource_list_widget.setFont(_summary_font(qt, 10))
-    resource_list_widget.setSpacing(2)
-    resource_list_widget.setSelectionMode(qt["QListWidget"].SelectionMode.SingleSelection)
-    resource_list_widget.setStyleSheet(
-        "QListWidget { border: 1px solid #2f73a5; background: #020806; color: #f3fff7; }"
-        "QListWidget::item { padding: 0; border: none; }"
-        "QListWidget::item:selected { background: #102f48; }"
+    resource_list_widget = make_list_widget(
+        qt, min_height=250, border="#2f73a5", selected="#102f48"
     )
     right_column.addLayout(resource_controls)
     right_column.addWidget(resource_list_widget, 1)
@@ -458,35 +395,64 @@ def show_project_workspace(
     content.addLayout(right_column, 4)
     layout.addLayout(content, 1)
 
-    result_box = qt["QTextEdit"]()
-    result_box.setReadOnly(True)
-    result_box.setMinimumHeight(118)
-    result_box.setFont(_summary_font(qt, 10, mono=True))
-    result_box.setStyleSheet(
-        "QTextEdit { color: #d7ffe8; background: #00120b; border: 1px solid #006b45; "
-        "padding: 10px; }"
-    )
+    result_box = make_text_panel(qt, min_height=118, padding=10)
     layout.addWidget(result_box)
 
     buttons = qt["QHBoxLayout"]()
-    refresh_button = qt["QPushButton"]("Refresh")
-    scaffold_button = qt["QPushButton"]("Scaffold / Update")
-    link_button = qt["QPushButton"]("Link Selected")
-    map_button = qt["QPushButton"]("Generate Map")
-    audit_button = qt["QPushButton"]("Run Audit")
-    open_button = qt["QPushButton"]("Open Project")
-    close_button = qt["QPushButton"]("Close")
-    for button, tone in [
-        (refresh_button, "refresh"),
-        (scaffold_button, "scaffold"),
-        (link_button, "link"),
-        (map_button, "map"),
-        (audit_button, "audit"),
-        (open_button, "open"),
-        (close_button, "close"),
+    refresh_button = make_action_button(
+        qt, "Refresh", tone="refresh", min_height=38, stylesheet=_project_button_stylesheet
+    )
+    scaffold_button = make_action_button(
+        qt,
+        "Scaffold / Update",
+        tone="scaffold",
+        min_height=38,
+        stylesheet=_project_button_stylesheet,
+    )
+    link_button = make_action_button(
+        qt,
+        "Link Selected",
+        tone="link",
+        min_height=38,
+        stylesheet=_project_button_stylesheet,
+    )
+    map_button = make_action_button(
+        qt,
+        "Generate Map",
+        tone="map",
+        min_height=38,
+        stylesheet=_project_button_stylesheet,
+    )
+    audit_button = make_action_button(
+        qt,
+        "Run Audit",
+        tone="audit",
+        min_height=38,
+        stylesheet=_project_button_stylesheet,
+    )
+    open_button = make_action_button(
+        qt,
+        "Open Project",
+        tone="open",
+        min_height=38,
+        stylesheet=_project_button_stylesheet,
+    )
+    close_button = make_action_button(
+        qt,
+        "Close",
+        tone="close",
+        min_height=38,
+        stylesheet=_project_button_stylesheet,
+    )
+    for button in [
+        refresh_button,
+        scaffold_button,
+        link_button,
+        map_button,
+        audit_button,
+        open_button,
+        close_button,
     ]:
-        button.setMinimumHeight(38)
-        _style_project_button(button, tone)
         buttons.addWidget(button)
     buttons.addStretch(1)
     layout.addLayout(buttons)

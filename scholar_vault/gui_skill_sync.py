@@ -7,11 +7,19 @@ from .gui_common import (
     _application,
     _dark_dialog_stylesheet,
     _load_qt_modules,
-    _style_button,
     _style_dialog_buttons,
     _style_message_box,
     _summary_font,
     _summary_panel,
+    make_action_button,
+    make_body_label,
+    make_compact_counter,
+    make_kicker_label,
+    make_list_widget,
+    make_section_label,
+    make_text_panel,
+    make_title_label,
+    style_compact_field,
 )
 
 
@@ -88,26 +96,7 @@ def _skill_sync_metric_panel(
     value: int,
     color: str,
 ) -> tuple[Any, Any]:
-    panel = _summary_panel(qt, color)
-    panel.setMinimumHeight(34)
-    panel.setMaximumHeight(38)
-    layout = qt["QHBoxLayout"](panel)
-    layout.setContentsMargins(10, 5, 10, 5)
-    layout.setSpacing(7)
-    number = qt["QLabel"](str(value))
-    number.setMinimumWidth(18)
-    number.setAlignment(
-        qt["Qt"].AlignmentFlag.AlignRight | qt["Qt"].AlignmentFlag.AlignVCenter
-    )
-    number.setFont(_summary_font(qt, 14, mono=True, bold=True))
-    number.setStyleSheet(f"color: {color}; border: none;")
-    title = qt["QLabel"](label.lower())
-    title.setFont(_summary_font(qt, 9, mono=True, bold=True))
-    title.setStyleSheet("color: #baffdc; border: none;")
-    title.setAlignment(qt["Qt"].AlignmentFlag.AlignVCenter)
-    layout.addWidget(number, 0)
-    layout.addWidget(title, 1)
-    return panel, number
+    return make_compact_counter(qt, label, value, color)
 
 
 def show_skill_sync(
@@ -139,26 +128,18 @@ def show_skill_sync(
     layout.setContentsMargins(22, 18, 22, 18)
     layout.setSpacing(8)
 
-    kicker = qt["QLabel"]("SCHOLAR VAULT // SKILL + AGENTS SYNC")
-    kicker.setFont(_summary_font(qt, 10, mono=True, bold=True))
-    kicker.setStyleSheet("color: #69ffad;")
-    layout.addWidget(kicker)
-
-    heading = qt["QLabel"]("Repository -> Vault Sync")
-    heading.setFont(_summary_font(qt, 24, bold=True))
-    heading.setStyleSheet("color: #f3fff7;")
-    layout.addWidget(heading)
-
-    body = qt["QLabel"](
-        "Repository source is the canonical vault-agent skill set and vault AGENTS "
-        "template in this tools repo. Vault target is the installed skill set and "
-        "AGENTS.md used by Codex inside the vault. Update publishes repository -> vault; "
-        "pull only when vault-side edits should become canonical."
+    layout.addWidget(make_kicker_label(qt, "SCHOLAR VAULT // SKILL + AGENTS SYNC"))
+    layout.addWidget(make_title_label(qt, "Repository -> Vault Sync"))
+    layout.addWidget(
+        make_body_label(
+            qt,
+            "Repository source is the canonical vault-agent skill set and vault AGENTS "
+            "template in this tools repo. Vault target is the installed skill set and "
+            "AGENTS.md used by Codex inside the vault. Update publishes repository -> vault; "
+            "pull only when vault-side edits should become canonical.",
+            size=11,
+        )
     )
-    body.setWordWrap(True)
-    body.setFont(_summary_font(qt, 11))
-    body.setStyleSheet("color: #baffdc;")
-    layout.addWidget(body)
     layout.addSpacing(6)
 
     source_field = qt["QLineEdit"]()
@@ -174,11 +155,8 @@ def show_skill_sync(
             ("Vault target skills", target_field),
         ]
     ):
-        label = qt["QLabel"](label_text)
-        label.setFont(_summary_font(qt, 9, mono=True, bold=True))
-        label.setStyleSheet("color: #8ce7b8;")
-        field.setMinimumHeight(30)
-        field.setFont(_summary_font(qt, 10, mono=True))
+        label = make_section_label(qt, label_text, tone="soft", size=9)
+        style_compact_field(qt, field, min_height=30, size=10, mono=True)
         path_grid.addWidget(label, 0, column)
         path_grid.addWidget(field, 1, column)
         path_grid.setColumnStretch(column, 1)
@@ -206,17 +184,8 @@ def show_skill_sync(
     summary_layout = qt["QVBoxLayout"](summary_column)
     summary_layout.setContentsMargins(0, 0, 0, 0)
     summary_layout.setSpacing(6)
-    summary_label = qt["QLabel"]("Roles and comparison details")
-    summary_label.setFont(_summary_font(qt, 10, mono=True, bold=True))
-    summary_label.setStyleSheet("color: #8ce7b8;")
-    summary_text = qt["QTextEdit"]()
-    summary_text.setReadOnly(True)
-    summary_text.setMinimumHeight(120)
-    summary_text.setFont(_summary_font(qt, 10, mono=True))
-    summary_text.setStyleSheet(
-        "QTextEdit { color: #d7ffe8; background: #00120b; border: 1px solid #006b45; "
-        "padding: 8px; }"
-    )
+    summary_label = make_section_label(qt, "Roles and comparison details", tone="soft")
+    summary_text = make_text_panel(qt, min_height=120, padding=8)
     summary_layout.addWidget(summary_label, 0)
     summary_layout.addWidget(summary_text, 1)
     comparison_row.addWidget(summary_column, 1)
@@ -225,27 +194,29 @@ def show_skill_sync(
     skill_layout = qt["QVBoxLayout"](skill_column)
     skill_layout.setContentsMargins(0, 0, 0, 0)
     skill_layout.setSpacing(6)
-    skill_label = qt["QLabel"]("Skill and AGENTS differences")
-    skill_label.setFont(_summary_font(qt, 10, mono=True, bold=True))
-    skill_label.setStyleSheet("color: #69ffad;")
-    skill_list = qt["QListWidget"]()
-    skill_list.setMinimumHeight(120)
-    skill_list.setFont(_summary_font(qt, 10))
-    skill_list.setSelectionMode(qt["QListWidget"].SelectionMode.NoSelection)
-    skill_list.setSpacing(4)
+    skill_label = make_section_label(qt, "Skill and AGENTS differences", tone="green")
+    skill_list = make_list_widget(
+        qt,
+        min_height=120,
+        border="#006b45",
+        selected="#123824",
+        selection_mode="none",
+        spacing=4,
+    )
     skill_layout.addWidget(skill_label, 0)
     skill_layout.addWidget(skill_list, 1)
     comparison_row.addWidget(skill_column, 1)
     layout.addLayout(comparison_row, 1)
 
-    direction_hint = qt["QLabel"](
-        "Select individual rows, then choose the direction. Modification times choose the "
-        "initial selection only; inspect changed items before overwriting."
+    layout.addWidget(
+        make_body_label(
+            qt,
+            "Select individual rows, then choose the direction. Modification times choose the "
+            "initial selection only; inspect changed items before overwriting.",
+            tone="warning",
+            size=9,
+        )
     )
-    direction_hint.setWordWrap(True)
-    direction_hint.setFont(_summary_font(qt, 9))
-    direction_hint.setStyleSheet("color: #fff4cf;")
-    layout.addWidget(direction_hint)
 
     external_panel = _summary_panel(qt, "#9ecbff")
     external_layout = qt["QVBoxLayout"](external_panel)
@@ -253,23 +224,23 @@ def show_skill_sync(
     external_layout.setSpacing(5)
     external_header = qt["QHBoxLayout"]()
     external_header.setSpacing(10)
-    external_label = qt["QLabel"]("External skill sources")
-    external_label.setFont(_summary_font(qt, 10, mono=True, bold=True))
-    external_label.setStyleSheet("color: #9ecbff; border: none;")
-    external_hint = qt["QLabel"](
-        "Built-ins fill the fields; custom sources need a repository."
+    external_label = make_section_label(
+        qt, "External skill sources", tone="blue", borderless=True
     )
-    external_hint.setWordWrap(True)
-    external_hint.setFont(_summary_font(qt, 9))
-    external_hint.setStyleSheet("color: #d7eaff; border: none;")
+    external_hint = make_body_label(
+        qt,
+        "Built-ins fill the fields; custom sources need a repository.",
+        tone="dim-blue",
+        size=9,
+        borderless=True,
+    )
     external_header.addWidget(external_label)
     external_header.addWidget(external_hint, 1)
     external_layout.addLayout(external_header)
 
     known_external_sources = known_external_skill_sources()
     external_source_select = qt["QComboBox"]()
-    external_source_select.setMinimumHeight(30)
-    external_source_select.setFont(_summary_font(qt, 10))
+    style_compact_field(qt, external_source_select, min_height=30, size=10)
     external_source_select.addItem("Custom source", "")
     for source_name in sorted(known_external_sources):
         external_source_select.addItem(source_name, source_name)
@@ -285,16 +256,13 @@ def show_skill_sync(
     external_ref_field.setPlaceholderText("Default ref")
     external_subdir_field = qt["QLineEdit"]()
     external_subdir_field.setPlaceholderText("skills")
-    advanced_external_button = qt["QPushButton"]("Advanced...")
-    preview_external_button = qt["QPushButton"]("Preview")
-    install_external_button = qt["QPushButton"]("Install / Update")
-    for button, tone in [
-        (advanced_external_button, "muted"),
-        (preview_external_button, "neutral"),
-        (install_external_button, "primary"),
-    ]:
-        button.setMinimumHeight(30)
-        _style_button(button, tone)
+    advanced_external_button = make_action_button(
+        qt, "Advanced...", tone="muted", min_height=30
+    )
+    preview_external_button = make_action_button(qt, "Preview", min_height=30)
+    install_external_button = make_action_button(
+        qt, "Install / Update", tone="primary", min_height=30
+    )
 
     for column, (label_text, widget) in enumerate(
         [
@@ -306,12 +274,11 @@ def show_skill_sync(
             ("Install", install_external_button),
         ]
     ):
-        label = qt["QLabel"](label_text)
-        label.setFont(_summary_font(qt, 9, mono=True, bold=True))
-        label.setStyleSheet("color: #9ecbff; border: none;")
-        widget.setMinimumHeight(30)
+        label = make_section_label(
+            qt, label_text, tone="blue", size=9, borderless=True
+        )
         if hasattr(widget, "setFont"):
-            widget.setFont(_summary_font(qt, 10))
+            style_compact_field(qt, widget, min_height=30, size=10)
         external_grid.addWidget(label, 0, column)
         external_grid.addWidget(widget, 1, column)
     external_grid.setColumnStretch(2, 3)
@@ -344,12 +311,11 @@ def show_skill_sync(
         settings_layout = qt["QVBoxLayout"](settings_dialog)
         settings_layout.setContentsMargins(18, 16, 18, 16)
         settings_layout.setSpacing(8)
-        intro = qt["QLabel"](
-            "Most sources use the default Git ref and a top-level skills directory."
+        intro = make_body_label(
+            qt,
+            "Most sources use the default Git ref and a top-level skills directory.",
+            tone="dim-blue",
         )
-        intro.setWordWrap(True)
-        intro.setFont(_summary_font(qt, 10))
-        intro.setStyleSheet("color: #d7eaff;")
         settings_layout.addWidget(intro)
         fields = qt["QGridLayout"]()
         fields.setHorizontalSpacing(10)
@@ -363,11 +329,8 @@ def show_skill_sync(
         for row, (label_text, field) in enumerate(
             [("Git ref", ref_edit), ("Skills subdirectory", subdir_edit)]
         ):
-            label = qt["QLabel"](label_text)
-            label.setFont(_summary_font(qt, 9, mono=True, bold=True))
-            label.setStyleSheet("color: #9ecbff;")
-            field.setMinimumHeight(30)
-            field.setFont(_summary_font(qt, 10))
+            label = make_section_label(qt, label_text, tone="blue", size=9)
+            style_compact_field(qt, field, min_height=30, size=10)
             fields.addWidget(label, row, 0)
             fields.addWidget(field, row, 1)
         fields.setColumnStretch(1, 1)
@@ -427,18 +390,14 @@ def show_skill_sync(
     layout.addLayout(option_row)
 
     buttons = qt["QHBoxLayout"]()
-    refresh_button = qt["QPushButton"]("Refresh")
-    adopt_button = qt["QPushButton"]("Pull Selected Into Repository")
-    publish_button = qt["QPushButton"]("Update Vault From Repository")
-    close_button = qt["QPushButton"]("Close")
-    for button, tone in [
-        (refresh_button, "neutral"),
-        (adopt_button, "warning"),
-        (publish_button, "success"),
-        (close_button, "muted"),
-    ]:
-        button.setMinimumHeight(34)
-        _style_button(button, tone)
+    refresh_button = make_action_button(qt, "Refresh")
+    adopt_button = make_action_button(
+        qt, "Pull Selected Into Repository", tone="warning"
+    )
+    publish_button = make_action_button(
+        qt, "Update Vault From Repository", tone="success"
+    )
+    close_button = make_action_button(qt, "Close", tone="muted")
     buttons.addWidget(refresh_button, 0)
     buttons.addStretch(1)
     buttons.addWidget(adopt_button)

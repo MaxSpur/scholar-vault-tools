@@ -31,6 +31,41 @@ def test_summary_font_uses_system_font() -> None:
     assert "Helvetica Neue Condensed" not in font.family()
 
 
+def test_common_gui_builders_encode_compact_style() -> None:
+    from scholar_vault.gui import (
+        _application,
+        _load_qt_modules,
+        make_action_button,
+        make_compact_counter,
+        make_list_widget,
+        make_section_label,
+        make_text_panel,
+        style_compact_combo_box,
+    )
+
+    modules = _load_qt_modules(require_fitz=False)
+    _application(modules)
+
+    label = make_section_label(modules, "Section", tone="blue")
+    panel, number = make_compact_counter(modules, "repo newer", 3, "#45ffb0")
+    text_panel = make_text_panel(modules, min_height=88)
+    list_widget = make_list_widget(modules, min_height=90, selection_mode="none")
+    button = make_action_button(modules, "Run", tone="success")
+    combo = modules["QComboBox"]()
+    style_compact_combo_box(modules, combo)
+
+    assert label.text() == "Section"
+    assert label.font().bold()
+    assert panel.minimumHeight() == 34
+    assert number.text() == "3"
+    assert text_panel.isReadOnly()
+    assert text_panel.minimumHeight() == 88
+    assert list_widget.selectionMode() == modules["QListWidget"].SelectionMode.NoSelection
+    assert list_widget.minimumHeight() == 90
+    assert "QPushButton:disabled" in button.styleSheet()
+    assert "QComboBox::drop-down" in combo.styleSheet()
+
+
 def test_gui_pdf_preview_render_smoke(tmp_path: Path) -> None:
     from scholar_vault.gui import _load_qt_modules, _render_pdf_image
 

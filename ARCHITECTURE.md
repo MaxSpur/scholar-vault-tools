@@ -38,8 +38,11 @@
   and manual metadata/abstract/keyword resolution. It re-exports moved public
   GUI entrypoints so older imports keep working.
 - `scholar_vault/gui_common.py`: shared Qt loading, app creation, dark styling,
-  button styling, message boxes, path opening, summary panels, and modeless
-  dialog helpers. New GUI screens should reuse these primitives.
+  button styling, message boxes, path opening, summary panels, modeless dialog
+  helpers, and compact UI builders such as `make_section_label`,
+  `make_action_button`, `make_compact_counter`, `make_text_panel`, and
+  `make_list_widget`. New GUI screens should reuse these primitives before
+  writing screen-local styles.
 - `scholar_vault/gui_skill_sync.py`: skill and vault-agent guide synchronization
   UI plus its row/selection helpers.
 - `scholar_vault/gui_project_workspace.py`: project workspace UI plus project

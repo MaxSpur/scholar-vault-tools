@@ -90,6 +90,7 @@
 - [x] Refactor non-import feature families out of `importer.py` into focused rebuild, diagnostics, dashboard, topic, search, neighbor, maintenance, bibliography, enrichment, project, and proposal modules.
 - [x] Run the post-refactor cleanup pass: remove dead importer run-YAML loading code, collapse duplicated CLI alias bodies into shared helpers, route enrichment through its owning implementation, and make project scaffold/link use focused project navigation refreshes instead of full vault rebuilds.
 - [x] Split active skill/project CLI and GUI surfaces into focused modules with shared common helpers while preserving `scholar_vault.cli` and `scholar_vault.gui` compatibility imports.
+- [x] Add reusable compact GUI builders and apply them to the active skill-sync and project-workspace screens.
 
 ## Obsidian usability and vault navigation
 

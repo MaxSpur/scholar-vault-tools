@@ -76,6 +76,10 @@
   desktop screens in focused `scholar_vault/gui_*.py` modules. Reuse
   `scholar_vault/gui_common.py` for Qt loading, app creation, styling, buttons,
   message boxes, summary panels, and modeless dialog handling.
+- For GUI layout and style, prefer the compact builders in
+  `scholar_vault/gui_common.py` (`make_section_label`, `make_action_button`,
+  `make_compact_counter`, `make_text_panel`, `make_list_widget`,
+  `style_compact_combo_box`) before adding screen-local styles.
 - Project scaffold/link commands must use focused project navigation refreshes
   only. Do not trigger broad rebuild side effects such as paper-card
   normalization, PDF filename repair, or run-link repair unless the user
