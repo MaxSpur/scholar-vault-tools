@@ -19,6 +19,8 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 from typer.completion import get_completion_script
 
+from . import cli_projects as _cli_projects
+from . import cli_skills as _cli_skills
 from .bibliography import (
     bibtex_doctor,
     export_bibtex,
@@ -62,47 +64,40 @@ from .models import (
     ScholarLabsExport,
     SourceCard,
 )
-from .projects import (
-    project_audit,
-    project_link_concept,
-    project_link_paper,
-    project_link_proposal,
-    project_link_run,
-    project_link_synthesis,
-    project_link_task,
-    project_list,
-    project_map,
-    project_scaffold,
-)
 from .proposals import proposal_audit, proposal_sprint_scaffold
 from .rebuild import concept_index, rebuild_vault
-from .skill_sync import (
-    OBSIDIAN_SKILLS_DEFAULT_REF,
-    OBSIDIAN_SKILLS_REPOSITORY,
-    adopt_skill,
-    compare_skillsets,
-    default_source_agents_path,
-    default_source_skills_path,
-    format_skillset_summary,
-    install_external_skill_source,
-    publish_skillset,
-    resolve_external_skill_source,
-    vault_agents_path,
-    vault_skills_path,
-)
 from .sources import VaultPaths, infer_run_title, load_run_records, load_source_cards
 from .topics import apply_topic_map, topic_map_report, topic_preset_mapping
 
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
-project_app = typer.Typer(help="Project workspace helpers.")
+project_app = _cli_projects.project_app
 proposal_sprint_app = typer.Typer(help="Proposal sprint workspace helpers.")
-skills_app = typer.Typer(
-    help="Compare, adopt, publish, and install vault-agent Codex skills."
-)
+skills_app = _cli_skills.skills_app
 app.add_typer(project_app, name="project")
 app.add_typer(proposal_sprint_app, name="proposal-sprint")
 app.add_typer(skills_app, name="skills")
 console = Console()
+
+# Compatibility names for callers that imported command functions from scholar_vault.cli.
+skills_install_external_command = _cli_skills.skills_install_external_command
+skills_update_external_command = _cli_skills.skills_update_external_command
+skills_install_obsidian_command = _cli_skills.skills_install_obsidian_command
+skills_update_obsidian_command = _cli_skills.skills_update_obsidian_command
+skills_diff_command = _cli_skills.skills_diff_command
+skills_adopt_command = _cli_skills.skills_adopt_command
+skills_publish_command = _cli_skills.skills_publish_command
+skills_ui_command = _cli_skills.skills_ui_command
+project_scaffold_command = _cli_projects.project_scaffold_command
+project_list_command = _cli_projects.project_list_command
+project_map_command = _cli_projects.project_map_command
+project_link_paper_command = _cli_projects.project_link_paper_command
+project_link_concept_command = _cli_projects.project_link_concept_command
+project_link_synthesis_command = _cli_projects.project_link_synthesis_command
+project_link_run_command = _cli_projects.project_link_run_command
+project_link_task_command = _cli_projects.project_link_task_command
+project_link_proposal_command = _cli_projects.project_link_proposal_command
+project_audit_command = _cli_projects.project_audit_command
+project_ui_command = _cli_projects.project_ui_command
 
 
 def _fish_completion_path() -> Path:
@@ -1123,127 +1118,6 @@ def _configure_ui(config: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
 
-def _resolve_skill_paths(
-    *,
-    source: Path | None,
-    target: Path | None,
-    vault: Path | None,
-) -> tuple[Path, Path]:
-    source_path = source.expanduser().resolve() if source else default_source_skills_path()
-    if target:
-        target_path = target.expanduser().resolve()
-    else:
-        resolved_vault = _resolve_vault(vault)
-        target_path = vault_skills_path(resolved_vault)
-    return source_path, target_path
-
-
-def _resolve_skill_target_path(*, target: Path | None, vault: Path | None) -> Path:
-    if target:
-        return target.expanduser().resolve()
-    return vault_skills_path(_resolve_vault(vault))
-
-
-def _target_agents_path_from_skills(target: Path) -> Path | None:
-    if target.name == "skills" and target.parent.name == ".agents":
-        return target.parent.parent / "AGENTS.md"
-    return None
-
-
-def _resolve_skill_sync_paths(
-    *,
-    source: Path | None,
-    target: Path | None,
-    vault: Path | None,
-) -> tuple[Path, Path, Path | None, Path | None]:
-    source_path, target_path = _resolve_skill_paths(source=source, target=target, vault=vault)
-    source_agent_guide = default_source_agents_path()
-    if target:
-        target_agent_guide = _target_agents_path_from_skills(target_path)
-    else:
-        target_agent_guide = vault_agents_path(_resolve_vault(vault))
-    return source_path, target_path, source_agent_guide, target_agent_guide
-
-
-def _print_skillset_summary(summary: dict[str, Any]) -> None:
-    console.print(format_skillset_summary(summary), soft_wrap=True)
-
-
-def _print_skill_action(summary: dict[str, Any]) -> None:
-    action = summary.get("action")
-    if action == "blocked":
-        console.print(f"Blocked: {summary.get('reason')}")
-        return
-    if summary.get("apply"):
-        console.print(f"Applied: {action}")
-    else:
-        console.print(f"Dry-run: would {action}")
-    if summary.get("skill"):
-        console.print(f"- Skill: {summary['skill']}")
-    if summary.get("from"):
-        console.print(f"- From: {summary['from']}")
-    if summary.get("to"):
-        console.print(f"- To: {summary['to']}")
-    if summary.get("copied"):
-        console.print(f"- Skills to copy: {', '.join(summary['copied'])}")
-    agent_guide = summary.get("agent_guide") or {}
-    if agent_guide.get("copied"):
-        console.print("- Agent guide: VAULT_AGENTS_TEMPLATE.md -> vault AGENTS.md")
-    if summary.get("target_only"):
-        console.print(f"- Target-only skills: {', '.join(summary['target_only'])}")
-    if summary.get("archived"):
-        console.print(f"- Archived: {', '.join(summary['archived'])}")
-    if summary.get("backup"):
-        console.print(f"- Backup: {summary['backup']}")
-    if summary.get("backups"):
-        console.print(f"- Backups: {', '.join(summary['backups'])}")
-
-
-def _print_external_skill_action(summary: dict[str, Any]) -> None:
-    if summary.get("apply"):
-        console.print(f"Applied: {summary.get('action')}")
-    else:
-        console.print("Dry-run: would install/update external skills")
-    console.print(f"- Source: {summary.get('source')} ({summary.get('repository')})")
-    console.print(f"- Ref: {summary.get('ref')}")
-    if summary.get("commit"):
-        console.print(f"- Commit: {summary['commit']}")
-    console.print(f"- Target: {summary.get('target')}")
-    if summary.get("skills"):
-        console.print(f"- Skills: {', '.join(summary['skills'])}")
-    if summary.get("copied"):
-        console.print(f"- Copied: {', '.join(summary['copied'])}")
-    if summary.get("manifest"):
-        console.print(f"- Manifest: {summary['manifest']}")
-    if summary.get("backups"):
-        console.print(f"- Backups: {', '.join(summary['backups'])}")
-
-
-def _show_skill_sync_ui(
-    source: Path,
-    target: Path,
-    *,
-    source_agent_guide: Path | None = None,
-    target_agent_guide: Path | None = None,
-) -> None:
-    try:
-        from .gui import GuiUnavailable, show_skill_sync
-    except Exception as exc:  # pragma: no cover - defensive optional import path
-        console.print(f"Skill sync UI unavailable ({exc}). Falling back to terminal output.")
-        return
-    try:
-        _call_gui(
-            lambda: show_skill_sync(
-                source,
-                target,
-                source_agent_guide=source_agent_guide,
-                target_agent_guide=target_agent_guide,
-            )
-        )
-    except GuiUnavailable as exc:
-        console.print(f"Skill sync UI unavailable ({exc}). Falling back to terminal output.")
-
-
 def _show_project_workspace_ui(
     vault: Path,
     *,
@@ -1754,80 +1628,6 @@ def _print_concept_index(summary: dict[str, Any]) -> None:
     )
     if summary.get("llm_files_written"):
         console.print(f"Refreshed {summary.get('llm_files_written')} LLM context file(s).")
-
-
-def _print_project_list(summary: dict[str, Any]) -> None:
-    rows = summary.get("projects") or []
-    console.print(f"Projects: {summary.get('count', 0)}")
-    if not rows:
-        return
-    table = Table(title="Project Workspaces", show_lines=False)
-    table.add_column("Slug")
-    table.add_column("Title")
-    table.add_column("Status")
-    table.add_column("Papers", justify="right")
-    table.add_column("Path")
-    for row in rows:
-        table.add_row(
-            str(row.get("slug") or ""),
-            str(row.get("title") or ""),
-            str(row.get("status") or ""),
-            str(row.get("related_papers") or 0),
-            str(row.get("path") or ""),
-        )
-    console.print(table)
-
-
-def _print_project_scaffold(summary: dict[str, Any]) -> None:
-    console.print(f"Project scaffold: {summary.get('project')} [{summary.get('state')}]")
-    refresh = summary.get("refresh") or summary.get("rebuild") or {}
-    if refresh:
-        console.print(
-            "- Refreshed project navigation: "
-            f"{refresh.get('index_files_written')} index, "
-            f"{refresh.get('llm_files_written')} LLM files."
-        )
-
-
-def _print_project_link(summary: dict[str, Any]) -> None:
-    state = "linked" if summary.get("changed") else "already linked"
-    console.print(
-        f"Project {state}: {summary.get('ref')} -> {summary.get('project')} "
-        f"({summary.get('field')})"
-    )
-
-
-def _print_project_map(summary: dict[str, Any]) -> None:
-    console.print(f"Wrote project map: {summary.get('project_map')}")
-    console.print(
-        f"Linked papers={summary.get('linked_papers', 0)}, "
-        f"gaps={summary.get('gaps', 0)}, "
-        f"recommended actions={summary.get('recommended_next_actions', 0)}."
-    )
-
-
-def _print_project_audit(summary: dict[str, Any]) -> None:
-    status = "OK" if summary.get("ok") else "ISSUES"
-    console.print(f"Project audit: {summary.get('project')} [{status}]")
-    counts = summary.get("counts") or {}
-    console.print(
-        "Papers={linked_papers}, concepts={linked_concepts}, syntheses={linked_syntheses}, "
-        "tasks={linked_tasks}, runs={linked_runs}.".format(**counts)
-    )
-    _print_issue_counts("Project Audit Issues", summary.get("issue_counts") or {})
-    issues = summary.get("issues") or {}
-    for key, rows in issues.items():
-        if not rows:
-            continue
-        table = Table(title=key.replace("_", " ").title(), show_lines=False)
-        table.add_column("Target")
-        table.add_column("Message")
-        for row in rows[:50]:
-            table.add_row(
-                str(row.get("paper") or row.get("target") or row.get("run") or "-"),
-                str(row.get("message") or ""),
-            )
-        console.print(table)
 
 
 def _print_maintenance_report(summary: dict[str, Any]) -> None:
@@ -3032,258 +2832,6 @@ def references_command(
     _print_references_summary(summary)
 
 
-def _skills_install_external(
-    *,
-    source_name: str,
-    vault: Path | None,
-    target: Path | None,
-    repository: str | None,
-    ref: str | None,
-    skills_subdir: str | None,
-    checkout: Path | None,
-    apply: bool,
-    backup: bool,
-    json_output: bool,
-) -> None:
-    target_path = _resolve_skill_target_path(target=target, vault=vault)
-    try:
-        source = resolve_external_skill_source(
-            source_name,
-            repository=repository,
-            ref=ref,
-            skills_subdir=skills_subdir,
-        )
-    except ValueError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    summary = install_external_skill_source(
-        target_path,
-        source,
-        apply=apply,
-        backup=backup,
-        checkout=checkout,
-    )
-    if json_output:
-        console.print_json(data=summary)
-        return
-    _print_external_skill_action(summary)
-    if not apply:
-        console.print("Use --apply to install or update these external skills in the vault.")
-
-
-@skills_app.command("install-external")
-def skills_install_external_command(
-    source_name: ExternalSkillSourceNameArg,
-    vault: VaultArg = None,
-    target: SkillTargetArg = None,
-    repository: ExternalSkillsRepositoryArg = None,
-    ref: ExternalSkillsRefArg = None,
-    skills_subdir: ExternalSkillsSubdirArg = None,
-    checkout: ExternalSkillsCheckoutArg = None,
-    apply: ApplyArg = False,
-    backup: BackupArg = True,
-    json_output: JsonOutputArg = False,
-) -> None:
-    _skills_install_external(
-        source_name=source_name,
-        vault=vault,
-        target=target,
-        repository=repository,
-        ref=ref,
-        skills_subdir=skills_subdir,
-        checkout=checkout,
-        apply=apply,
-        backup=backup,
-        json_output=json_output,
-    )
-
-
-@skills_app.command("update-external")
-def skills_update_external_command(
-    source_name: ExternalSkillSourceNameArg,
-    vault: VaultArg = None,
-    target: SkillTargetArg = None,
-    repository: ExternalSkillsRepositoryArg = None,
-    ref: ExternalSkillsRefArg = None,
-    skills_subdir: ExternalSkillsSubdirArg = None,
-    checkout: ExternalSkillsCheckoutArg = None,
-    apply: ApplyArg = False,
-    backup: BackupArg = True,
-    json_output: JsonOutputArg = False,
-) -> None:
-    _skills_install_external(
-        source_name=source_name,
-        vault=vault,
-        target=target,
-        repository=repository,
-        ref=ref,
-        skills_subdir=skills_subdir,
-        checkout=checkout,
-        apply=apply,
-        backup=backup,
-        json_output=json_output,
-    )
-
-
-@skills_app.command("install-obsidian")
-def skills_install_obsidian_command(
-    vault: VaultArg = None,
-    target: SkillTargetArg = None,
-    repository: ObsidianSkillsRepositoryArg = OBSIDIAN_SKILLS_REPOSITORY,
-    ref: ObsidianSkillsRefArg = OBSIDIAN_SKILLS_DEFAULT_REF,
-    checkout: ObsidianSkillsCheckoutArg = None,
-    apply: ApplyArg = False,
-    backup: BackupArg = True,
-    json_output: JsonOutputArg = False,
-) -> None:
-    _skills_install_external(
-        source_name="obsidian-skills",
-        vault=vault,
-        target=target,
-        repository=repository,
-        ref=ref,
-        skills_subdir=None,
-        checkout=checkout,
-        apply=apply,
-        backup=backup,
-        json_output=json_output,
-    )
-
-
-@skills_app.command("update-obsidian")
-def skills_update_obsidian_command(
-    vault: VaultArg = None,
-    target: SkillTargetArg = None,
-    repository: ObsidianSkillsRepositoryArg = OBSIDIAN_SKILLS_REPOSITORY,
-    ref: ObsidianSkillsRefArg = OBSIDIAN_SKILLS_DEFAULT_REF,
-    checkout: ObsidianSkillsCheckoutArg = None,
-    apply: ApplyArg = False,
-    backup: BackupArg = True,
-    json_output: JsonOutputArg = False,
-) -> None:
-    _skills_install_external(
-        source_name="obsidian-skills",
-        vault=vault,
-        target=target,
-        repository=repository,
-        ref=ref,
-        skills_subdir=None,
-        checkout=checkout,
-        apply=apply,
-        backup=backup,
-        json_output=json_output,
-    )
-
-
-@skills_app.command("diff")
-def skills_diff_command(
-    vault: VaultArg = None,
-    source: SkillSourceArg = None,
-    target: SkillTargetArg = None,
-    json_output: JsonOutputArg = False,
-    ui: UiArg = False,
-) -> None:
-    source_path, target_path, source_agent_guide, target_agent_guide = _resolve_skill_sync_paths(
-        source=source, target=target, vault=vault
-    )
-    if ui:
-        _show_skill_sync_ui(
-            source_path,
-            target_path,
-            source_agent_guide=source_agent_guide,
-            target_agent_guide=target_agent_guide,
-        )
-        return
-    summary = compare_skillsets(
-        source_path,
-        target_path,
-        source_agent_guide=source_agent_guide,
-        target_agent_guide=target_agent_guide,
-    )
-    if json_output:
-        console.print_json(data=summary)
-        return
-    _print_skillset_summary(summary)
-
-
-@skills_app.command("adopt")
-def skills_adopt_command(
-    skill: SkillNameArg,
-    vault: VaultArg = None,
-    source: SkillSourceArg = None,
-    target: SkillTargetArg = None,
-    apply: ApplyArg = False,
-    force: ForceArg = False,
-    backup: BackupArg = True,
-    json_output: JsonOutputArg = False,
-) -> None:
-    source_path, target_path, source_agent_guide, target_agent_guide = _resolve_skill_sync_paths(
-        source=source, target=target, vault=vault
-    )
-    summary = adopt_skill(
-        source_path,
-        target_path,
-        skill,
-        apply=apply,
-        force=force,
-        backup=backup,
-        source_agent_guide=source_agent_guide,
-        target_agent_guide=target_agent_guide,
-    )
-    if json_output:
-        console.print_json(data=summary)
-        return
-    _print_skill_action(summary)
-    if not apply and summary.get("action") != "blocked":
-        console.print("Use --apply to copy the vault target skill into the repository source.")
-
-
-@skills_app.command("publish")
-def skills_publish_command(
-    vault: VaultArg = None,
-    source: SkillSourceArg = None,
-    target: SkillTargetArg = None,
-    apply: ApplyArg = False,
-    archive_extra: ArchiveExtraArg = False,
-    backup: BackupArg = True,
-    json_output: JsonOutputArg = False,
-) -> None:
-    source_path, target_path, source_agent_guide, target_agent_guide = _resolve_skill_sync_paths(
-        source=source, target=target, vault=vault
-    )
-    summary = publish_skillset(
-        source_path,
-        target_path,
-        apply=apply,
-        archive_extra=archive_extra,
-        backup=backup,
-        source_agent_guide=source_agent_guide,
-        target_agent_guide=target_agent_guide,
-    )
-    if json_output:
-        console.print_json(data=summary)
-        return
-    _print_skill_action(summary)
-    if not apply:
-        console.print("Use --apply to update the vault target from the repository source.")
-
-
-@skills_app.command("ui")
-def skills_ui_command(
-    vault: VaultArg = None,
-    source: SkillSourceArg = None,
-    target: SkillTargetArg = None,
-) -> None:
-    source_path, target_path, source_agent_guide, target_agent_guide = _resolve_skill_sync_paths(
-        source=source, target=target, vault=vault
-    )
-    _show_skill_sync_ui(
-        source_path,
-        target_path,
-        source_agent_guide=source_agent_guide,
-        target_agent_guide=target_agent_guide,
-    )
-
-
 @app.command("doctor")
 @app.command("status")
 def doctor_command(
@@ -3352,188 +2900,6 @@ def concept_index_command(
         _print_json(summary)
     else:
         _print_concept_index(summary)
-
-
-@project_app.command("scaffold")
-def project_scaffold_command(
-    slug: ProjectSlugArg,
-    vault: VaultArg = None,
-    title: ProjectTitleArg = None,
-    json_output: JsonOutputArg = False,
-    ui: UiArg = False,
-) -> None:
-    resolved_vault = _resolve_vault(vault)
-    if ui and _show_project_workspace_ui(
-        resolved_vault,
-        initial_slug=slug,
-        initial_title=title,
-    ):
-        return
-    summary = project_scaffold(resolved_vault, slug, title=title)
-    if json_output:
-        _print_json(summary)
-    else:
-        _print_project_scaffold(summary)
-
-
-@project_app.command("list")
-def project_list_command(
-    vault: VaultArg = None,
-    json_output: JsonOutputArg = False,
-) -> None:
-    summary = project_list(_resolve_vault(vault))
-    if json_output:
-        _print_json(summary)
-    else:
-        _print_project_list(summary)
-
-
-@project_app.command("map")
-def project_map_command(
-    slug: ProjectSlugArg,
-    vault: VaultArg = None,
-    json_output: JsonOutputArg = False,
-) -> None:
-    summary = project_map(_resolve_vault(vault), slug)
-    if json_output:
-        _print_json(summary)
-    else:
-        _print_project_map(summary)
-
-
-@project_app.command("link-paper")
-def project_link_paper_command(
-    slug: ProjectSlugArg,
-    citekey: ProjectCitekeyArg,
-    vault: VaultArg = None,
-    json_output: JsonOutputArg = False,
-    ui: UiArg = False,
-) -> None:
-    resolved_vault = _resolve_vault(vault)
-    if ui and _show_project_workspace_ui(
-        resolved_vault,
-        initial_slug=slug,
-        initial_citekey=citekey,
-    ):
-        return
-    summary = project_link_paper(resolved_vault, slug, citekey)
-    if json_output:
-        _print_json(summary)
-    else:
-        _print_project_link(summary)
-
-
-@project_app.command("link-concept")
-def project_link_concept_command(
-    slug: ProjectSlugArg,
-    concept_slug: ProjectConceptSlugArg,
-    vault: VaultArg = None,
-    json_output: JsonOutputArg = False,
-) -> None:
-    summary = project_link_concept(_resolve_vault(vault), slug, concept_slug)
-    if json_output:
-        _print_json(summary)
-    else:
-        _print_project_link(summary)
-
-
-@project_app.command("link-synthesis")
-def project_link_synthesis_command(
-    slug: ProjectSlugArg,
-    synthesis_slug: ProjectSynthesisSlugArg,
-    vault: VaultArg = None,
-    json_output: JsonOutputArg = False,
-) -> None:
-    summary = project_link_synthesis(_resolve_vault(vault), slug, synthesis_slug)
-    if json_output:
-        _print_json(summary)
-    else:
-        _print_project_link(summary)
-
-
-@project_app.command("link-run")
-def project_link_run_command(
-    slug: ProjectSlugArg,
-    run_id: ProjectRunIdArg,
-    vault: VaultArg = None,
-    json_output: JsonOutputArg = False,
-) -> None:
-    summary = project_link_run(_resolve_vault(vault), slug, run_id)
-    if json_output:
-        _print_json(summary)
-    else:
-        _print_project_link(summary)
-
-
-@project_app.command("link-task")
-def project_link_task_command(
-    slug: ProjectSlugArg,
-    task_path: ProjectTaskPathArg,
-    vault: VaultArg = None,
-    json_output: JsonOutputArg = False,
-) -> None:
-    summary = project_link_task(_resolve_vault(vault), slug, task_path)
-    if json_output:
-        _print_json(summary)
-    else:
-        _print_project_link(summary)
-
-
-@project_app.command("link-proposal")
-def project_link_proposal_command(
-    slug: ProjectSlugArg,
-    proposal_path: ProjectProposalPathArg,
-    vault: VaultArg = None,
-    json_output: JsonOutputArg = False,
-) -> None:
-    summary = project_link_proposal(_resolve_vault(vault), slug, proposal_path)
-    if json_output:
-        _print_json(summary)
-    else:
-        _print_project_link(summary)
-
-
-@project_app.command("audit")
-def project_audit_command(
-    slug: ProjectSlugArg,
-    vault: VaultArg = None,
-    json_output: JsonOutputArg = False,
-) -> None:
-    summary = project_audit(_resolve_vault(vault), slug)
-    if json_output:
-        _print_json(summary)
-    else:
-        _print_project_audit(summary)
-
-
-@project_app.command("ui")
-def project_ui_command(
-    vault: VaultArg = None,
-    slug: Annotated[
-        str | None,
-        typer.Option(
-            "--slug",
-            "--project",
-            help="Project slug to preselect or scaffold.",
-        ),
-    ] = None,
-    title: ProjectTitleArg = None,
-    citekey: Annotated[
-        str | None,
-        typer.Option(
-            "--citekey",
-            autocompletion=_complete_citekeys,
-            help="Paper citekey or card slug to preselect.",
-        ),
-    ] = None,
-) -> None:
-    if not _show_project_workspace_ui(
-        _resolve_vault(vault),
-        initial_slug=slug,
-        initial_title=title,
-        initial_citekey=citekey,
-    ):
-        console.print("Project UI unavailable.")
 
 
 @app.command("maintenance-report")

@@ -2,7 +2,16 @@
 
 ## Repository
 
-- `scholar_vault/cli.py`: Typer CLI entrypoint and command wiring.
+- `scholar_vault/cli.py`: Typer root app, command registry, and compatibility
+  wiring. New command families should live in focused `cli_*` modules instead
+  of growing this file.
+- `scholar_vault/cli_common.py`: shared CLI path resolution, Typer option
+  aliases, UI option aliases, and output helpers for split command modules.
+- `scholar_vault/cli_skills.py`: `skills ...` command group, including
+  repository/vault skill synchronization, vault `AGENTS.md` synchronization,
+  and external upstream skill install/update commands.
+- `scholar_vault/cli_projects.py`: `project ...` command group, including
+  scaffold, map, audit, link helpers, and the project workspace UI launcher.
 - `scholar_vault/config.py`: user-level default path storage and latest Scholar Labs export selection.
 - `scholar_vault/models.py`: typed records for exports, paper cards, runs, logs, and PDF candidates. Paper cards are the durable metadata/provenance/notes layer; linked PDFs are the canonical evidence artifacts.
 - `scholar_vault/sources.py`: vault path management, slug and citekey utilities, Markdown parsing, and frontmatter helpers.
@@ -23,7 +32,18 @@
 - `scholar_vault/render.py`: Jinja-backed Markdown rendering for cards, run pages, indexes, topics, and LLM summary files. Vault-local `AGENTS.md` initialization reads `VAULT_AGENTS_TEMPLATE.md`; the repository root `AGENTS.md` is only for agents working on this tools repo.
 - `scholar_vault/bibtex.py`: BibTeX parsing plus BibLaTeX-oriented rendering, validation, and export helpers.
 - `scholar_vault/citations.py`: DOI detection, provider response caching, citation, abstract, and PDF keyword enrichment, candidate scoring, abstract provenance, and provider BibTeX normalization for BibLaTeX export.
-- `scholar_vault/gui.py`: PySide6/PyMuPDF desktop UI for configuration, Scholar Labs match decisions, import/enrichment progress, import summaries, issue-card follow-up browsing, and manual metadata/abstract/keyword resolution. GUI imports stay isolated so non-UI commands do not initialize Qt.
+- `scholar_vault/gui.py`: compatibility facade plus remaining PySide6/PyMuPDF
+  desktop screens for configuration, Scholar Labs match decisions,
+  import/enrichment progress, import summaries, issue-card follow-up browsing,
+  and manual metadata/abstract/keyword resolution. It re-exports moved public
+  GUI entrypoints so older imports keep working.
+- `scholar_vault/gui_common.py`: shared Qt loading, app creation, dark styling,
+  button styling, message boxes, path opening, summary panels, and modeless
+  dialog helpers. New GUI screens should reuse these primitives.
+- `scholar_vault/gui_skill_sync.py`: skill and vault-agent guide synchronization
+  UI plus its row/selection helpers.
+- `scholar_vault/gui_project_workspace.py`: project workspace UI plus project
+  resource row/action helpers.
 - `templates/`: Markdown body templates for the generated paper, run, and index documents.
 - `browser/`: browser-side exporter for visible Google Scholar Labs results.
 - `tests/`: regression coverage for naming, parsing, matching, rendering, and idempotence.

@@ -68,6 +68,14 @@
   enrichment coordination.
 - Keep CLI aliases as thin calls into shared helpers. Preserve existing commands
   and aliases unless the user explicitly asks to remove them.
+- Keep `scholar_vault/cli.py` as the Typer root registry and compatibility
+  layer. New command families should live in focused `scholar_vault/cli_*.py`
+  modules and use shared helpers from `scholar_vault/cli_common.py` when
+  possible.
+- Keep `scholar_vault/gui.py` import-compatible for older callers, but put new
+  desktop screens in focused `scholar_vault/gui_*.py` modules. Reuse
+  `scholar_vault/gui_common.py` for Qt loading, app creation, styling, buttons,
+  message boxes, summary panels, and modeless dialog handling.
 - Project scaffold/link commands must use focused project navigation refreshes
   only. Do not trigger broad rebuild side effects such as paper-card
   normalization, PDF filename repair, or run-link repair unless the user
