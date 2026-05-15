@@ -47,6 +47,12 @@
   UI plus its row/selection helpers.
 - `scholar_vault/gui_project_workspace.py`: project workspace UI plus project
   resource row/action helpers.
+- `scholar_vault/gui_pdf_import.py`: direct PDF import picker used by
+  `import-pdf --ui`, including drag/drop, file chooser, staging-folder add, and
+  import option selection.
+- `scholar_vault/gui_staging_match.py`: leftover staging PDF match picker,
+  match model formatting, row rendering, targeted import handoff, and staging
+  trash actions.
 - `templates/`: Markdown body templates for the generated paper, run, and index documents.
 - `browser/`: browser-side exporter for visible Google Scholar Labs results.
 - `tests/`: regression coverage for naming, parsing, matching, rendering, and idempotence.

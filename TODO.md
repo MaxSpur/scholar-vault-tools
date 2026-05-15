@@ -91,6 +91,8 @@
 - [x] Run the post-refactor cleanup pass: remove dead importer run-YAML loading code, collapse duplicated CLI alias bodies into shared helpers, route enrichment through its owning implementation, and make project scaffold/link use focused project navigation refreshes instead of full vault rebuilds.
 - [x] Split active skill/project CLI and GUI surfaces into focused modules with shared common helpers while preserving `scholar_vault.cli` and `scholar_vault.gui` compatibility imports.
 - [x] Add reusable compact GUI builders and apply them to the active skill-sync and project-workspace screens.
+- [x] Move the leftover staging PDF match UI into a focused `gui_staging_match.py` module while preserving `scholar_vault.gui` compatibility imports.
+- [x] Move the direct PDF import picker into a focused `gui_pdf_import.py` module while preserving `scholar_vault.gui` compatibility imports.
 
 ## Obsidian usability and vault navigation
 
