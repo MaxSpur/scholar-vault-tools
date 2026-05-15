@@ -100,6 +100,7 @@ class VaultPaths:
     raw_metadata: Path
     pdfs: Path
     papers: Path
+    paper_digests: Path
     runs: Path
     topics: Path
     concepts: Path
@@ -129,6 +130,7 @@ class VaultPaths:
             raw_metadata=raw / "metadata",
             pdfs=root / "pdfs",
             papers=root / "papers",
+            paper_digests=root / "paper-digests",
             runs=root / "runs",
             topics=root / "topics",
             concepts=root / "concepts",
@@ -154,6 +156,7 @@ class VaultPaths:
             self.raw_metadata,
             self.pdfs,
             self.papers,
+            self.paper_digests,
             self.runs,
             self.topics,
             self.concepts,

@@ -20,6 +20,7 @@ from rich.table import Table
 from typer.completion import get_completion_script
 
 from . import cli_bases as _cli_bases
+from . import cli_compile as _cli_compile
 from . import cli_projects as _cli_projects
 from . import cli_queries as _cli_queries
 from . import cli_skills as _cli_skills
@@ -73,11 +74,13 @@ from .topics import apply_topic_map, topic_map_report, topic_preset_mapping
 
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
 bases_app = _cli_bases.bases_app
+compile_app = _cli_compile.compile_app
 project_app = _cli_projects.project_app
 proposal_sprint_app = typer.Typer(help="Proposal sprint workspace helpers.")
 query_app = _cli_queries.query_app
 skills_app = _cli_skills.skills_app
 app.add_typer(bases_app, name="bases")
+app.add_typer(compile_app, name="compile")
 app.add_typer(project_app, name="project")
 app.add_typer(proposal_sprint_app, name="proposal-sprint")
 app.add_typer(query_app, name="query")
@@ -107,6 +110,11 @@ project_ui_command = _cli_projects.project_ui_command
 bases_init_command = _cli_bases.bases_init_command
 bases_rebuild_command = _cli_bases.bases_rebuild_command
 bases_doctor_command = _cli_bases.bases_doctor_command
+compile_status_command = _cli_compile.compile_status_command
+compile_scaffold_command = _cli_compile.compile_scaffold_command
+compile_queue_command = _cli_compile.compile_queue_command
+compile_mark_command = _cli_compile.compile_mark_command
+compile_doctor_command = _cli_compile.compile_doctor_command
 query_create_command = _cli_queries.query_create_command
 query_list_command = _cli_queries.query_list_command
 query_show_command = _cli_queries.query_show_command

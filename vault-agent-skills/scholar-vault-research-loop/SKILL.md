@@ -30,7 +30,7 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 2. Choose a focused question, concept, method, dataset, or cluster of related selected sources.
 3. Build a reading set from `papers/*.md` cards with attached PDFs. Use `scholar-vault notes-missing --heading "PDF reading notes"` when you need the unread selected-card queue. Do not treat unselected Scholar Labs candidates as evidence.
 4. For each source that matters, use `$scholar-vault-read-pdf`: extract full text, inspect relevant rendered pages/figures/tables, and note exact evidence from the PDF.
-5. Update touched paper cards with concise `## Notes` that capture methods, claims, datasets, evaluation setup, limitations, visual encodings, and links to related cards.
+5. Update touched paper cards with concise `## Notes` that capture methods, claims, datasets, evaluation setup, limitations, visual encodings, and links to related cards. Use `$scholar-vault-compile-paper` when a source should also leave the compile queue with a durable `paper-digests/<citekey>.md` artifact.
 6. Create or update metacards when they improve retrieval:
    - `concepts/<slug>.md` for reusable concepts, methods, datasets, visual encodings, evaluation protocols, and terminology.
    - `syntheses/<slug>.md` for cross-paper answers, tensions, and evidence-backed literature review sections.

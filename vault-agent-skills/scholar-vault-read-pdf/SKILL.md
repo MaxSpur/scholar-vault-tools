@@ -33,7 +33,8 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 5. Use Codex's available PDF-reading/rendering capabilities for important figures, tables, diagrams, maps, visual encodings, equations, or scanned content. If the paper is figure-heavy or the user asks about visuals, inspect the rendered PDF pages before summarizing claims.
 6. Use page ranges only for targeted revisits after full-text orientation, for very long documents, or when rendering selected figures/pages. Do not treat a first-page excerpt as enough for synthesis.
 7. Write durable findings to the card's `## Notes`, to a new `syntheses/*.md`, to a new `concepts/*.md`, or to a new `tasks/*.md` depending on the user's goal.
-8. Run `scholar-vault concept-index` after concept-only edits, or `scholar-vault rebuild` after card, topic, synthesis, task, or proposal edits so indexes, exports, and LLM files reflect the changes.
+8. When the goal is to leave one paper ready for future syntheses, use `$scholar-vault-compile-paper` to fill `paper-digests/<citekey>.md` and mark the compile state.
+9. Run `scholar-vault concept-index` after concept-only edits, or `scholar-vault rebuild` after card, topic, synthesis, task, or proposal edits so indexes, exports, and LLM files reflect the changes.
 
 ## PDF Text Helper
 

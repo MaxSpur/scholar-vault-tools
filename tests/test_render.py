@@ -63,6 +63,7 @@ def test_render_paper_markdown_contains_required_sections() -> None:
     assert "compiled_status: uncompiled" in frontmatter
     assert "review_status: unreviewed" in frontmatter
     assert "evidence_level: unknown" in frontmatter
+    assert "paper_digest:" in frontmatter
     assert "linked_queries: []" in frontmatter
     assert "linked_projects: []" in frontmatter
     assert "\nabstract:" not in frontmatter

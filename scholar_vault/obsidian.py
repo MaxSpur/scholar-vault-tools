@@ -15,6 +15,7 @@ from .sources import (
 )
 
 ARTIFACT_INDEXES = {
+    "paper-digests": ("Paper Digests", "No paper digest notes have been created yet."),
     "concepts": ("Concepts", "No concept cards have been created yet."),
     "syntheses": ("Syntheses", "No synthesis notes have been created yet."),
     "tasks": ("Tasks", "No follow-up task notes have been created yet."),
@@ -23,6 +24,7 @@ ARTIFACT_INDEXES = {
     "proposals": ("Proposals", "No proposal workspaces have been created yet."),
 }
 ARTIFACT_DEFAULT_TYPES = {
+    "paper-digests": "paper_digest",
     "concepts": "concept",
     "syntheses": "synthesis",
     "tasks": "task",
@@ -36,6 +38,7 @@ PDF_READING_NOTES_RE = re.compile(r"^###\s+PDF reading notes\b", re.IGNORECASE |
 VAULT_NOTE_ROOTS = {
     "concepts",
     "papers",
+    "paper-digests",
     "projects",
     "proposals",
     "queries",
@@ -164,13 +167,16 @@ def _collect_artifacts(paths: VaultPaths, folder: str) -> list[dict[str, Any]]:
         if not _should_index_artifact_path(folder, path):
             continue
         frontmatter, body = read_frontmatter_markdown(path)
+        sources = _as_string_list(frontmatter.get("sources"))
+        if folder == "paper-digests" and frontmatter.get("paper"):
+            sources = _as_string_list(frontmatter.get("paper")) + sources
         artifacts.append(
             {
                 "path": ensure_relative(path, paths.vault),
                 "title": _artifact_title(path, frontmatter, body),
                 "type": frontmatter.get("type") or ARTIFACT_DEFAULT_TYPES.get(folder, "note"),
                 "created": frontmatter.get("created") or frontmatter.get("date"),
-                "sources": _as_string_list(frontmatter.get("sources")),
+                "sources": sources,
             }
         )
     return artifacts

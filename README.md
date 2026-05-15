@@ -160,6 +160,7 @@ scholar-labs-vault/
     metadata/
   pdfs/
   papers/
+  paper-digests/
   runs/
   topics/
   concepts/
@@ -184,10 +185,12 @@ scholar-labs-vault/
     dashboard.md
     paper-status.md
     reading-queue.md
+    compile-dashboard.md
     metadata-issues.md
     pdf-issues.md
     synthesis-dashboard.md
     search-index.md
+    paper-digests.md
     concepts.md
     syntheses.md
     tasks.md
@@ -1158,6 +1161,8 @@ Available skills:
   active staging, metadata, import, and synthesis actions.
 - `$scholar-vault-read-pdf`: read linked PDFs as the primary evidence and add
   evidence-grounded notes, topics, metadata fixes, syntheses, or metacards.
+- `$scholar-vault-compile-paper`: fill a reusable PDF-grounded
+  `paper-digests/<citekey>.md` digest and mark its compile/review state.
 - `$scholar-vault-research-loop`: run a focused post-import research cycle:
   read PDFs, refine touched cards, create concept/synthesis metacards, and
   rebuild generated views.
@@ -1171,6 +1176,7 @@ Use $scholar-vault-synthesize to write a synthesis on OD-flow visualization.
 Use $scholar-vault-curate-topics to propose a cleanup of noisy topics.
 Use $scholar-vault-pdf-triage to inspect current staging PDFs and historical unmatched records.
 Use $scholar-vault-read-pdf to read selected PDFs and refine their cards.
+Use $scholar-vault-compile-paper to compile one paper digest for <citekey>.
 Use $scholar-vault-research-loop to work through this question: <question>.
 Use $obsidian-markdown before substantial edits to Obsidian Markdown/properties.
 Use $json-canvas to create or repair a .canvas project map.
@@ -1199,40 +1205,67 @@ normal research workflow is:
 4. Use `scholar-vault notes-missing --heading "PDF reading notes"` when you
    need a concrete queue of selected cards that have not yet received PDF
    reading notes.
-5. Read the linked PDFs as primary evidence. Text extraction should cover the
+5. Use `scholar-vault compile status --json` or
+   `scholar-vault compile queue --project <slug> --json` when you need the
+   reusable single-paper digest queue.
+6. Read the linked PDFs as primary evidence. Text extraction should cover the
    full paper for serious reading; page ranges are only for targeted revisits.
-6. Use Codex's PDF reading/rendering capabilities for figures, tables, maps,
+7. Use Codex's PDF reading/rendering capabilities for figures, tables, maps,
    visualizations, equations, scanned pages, and appendix material. Do not rely
    on text extraction alone for visual evidence.
-7. Update only touched paper cards with concise `## Notes` that capture claims,
+8. Use `$scholar-vault-compile-paper` when one paper should become a reusable
+   `paper-digests/<citekey>.md` artifact for future syntheses, concepts,
+   queries, projects, or proposals.
+9. Update only touched paper cards with concise `## Notes` that capture claims,
    methods, datasets, evaluation setup, limitations, visual encodings, and
    links to related paper cards.
-8. Create `concepts/<slug>.md` for reusable concepts, methods, algorithms,
+10. Create `concepts/<slug>.md` for reusable concepts, methods, algorithms,
    datasets, evaluation protocols, terminology, or visual encodings that
    connect multiple papers.
-9. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers,
+11. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers,
    tensions, and literature-review prose.
-10. Create `tasks/<date>-research-gaps.md` for open questions, unclear
+12. Create `tasks/<date>-research-gaps.md` for open questions, unclear
    evidence, gaps, follow-up reading, or next Scholar Labs prompts.
-11. For question-centered work, use `queries/<slug>.md` as the workbench note
+13. For question-centered work, use `queries/<slug>.md` as the workbench note
    and link papers, runs, and syntheses with `scholar-vault query link-*`.
-12. For ongoing workspaces, use `projects/<slug>/index.md` as a lens over
+14. For ongoing workspaces, use `projects/<slug>/index.md` as a lens over
    shared papers, runs, concepts, syntheses, tasks, and optional proposals.
    Link to the shared records instead of copying paper cards into the project.
-13. For proposal workspaces, start with
+15. For proposal workspaces, start with
    `scholar-vault proposal-sprint scaffold <slug>`, then run
    `scholar-vault proposal-audit proposals/<slug>` before treating the draft
    evidence layer as ready. Do not treat proposal workflows as the primary
    workflow for all vault work.
-14. Run `scholar-vault concept-index` after concept-only edits, or
+16. Run `scholar-vault concept-index` after concept-only edits, or
    `scholar-vault rebuild` after broader paper, topic, synthesis, task, or
    project/proposal edits, so generated context files include the new durable
    notes and connections.
+
+### Paper Compile Digests
+
+`paper-digests/<citekey>.md` files are durable user/agent-authored artifacts
+for reusable single-paper understanding. The CLI scaffolds, tracks, validates,
+and indexes them; it does not read PDFs or generate scientific claims.
+
+```fish
+scholar-vault compile status --json
+scholar-vault compile scaffold --citekey <citekey>
+scholar-vault compile scaffold --run <run-id> --selected-only
+scholar-vault compile queue --project <slug> --json
+scholar-vault compile mark <citekey> --status compiled
+scholar-vault compile doctor --json
+```
+
+Scaffolding is idempotent and will not overwrite an existing digest unless
+`--force` is passed. Mark a digest `stale` when the paper, a linked query, a
+linked project, or an interpretation changes and the digest needs review.
 
 ## Generated Records
 
 - `pdfs/*.pdf`: canonical evidence artifacts for selected sources.
 - `papers/*.md`: canonical source cards for selected papers by default; these store metadata, provenance, links, abstracts, keywords, and notes over the linked PDFs.
+- `paper-digests/*.md`: durable PDF-grounded single-paper digests for reuse in
+  syntheses, concept pages, query dossiers, project work, and proposal audits.
 - `concepts/*.md`: optional agent-written concept/metacards that connect papers by method, dataset, visual encoding, evaluation protocol, or terminology.
 - `syntheses/*.md`: optional agent-written cross-paper syntheses grounded in PDFs.
 - `tasks/*.md`: optional agent-written follow-up tasks and research gaps.
@@ -1258,7 +1291,7 @@ Rebuilds can produce large but expected diffs. Treat the vault as a mix of
 canonical records and generated views:
 
 - Commit canonical changes when they reflect intentional work: `papers/`,
-  `pdfs/`, `raw/`, run YAML/manifests under `runs/`, and durable notes under
+  `paper-digests/`, `pdfs/`, `raw/`, run YAML/manifests under `runs/`, and durable notes under
   `concepts/`, `syntheses/`, `tasks/`, `queries/`, `projects/`, and
   `proposals/`.
 - Treat `_indexes/`, `topics/`, `llms.txt`, `llms-full.txt`, `_exports/`,

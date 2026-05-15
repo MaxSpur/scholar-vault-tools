@@ -20,6 +20,7 @@ BASE_VIEW_NAMES: dict[str, list[str]] = {
         "Query outputs",
         "Queries needing Scholar Labs",
         "Queries with unread linked papers",
+        "Queries with uncompiled linked papers",
     ],
     "synthesis-workbench.base": [
         "Syntheses without enough source links",
@@ -55,7 +56,10 @@ def _base_documents() -> dict[str, dict[str, Any]]:
                 "reading_status": {"displayName": "Reading"},
                 "compiled_status": {"displayName": "Compile"},
                 "review_status": {"displayName": "Review"},
+                "paper_digest": {"displayName": "Digest"},
                 "evidence_level": {"displayName": "Evidence"},
+                "last_compiled_at": {"displayName": "Compiled"},
+                "last_reviewed_at": {"displayName": "Reviewed"},
                 "topics": {"displayName": "Topics"},
                 "linked_queries": {"displayName": "Queries"},
                 "linked_projects": {"displayName": "Projects"},
@@ -80,13 +84,17 @@ def _base_documents() -> dict[str, dict[str, Any]]:
                     "name": "Needs compile",
                     "filters": {
                         "and": [
-                            'compiled_status == "uncompiled" || compiled_status == "stale"'
+                            (
+                                'compiled_status == "uncompiled" || '
+                                'compiled_status == "draft" || compiled_status == "stale"'
+                            )
                         ]
                     },
                     "order": [
                         "file.name",
                         "title",
                         "compiled_status",
+                        "paper_digest",
                         "last_compiled_at",
                         "linked_queries",
                     ],
@@ -152,6 +160,7 @@ def _base_documents() -> dict[str, dict[str, Any]]:
                 "linked_papers": {"displayName": "Papers"},
                 "linked_syntheses": {"displayName": "Syntheses"},
                 "unread_linked_papers": {"displayName": "Unread linked papers"},
+                "uncompiled_linked_papers": {"displayName": "Uncompiled linked papers"},
                 "file.mtime": {"displayName": "Changed"},
             },
             "views": [
@@ -232,6 +241,24 @@ def _base_documents() -> dict[str, dict[str, Any]]:
                         "file.name",
                         "question",
                         "unread_linked_papers",
+                        "linked_papers",
+                        "review_status",
+                    ],
+                },
+                {
+                    "type": "table",
+                    "name": "Queries with uncompiled linked papers",
+                    "filters": {
+                        "and": [
+                            'type == "research_query"',
+                            'file.hasProperty("uncompiled_linked_papers")',
+                            "!uncompiled_linked_papers.isEmpty()",
+                        ]
+                    },
+                    "order": [
+                        "file.name",
+                        "question",
+                        "uncompiled_linked_papers",
                         "linked_papers",
                         "review_status",
                     ],

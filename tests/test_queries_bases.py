@@ -44,7 +44,10 @@ def test_query_create_writes_note_with_base_embeds(tmp_path) -> None:
     assert frontmatter["scholar_labs_prompt_pack"] == []
     assert frontmatter["priority"] == "normal"
     assert frontmatter["review_status"] == "unreviewed"
+    assert frontmatter["unread_linked_papers"] == []
+    assert frontmatter["uncompiled_linked_papers"] == []
     assert "![[bases/queries.base#Query outputs]]" in body
+    assert "![[bases/queries.base#Queries with uncompiled linked papers]]" in body
     assert "![[bases/papers.base#Needs reading]]" in body
     assert (paths.bases / "queries.base").exists()
 
@@ -80,11 +83,13 @@ reading_status: unread
     assert second["changed"] is False
     assert query_frontmatter["linked_papers"] == ["papers/source-paper.md"]
     assert query_frontmatter["unread_linked_papers"] == ["papers/source-paper.md"]
+    assert query_frontmatter["uncompiled_linked_papers"] == ["papers/source-paper.md"]
     assert query_body.count("- [Source Paper](../papers/source-paper.md)") == 1
     assert paper_frontmatter["linked_queries"] == ["queries/source-query.md"]
     assert saved_paper_body.strip() == paper_body.strip()
     assert status["counts"]["linked_papers"] == 1
     assert status["counts"]["unread_linked_papers"] == 1
+    assert status["counts"]["uncompiled_linked_papers"] == 1
 
 
 def test_query_link_run_and_synthesis(tmp_path) -> None:
@@ -139,6 +144,9 @@ def test_bases_rebuild_is_deterministic_and_doctor_passes(tmp_path) -> None:
     assert snapshot == second_snapshot
     assert doctor["ok"] is True
     assert "Query outputs" in [view["name"] for view in queries_base["views"]]
+    assert "Queries with uncompiled linked papers" in [
+        view["name"] for view in queries_base["views"]
+    ]
     assert "this.file" in str(queries_base)
 
 

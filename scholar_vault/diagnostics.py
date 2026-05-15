@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .citations import refresh_metadata_completeness
+from .digests import compile_status_summary
 from .models import ImportManifest, RunRecord, SourceCard
 from .obsidian import (
     _card_has_valid_pdf,
@@ -29,6 +30,7 @@ from .topics import _topic_report
 
 CANONICAL_TOP_LEVELS = {
     "papers",
+    "paper-digests",
     "pdfs",
     "raw",
     "concepts",
@@ -378,6 +380,7 @@ def doctor_vault(
     unmatched_rows = _unmatched_rows_from_manifests(manifests)
     cards_by_path = {_card_ref(card): card for card in cards}
     pdf_summary = pdf_doctor(vault, staging_path=staging_path)
+    compile_summary = compile_status_summary(paths, cards=cards)
     missing_candidates = [
         {
             "run_id": run.slug,
@@ -443,9 +446,15 @@ def doctor_vault(
             "active_staging_pdfs": staging_summary.get("pdf_count"),
             "active_staging_duplicates": staging_summary.get("duplicate_count"),
             "active_staging_actionable_pdfs": staging_summary.get("actionable_pdf_count"),
+            "compile_needs_action": compile_summary.get("needs_action"),
+            "paper_digests": compile_summary.get("digests"),
         },
         "status_counts": {
             "pdf_status": _status_counts(cards, "pdf_status"),
+            "reading_status": _status_counts(cards, "reading_status"),
+            "compiled_status": _status_counts(cards, "compiled_status"),
+            "review_status": _status_counts(cards, "review_status"),
+            "evidence_level": _status_counts(cards, "evidence_level"),
             "enrichment_status": _status_counts(cards, "enrichment_status"),
             "citation_status": _status_counts(cards, "citation_status"),
             "doi_status": _status_counts(cards, "doi_status"),
@@ -465,6 +474,7 @@ def doctor_vault(
         },
         "metadata_issues": metadata_issues,
         "metadata_notes": metadata_notes,
+        "compile": compile_summary,
         "runs": [
             _run_issue_summary(run, cards_by_path)
             for run in sorted(

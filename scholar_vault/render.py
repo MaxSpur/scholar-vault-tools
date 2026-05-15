@@ -226,9 +226,10 @@ def render_vault_readme() -> str:
     return (
         "# scholar-vault research vault\n\n"
         "This vault is a local-first source wiki. Paper card records live in `papers/`, "
-        "canonical evidence PDFs live in `pdfs/`, Scholar Labs runs live in `runs/`, durable "
-        "agent-written concepts/syntheses/tasks/queries/projects/proposals live in their "
-        "named folders, and derived navigation lives in "
+        "compiled source digests live in `paper-digests/`, canonical evidence PDFs live in "
+        "`pdfs/`, Scholar Labs runs live in `runs/`, durable agent-written "
+        "concepts/syntheses/tasks/queries/projects/proposals live in their named folders, "
+        "and derived navigation lives in "
         "`bases/`, `_indexes/`, `_exports/`, `llms.txt`, and `llms-full.txt`.\n"
     )
 
@@ -261,6 +262,7 @@ def render_llms_txt() -> str:
     return (
         "scholar-vault navigation\n"
         "- Canonical sources: papers/\n"
+        "- Reusable paper digests: paper-digests/ and _indexes/compile-dashboard.md\n"
         "- Dashboard hub: _indexes/dashboard.md\n"
         "- Maintenance triage: scholar-vault maintenance-report --vault /path/to/vault\n"
         "- Concepts and method cards: concepts/ and _indexes/concepts.md\n"
@@ -300,6 +302,7 @@ def render_llms_full(
             "- Use `scholar-vault maintenance-report --vault /path/to/vault` for broad triage.",
             "- Use concepts/ for reusable methods, algorithms, visual encodings, datasets, "
             "evaluation protocols, and terminology.",
+            "- Use paper-digests/ for reusable single-paper digests compiled from linked PDFs.",
             "- Use syntheses/ for evidence-backed cross-paper answers and literature-review prose.",
             "- Use tasks/ for open questions, gaps, and next searches.",
             "- Use queries/ for active research questions with linked papers, runs, syntheses, "
@@ -314,6 +317,7 @@ def render_llms_full(
             "- _indexes/dashboard.md",
             "- _indexes/paper-status.md",
             "- _indexes/reading-queue.md",
+            "- _indexes/compile-dashboard.md",
             "- _indexes/metadata-issues.md",
             "- _indexes/pdf-issues.md",
             "- _indexes/synthesis-dashboard.md",
@@ -345,6 +349,10 @@ def render_llms_full(
         pdf = card.pdf or "missing"
         topics = ", ".join(card.topics) if card.topics else "none"
         lines.append(f"- {card.title} | papers/{card.slug}.md | topics: {topics} | pdf: {pdf}")
+        lines.append(
+            f"  compile: status={card.compiled_status} "
+            f"digest={card.paper_digest or 'missing'}"
+        )
         lines.append(
             f"  enrichment: status={card.enrichment_status}"
             + (
@@ -379,6 +387,7 @@ def render_llms_full(
     lines.append("")
     if artifacts:
         for folder, title in [
+            ("paper-digests", "Paper Digests"),
             ("concepts", "Concepts"),
             ("syntheses", "Syntheses"),
             ("tasks", "Tasks"),

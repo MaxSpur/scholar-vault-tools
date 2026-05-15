@@ -127,6 +127,8 @@ No summary yet.
     assert card.compiled_status == "uncompiled"
     assert card.review_status == "unreviewed"
     assert card.evidence_level == "unknown"
+    assert card.last_reviewed_at is None
+    assert card.paper_digest is None
     assert card.linked_queries == []
     assert card.linked_projects == []
 
@@ -142,7 +144,9 @@ compiled_status: draft
 review_status: needs_fix
 last_read_at: 2026-05-01T12:00:00+02:00
 last_compiled_at: 2026-05-02T12:00:00+02:00
+last_reviewed_at: 2026-05-03T12:00:00+02:00
 evidence_level: primary
+paper_digest: paper-digests/Workbench2026.md
 linked_queries:
   - queries/example-query.md
 linked_projects: projects/map-lens/index.md
@@ -163,7 +167,9 @@ No summary yet.
     assert card.review_status == "needs_fix"
     assert card.last_read_at == "2026-05-01T12:00:00+02:00"
     assert card.last_compiled_at == "2026-05-02T12:00:00+02:00"
+    assert card.last_reviewed_at == "2026-05-03T12:00:00+02:00"
     assert card.evidence_level == "primary"
+    assert card.paper_digest == "paper-digests/Workbench2026.md"
     assert card.linked_queries == ["queries/example-query.md"]
     assert card.linked_projects == ["projects/map-lens/index.md"]
 
@@ -200,6 +206,7 @@ abstract_last_checked: 2026-04-23T16:00:20+02:00
 abstract_enriched_at: 2026-04-23T16:00:20+02:00
 last_read_at: 2026-04-24T09:00:00+02:00
 last_compiled_at: 2026-04-25T09:00:00+02:00
+last_reviewed_at: 2026-04-26T09:00:00+02:00
 ---
 
 # Timestamped Paper
@@ -218,3 +225,4 @@ No summary yet.
     assert card.abstract_enriched_at == "2026-04-23T16:00:20+02:00"
     assert card.last_read_at == "2026-04-24T09:00:00+02:00"
     assert card.last_compiled_at == "2026-04-25T09:00:00+02:00"
+    assert card.last_reviewed_at == "2026-04-26T09:00:00+02:00"

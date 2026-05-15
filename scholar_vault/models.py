@@ -154,7 +154,9 @@ class SourceCard(BaseModel):
     review_status: str = "unreviewed"
     last_read_at: str | None = None
     last_compiled_at: str | None = None
+    last_reviewed_at: str | None = None
     evidence_level: str = "unknown"
+    paper_digest: str | None = None
     linked_queries: list[str] = Field(default_factory=list)
     linked_projects: list[str] = Field(default_factory=list)
     doi_status: DoiStatus = "missing"
@@ -228,7 +230,9 @@ class SourceCard(BaseModel):
             "review_status": self.review_status,
             "last_read_at": self.last_read_at,
             "last_compiled_at": self.last_compiled_at,
+            "last_reviewed_at": self.last_reviewed_at,
             "evidence_level": self.evidence_level,
+            "paper_digest": self.paper_digest,
             "linked_queries": self.linked_queries,
             "linked_projects": self.linked_projects,
             "doi_status": self.doi_status,

@@ -6,6 +6,7 @@ from typing import Any
 
 from .citations import refresh_metadata_completeness
 from .diagnostics import _repeated_unmatched_files, _unmatched_rows_from_manifests
+from .digests import NEEDS_ACTION_STATUSES, compile_status_summary
 from .models import ImportManifest, RunRecord, SourceCard
 from .obsidian import (
     _artifact_link,
@@ -206,6 +207,10 @@ def _render_dashboard_index(
     topic_cards: dict[str, list[SourceCard]],
 ) -> str:
     reading_rows = _reading_queue_rows(paths, cards)
+    compile_summary = compile_status_summary(paths, cards=cards)
+    compile_rows = [
+        row for row in compile_summary["papers"] if row["effective_status"] in NEEDS_ACTION_STATUSES
+    ]
     metadata_rows = _metadata_issue_rows(cards)
     pdf_summary = _pdf_issue_summary(paths, cards, manifests)
     topic_report = _topic_report(cards, limit=12)
@@ -217,6 +222,7 @@ def _render_dashboard_index(
     projects = artifacts.get("projects") or []
     issue_counts = {
         "Reading queue": len(reading_rows),
+        "Compile queue": len(compile_rows),
         "Metadata issues": len(metadata_rows),
         "Orphan PDFs": len(pdf_summary["orphan_pdfs"]),
         "Missing card PDFs": len(pdf_summary["missing_card_pdfs"]),
@@ -242,6 +248,7 @@ def _render_dashboard_index(
         "",
         "- [Paper status](paper-status.md)",
         "- [Reading queue](reading-queue.md)",
+        "- [Compile dashboard](compile-dashboard.md)",
         "- [Metadata issues](metadata-issues.md)",
         "- [PDF issues](pdf-issues.md)",
         "- [Synthesis dashboard](synthesis-dashboard.md)",
@@ -265,6 +272,22 @@ def _render_dashboard_index(
                 for row in reading_rows[:10]
             ],
             empty="No selected attached papers are missing PDF reading notes.",
+        ),
+        "",
+        "## Compile queue preview",
+        "",
+        *_markdown_table(
+            ["Paper", "Citekey", "Status", "Digest"],
+            [
+                [
+                    row["paper"],
+                    row["citekey"],
+                    row["effective_status"],
+                    row["paper_digest"],
+                ]
+                for row in compile_rows[:10]
+            ],
+            empty="No paper digests are currently uncompiled, draft, or stale.",
         ),
         "",
         "## Metadata issue preview",
@@ -292,6 +315,7 @@ def _render_dashboard_index(
             [
                 "scholar-vault maintenance-report --vault /path/to/vault",
                 'scholar-vault notes-missing --vault /path/to/vault --heading "PDF reading notes"',
+                "scholar-vault compile status --vault /path/to/vault --json",
                 "scholar-vault enrich --vault /path/to/vault --ui",
                 "scholar-vault pdf-doctor --vault /path/to/vault --json",
                 "scholar-vault topic-map --vault /path/to/vault --preset prompt-boilerplate",
@@ -317,6 +341,10 @@ def _render_paper_status_index(
     ]
     status_fields = [
         ("PDF status", _status_counts(cards, "pdf_status")),
+        ("Reading status", _status_counts(cards, "reading_status")),
+        ("Compile status", _status_counts(cards, "compiled_status")),
+        ("Review status", _status_counts(cards, "review_status")),
+        ("Evidence level", _status_counts(cards, "evidence_level")),
         ("Enrichment status", _status_counts(cards, "enrichment_status")),
         ("Citation status", _status_counts(cards, "citation_status")),
         ("Abstract status", _status_counts(cards, "abstract_status")),
@@ -600,6 +628,73 @@ def _render_synthesis_dashboard(
     return "\n".join(lines)
 
 
+def _render_compile_dashboard(paths: VaultPaths, cards: list[SourceCard]) -> str:
+    summary = compile_status_summary(paths, cards=cards)
+    rows = summary["papers"]
+    queue_rows = [row for row in rows if row["needs_action"]]
+    lines = [
+        "# Compile Dashboard",
+        "",
+        "`paper-digests/` contains durable agent/user-authored single-paper digests. "
+        "The CLI scaffolds and tracks them, but it does not generate scientific claims.",
+        "",
+        "## Compile status counts",
+        "",
+        *_markdown_table(
+            ["Status", "Count"],
+            [[key, value] for key, value in summary["counts"].items()],
+        ),
+        "",
+        "## Queue",
+        "",
+        *_markdown_table(
+            ["Paper", "Citekey", "Reading", "Compile", "Digest", "Issues"],
+            [
+                [
+                    row["paper"],
+                    row["citekey"],
+                    row["reading_status"],
+                    row["effective_status"],
+                    row["paper_digest"],
+                    "; ".join(row["issues"]),
+                ]
+                for row in queue_rows
+            ],
+            empty="No paper digests are currently uncompiled, draft, stale, or invalid.",
+        ),
+        "",
+        "## Reviewed and compiled digests",
+        "",
+        *_markdown_table(
+            ["Paper", "Citekey", "Status", "Digest", "Evidence"],
+            [
+                [
+                    row["paper"],
+                    row["citekey"],
+                    row["effective_status"],
+                    row["paper_digest"],
+                    row["evidence_level"],
+                ]
+                for row in rows
+                if row["effective_status"] in {"compiled", "reviewed"}
+            ],
+            empty="No compiled or reviewed paper digests yet.",
+        ),
+        "",
+    ]
+    lines.extend(
+        _render_command_block(
+            [
+                "scholar-vault compile status --vault /path/to/vault --json",
+                "scholar-vault compile scaffold --vault /path/to/vault --citekey <citekey>",
+                "scholar-vault compile mark --vault /path/to/vault <citekey> --status compiled",
+                "scholar-vault compile doctor --vault /path/to/vault --json",
+            ]
+        )
+    )
+    return "\n".join(lines)
+
+
 def _write_dashboard_indexes(
     paths: VaultPaths,
     cards: list[SourceCard],
@@ -630,6 +725,7 @@ def _write_dashboard_indexes(
             metadata_rows,
         ),
         "reading-queue.md": _render_reading_queue_index(reading_rows),
+        "compile-dashboard.md": _render_compile_dashboard(paths, cards),
         "metadata-issues.md": _render_metadata_issues_index(metadata_rows, diagnostic_rows),
         "pdf-issues.md": _render_pdf_issues_index(pdf_summary),
         "synthesis-dashboard.md": _render_synthesis_dashboard(

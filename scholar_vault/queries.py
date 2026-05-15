@@ -25,6 +25,7 @@ QUERY_LIST_FIELDS = (
     "linked_concepts",
     "scholar_labs_prompt_pack",
     "unread_linked_papers",
+    "uncompiled_linked_papers",
 )
 
 
@@ -94,6 +95,7 @@ def _query_defaults(
         "priority": priority,
         "review_status": "unreviewed",
         "unread_linked_papers": [],
+        "uncompiled_linked_papers": [],
     }
 
 
@@ -134,6 +136,7 @@ def _render_query_markdown(query: dict[str, Any]) -> str:
         "## Workbench",
         "![[bases/queries.base#Query outputs]]",
         "![[bases/queries.base#Queries needing Scholar Labs]]",
+        "![[bases/queries.base#Queries with uncompiled linked papers]]",
         "![[bases/papers.base#Needs reading]]",
         "![[bases/scholar-labs-workbench.base#Prompt drafts]]",
         "",
@@ -356,15 +359,23 @@ def _linked_paper_lookup(paths: VaultPaths) -> dict[str, SourceCard]:
 def _refresh_query_unread_papers(paths: VaultPaths, query: dict[str, Any]) -> bool:
     lookup = _linked_paper_lookup(paths)
     unread = []
+    uncompiled = []
     for ref in query.get("linked_papers") or []:
         card = lookup.get(ref) or lookup.get(Path(ref).stem)
         if card and card.reading_status == "unread":
             unread.append(_paper_ref(card))
+        if card and card.compiled_status in {"uncompiled", "draft", "stale"}:
+            uncompiled.append(_paper_ref(card))
     unread = sorted(set(unread), key=str.casefold)
-    if unread == query.get("unread_linked_papers"):
-        return False
-    query["unread_linked_papers"] = unread
-    return True
+    uncompiled = sorted(set(uncompiled), key=str.casefold)
+    changed = False
+    if unread != query.get("unread_linked_papers"):
+        query["unread_linked_papers"] = unread
+        changed = True
+    if uncompiled != query.get("uncompiled_linked_papers"):
+        query["uncompiled_linked_papers"] = uncompiled
+        changed = True
+    return changed
 
 
 def refresh_query_derived_fields(paths: VaultPaths) -> int:
@@ -494,10 +505,13 @@ def query_status(vault: Path | str, slug: str) -> dict[str, Any]:
         if ref not in paper_lookup and Path(ref).stem not in paper_lookup
     ]
     unread_papers = []
+    uncompiled_papers = []
     for ref in query.get("linked_papers") or []:
         card = paper_lookup.get(ref) or paper_lookup.get(Path(ref).stem)
         if card and card.reading_status == "unread":
             unread_papers.append(_paper_ref(card))
+        if card and card.compiled_status in {"uncompiled", "draft", "stale"}:
+            uncompiled_papers.append(_paper_ref(card))
     run_ids = {run.slug for run in load_run_records(paths)}
     missing_runs = [ref for ref in query.get("linked_runs") or [] if ref not in run_ids]
     missing_syntheses = [
@@ -506,6 +520,7 @@ def query_status(vault: Path | str, slug: str) -> dict[str, Any]:
     issue_counts = {
         "missing_papers": len(missing_papers),
         "unread_linked_papers": len(unread_papers),
+        "uncompiled_linked_papers": len(uncompiled_papers),
         "missing_runs": len(missing_runs),
         "missing_syntheses": len(missing_syntheses),
         "needs_scholar_labs": int(
@@ -527,11 +542,13 @@ def query_status(vault: Path | str, slug: str) -> dict[str, Any]:
             "linked_papers": len(query["linked_papers"]),
             "linked_syntheses": len(query["linked_syntheses"]),
             "unread_linked_papers": len(unread_papers),
+            "uncompiled_linked_papers": len(uncompiled_papers),
         },
         "issue_counts": issue_counts,
         "issues": {
             "missing_papers": missing_papers,
             "unread_linked_papers": unread_papers,
+            "uncompiled_linked_papers": uncompiled_papers,
             "missing_runs": missing_runs,
             "missing_syntheses": missing_syntheses,
         },

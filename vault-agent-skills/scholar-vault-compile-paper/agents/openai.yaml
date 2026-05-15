@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scholar Vault Compile Paper"
+  short_description: "Fill PDF-grounded paper digests"
+  default_prompt: "Use $scholar-vault-compile-paper to scaffold, read the linked PDF, fill paper-digests/<citekey>.md with evidence-grounded content, and mark the digest compiled or reviewed."

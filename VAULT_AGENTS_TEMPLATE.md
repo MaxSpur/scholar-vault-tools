@@ -8,10 +8,13 @@ These instructions apply inside this research vault. They are for agents working
 
 - Linked `pdfs/*.pdf` files are the canonical evidence artifacts.
 - `papers/*.md` cards are the durable metadata, provenance, index, and notes layer over those PDFs.
+- `paper-digests/*.md` files are durable user/agent-authored single-paper
+  digests compiled from linked PDFs for reuse in syntheses, concepts, queries,
+  projects, and proposals.
 - Scholar Labs `runs/` are discovery provenance. They explain why sources were found, but they are not evidence by themselves.
-- Canonical files are `papers/`, `pdfs/`, run YAML/manifests under `runs/`,
-  `raw/` inputs, `concepts/`, `syntheses/`, `tasks/`, `queries/`,
-  `projects/`, and `proposals/`.
+- Canonical files are `papers/`, `paper-digests/`, `pdfs/`, run
+  YAML/manifests under `runs/`, `raw/` inputs, `concepts/`, `syntheses/`,
+  `tasks/`, `queries/`, `projects/`, and `proposals/`.
 - Derived files are `_indexes/`, `topics/`, `llms.txt`, `llms-full.txt`, and
   `_exports/`. Generated `bases/*.base`, rendered run Markdown under `runs/`, and
   `projects/*/project-map.md` are generated views as well.
@@ -96,6 +99,7 @@ scholar-vault pdf-doctor --json
 scholar-vault git-summary
 scholar-vault notes-missing --heading "PDF reading notes"
 scholar-vault maintenance-report
+scholar-vault compile status --json
 scholar-vault project list
 scholar-vault runs
 ```
@@ -128,7 +132,7 @@ below; do not use a full rebuild unless broader vault content changed.
 Before committing after a rebuild, run `scholar-vault git-summary`. Large
 generated diffs under `_indexes/`, `topics/`, `bases/`, `llms*.txt`, `_exports/`,
 rendered run Markdown, and project maps are expected. Review canonical changes in
-`papers/`, `pdfs/`, run YAML/manifests, `raw/`, concepts, syntheses, tasks,
+`papers/`, `paper-digests/`, `pdfs/`, run YAML/manifests, `raw/`, concepts, syntheses, tasks,
 queries, projects, and proposals before committing. To check determinism, run rebuild a
 second time; it should not introduce additional generated churn.
 
@@ -196,13 +200,15 @@ For actual vault improvement after import and enrichment:
 4. Orient from `status --json`, relevant cards, runs, topics, and existing `concepts/`, `syntheses/`, `tasks/`, `queries/`, `projects/`, and `proposals/`.
 5. Build a reading set from selected paper cards with attached PDFs.
 6. Use `scholar-vault notes-missing --heading "PDF reading notes"` when you need the unread selected-card queue.
-7. Read PDFs as primary evidence.
-8. Update only touched paper cards with concise `## Notes`.
-9. Create `concepts/<slug>.md` for reusable concepts, methods, algorithms, datasets, visual encodings, evaluation protocols, or terminology.
-10. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers and literature-review prose.
-11. Create `tasks/<date>-research-gaps.md` for open questions, unclear evidence, gaps, follow-up reading, or next Scholar Labs prompts.
-12. Use `queries/<slug>.md` for focused research questions and link papers, runs, and syntheses with `scholar-vault query link-*`.
-13. Run `scholar-vault concept-index` after concept-only edits, `scholar-vault bases rebuild` after query/Base edits, or `scholar-vault rebuild` after broader paper/topic/synthesis/task/project/proposal edits.
+7. Use `scholar-vault compile status --json` or `scholar-vault compile queue --project <slug> --json` when you need the reusable digest queue.
+8. Read PDFs as primary evidence.
+9. Use `$scholar-vault-compile-paper` to fill `paper-digests/<citekey>.md` when one paper should become reusable for future synthesis, query, project, or proposal work.
+10. Update only touched paper cards with concise `## Notes`.
+11. Create `concepts/<slug>.md` for reusable concepts, methods, algorithms, datasets, visual encodings, evaluation protocols, or terminology.
+12. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers and literature-review prose.
+13. Create `tasks/<date>-research-gaps.md` for open questions, unclear evidence, gaps, follow-up reading, or next Scholar Labs prompts.
+14. Use `queries/<slug>.md` for focused research questions and link papers, runs, and syntheses with `scholar-vault query link-*`.
+15. Run `scholar-vault concept-index` after concept-only edits, `scholar-vault bases rebuild` after query/Base edits, or `scholar-vault rebuild` after broader paper/topic/synthesis/task/project/proposal edits.
 
 ## Project Workflow
 
@@ -277,6 +283,7 @@ matches one of these workflows:
 
 - Start non-trivial orientation with `$scholar-vault-orient` to map current vault state, relevant runs, indexes, staging issues, and candidate source context.
 - Use `$scholar-vault-read-pdf` when the work requires factual claims, methods, findings, limitations, definitions, or source connections from linked PDFs.
+- Use `$scholar-vault-compile-paper` when one paper needs a reusable PDF-grounded digest under `paper-digests/`.
 - Use `$scholar-vault-research-loop` for a focused post-import improvement cycle that reads PDFs, refines cards, creates metacards, and rebuilds generated views.
 - Use `$scholar-vault-synthesize` when writing cross-paper synthesis notes under `syntheses/`.
 - Use `$scholar-vault-refine-card` when safely improving touched `papers/*.md` cards.

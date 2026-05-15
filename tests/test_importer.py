@@ -881,7 +881,7 @@ def test_rebuild_rerenders_existing_paper_cards_with_latest_template(tmp_path: P
     rendered = (paths.papers / "quick-access.md").read_text(encoding="utf-8")
     assert summary["papers"] == 1
     assert summary["paper_cards_written"] == 1
-    assert summary["index_files_written"] == 19
+    assert summary["index_files_written"] == 21
     assert summary["export_files_written"] == 4
     assert "## Quick access" in rendered
     assert "[Open local PDF](../pdfs/quick-access.pdf)" in rendered
@@ -1353,7 +1353,7 @@ def test_rebuild_writes_dashboards_search_index_and_semantic_neighbors(tmp_path:
     semantic = json.loads((paths.exports / "semantic-neighbors.json").read_text(encoding="utf-8"))
     flow_a = next(row for row in semantic["papers"] if row["citekey"] == "flowa")
 
-    assert first_summary["index_files_written"] == 19
+    assert first_summary["index_files_written"] == 21
     assert first_summary["export_files_written"] == 4
     assert "Scholar Vault Dashboard" in snapshots[paths.indexes / "dashboard.md"]
     assert "[Reading queue](reading-queue.md)" in snapshots[paths.indexes / "dashboard.md"]

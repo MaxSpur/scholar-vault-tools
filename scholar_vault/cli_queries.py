@@ -104,7 +104,8 @@ def _print_query_status(summary: dict[str, object]) -> None:
     counts = summary.get("counts") or {}
     console.print(
         "Linked papers={linked_papers}, runs={linked_runs}, syntheses={linked_syntheses}, "
-        "unread papers={unread_linked_papers}.".format(**counts)
+        "unread papers={unread_linked_papers}, "
+        "uncompiled papers={uncompiled_linked_papers}.".format(**counts)
     )
     _print_issue_counts("Query Status Issues", summary.get("issue_counts") or {})
 

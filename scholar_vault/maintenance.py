@@ -6,6 +6,7 @@ from typing import Any
 
 from .dashboards import _artifacts_without_sources, _render_command_block, _topic_opportunities
 from .diagnostics import doctor_vault, notes_missing, pdf_doctor
+from .digests import compile_status_summary
 from .models import SourceCard
 from .obsidian import _collect_research_artifacts, _markdown_table
 from .render import group_cards_by_topic
@@ -27,6 +28,7 @@ def _render_maintenance_report(
     status_summary: dict[str, Any],
     pdf_summary: dict[str, Any],
     notes_summary: dict[str, Any],
+    compile_summary: dict[str, Any],
     artifacts: dict[str, list[dict[str, Any]]],
     topic_cards: dict[str, list[SourceCard]],
 ) -> str:
@@ -110,6 +112,30 @@ def _render_maintenance_report(
                 for row in notes_summary.get("missing_cards", [])[:50]
             ],
             empty="No selected attached papers are missing PDF reading notes.",
+        ),
+        "",
+        "## Compile Queue",
+        "",
+        *_report_table(
+            ["Status", "Count"],
+            [[key, value] for key, value in (compile_summary.get("counts") or {}).items()],
+            empty="No compile status rows.",
+        ),
+        "",
+        *_report_table(
+            ["Paper", "Citekey", "Status", "Digest", "Issues"],
+            [
+                [
+                    row.get("paper"),
+                    row.get("citekey"),
+                    row.get("effective_status"),
+                    row.get("paper_digest"),
+                    "; ".join(row.get("issues") or []),
+                ]
+                for row in (compile_summary.get("papers") or [])
+                if row.get("needs_action")
+            ][:50],
+            empty="No paper digests are currently uncompiled, draft, stale, or invalid.",
         ),
         "",
         "## Enrichment Issues",
@@ -215,6 +241,8 @@ def _render_maintenance_report(
                 "scholar-vault status --vault /path/to/vault --json",
                 "scholar-vault pdf-doctor --vault /path/to/vault --json",
                 'scholar-vault notes-missing --vault /path/to/vault --heading "PDF reading notes"',
+                "scholar-vault compile status --vault /path/to/vault --json",
+                "scholar-vault compile doctor --vault /path/to/vault --json",
                 "scholar-vault enrich --vault /path/to/vault --ui",
                 "scholar-vault topic-map --vault /path/to/vault --preset prompt-boilerplate",
                 (
@@ -276,6 +304,7 @@ def maintenance_report(
     pdf_summary = status_summary.get("pdfs") or pdf_doctor(paths.vault, staging_path=staging_path)
     notes_summary = notes_missing(paths.vault, heading="PDF reading notes")
     cards = load_source_cards(paths)
+    compile_summary = compile_status_summary(paths, cards=cards)
     topic_cards = group_cards_by_topic(cards)
     artifacts = _collect_research_artifacts(paths)
     report_path = paths.indexes / "maintenance-report.md"
@@ -287,6 +316,7 @@ def maintenance_report(
             status_summary=status_summary,
             pdf_summary=pdf_summary,
             notes_summary=notes_summary,
+            compile_summary=compile_summary,
             artifacts=artifacts,
             topic_cards=topic_cards,
         ),
@@ -309,6 +339,7 @@ def maintenance_report(
         "paper_cards_modified": 0,
         "counts": {
             "reading_queue": notes_summary.get("missing", 0),
+            "compile_needs_action": compile_summary.get("needs_action", 0),
             "metadata_issue_rows": _metadata_issue_count(status_summary),
             "candidate_results_without_cards": len(
                 status_summary.get("candidate_results_without_cards", [])

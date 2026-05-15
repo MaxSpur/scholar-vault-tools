@@ -35,12 +35,15 @@ def _artifact_search_rows(paths: VaultPaths, folder: str) -> list[dict[str, str]
         if not _should_index_artifact_path(folder, path):
             continue
         frontmatter, body = read_frontmatter_markdown(path)
+        sources = _as_string_list(frontmatter.get("sources"))
+        if folder == "paper-digests" and frontmatter.get("paper"):
+            sources = _as_string_list(frontmatter.get("paper")) + sources
         rows.append(
             {
                 "path": ensure_relative(path, paths.vault),
                 "title": _artifact_title(path, frontmatter, body),
                 "type": str(frontmatter.get("type") or ARTIFACT_DEFAULT_TYPES.get(folder, "note")),
-                "sources": ", ".join(_as_string_list(frontmatter.get("sources"))),
+                "sources": ", ".join(sources),
                 "text": _compact_text(body, limit=900),
             }
         )
@@ -86,6 +89,7 @@ def render_search_index(paths: VaultPaths, cards: list[SourceCard]) -> str:
             lines.append(f"- pdf_reading_notes: {reading_notes}")
         lines.append("")
     for folder, title in [
+        ("paper-digests", "Paper Digests"),
         ("concepts", "Concepts"),
         ("syntheses", "Syntheses"),
         ("tasks", "Tasks"),
