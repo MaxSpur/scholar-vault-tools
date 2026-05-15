@@ -229,6 +229,7 @@ def render_vault_readme() -> str:
         "compiled source digests live in `paper-digests/`, canonical evidence PDFs live in "
         "`pdfs/`, Scholar Labs runs live in `runs/`, durable agent-written "
         "concepts/syntheses/tasks/queries/projects/proposals live in their named folders, "
+        "typed improvement state lives in `tasks/queue/`, `_operations/`, and `_feedback/`, "
         "and derived navigation lives in "
         "`bases/`, `_indexes/`, `_exports/`, `llms.txt`, and `llms-full.txt`.\n"
     )
@@ -268,6 +269,8 @@ def render_llms_txt() -> str:
         "- Concepts and method cards: concepts/ and _indexes/concepts.md\n"
         "- Synthesis notes: syntheses/ and _indexes/syntheses.md\n"
         "- Open questions and research gaps: tasks/ and _indexes/tasks.md\n"
+        "- Typed self-improvement queue: tasks/queue/ and _indexes/self-improvement.md\n"
+        "- Operation and feedback records: _operations/ and _feedback/\n"
         "- Query workbench notes: queries/ and _indexes/queries.md\n"
         "- Project workspaces: projects/ and _indexes/projects.md\n"
         "- Proposal workspaces: proposals/ and _indexes/proposals.md\n"
@@ -324,6 +327,7 @@ def render_llms_full(
             "- _indexes/search-index.md",
             "- _indexes/queries.md",
             "- _indexes/projects.md",
+            "- _indexes/self-improvement.md",
             "- bases/",
             "- _exports/semantic-neighbors.json",
             "",

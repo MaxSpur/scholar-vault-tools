@@ -166,9 +166,15 @@ scholar-labs-vault/
   concepts/
   syntheses/
   tasks/
+    queue/
   queries/
   projects/
   proposals/
+  _operations/
+    log.md
+    runs/
+  _feedback/
+    ratings/
   bases/
     papers.base
     queries.base
@@ -197,6 +203,7 @@ scholar-labs-vault/
     queries.md
     projects.md
     proposals.md
+    self-improvement.md
   _exports/
     library.bib
     library.json
@@ -573,6 +580,16 @@ actionable rows such as ambiguous metadata or missing keywords.
 `tasks/<date>-maintenance.md` triage note. It composes the existing status,
 PDF doctor, reading queue, enrichment, candidate backlog, staging, topic-noise,
 concept, and synthesis checks without modifying paper cards or run data.
+With `--write-queue`, it also writes typed maintenance queue items under
+`tasks/queue/*.yaml` using stable keys so repeated reports do not duplicate the
+same work.
+
+`queue`, `operations`, `feedback`, and `tools-task` provide the typed
+self-improvement substrate. Queue items live under `tasks/queue/`, operation
+records live under `_operations/runs/` with an append-only `_operations/log.md`,
+feedback ratings live under `_feedback/ratings/`, and `tools-task create`
+creates `improve_tool` queue items for the `scholar-vault-tools` repo without
+editing that repo.
 
 `notes-missing` is read-only. It lists active, attached paper cards whose
 `## Notes` section does not contain a requested subheading, for example

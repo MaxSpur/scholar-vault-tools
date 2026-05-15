@@ -25,6 +25,7 @@ from .render import (
     render_zotero_migration,
 )
 from .search_index import render_search_index
+from .self_improvement import write_self_improvement_dashboard
 from .sources import (
     VaultPaths,
     ensure_relative,
@@ -232,6 +233,7 @@ def _rebuild_indexes(
         artifacts,
         topic_cards,
     )
+    self_improvement_dashboard = write_self_improvement_dashboard(paths.vault)
     write_text(paths.indexes / "search-index.md", render_search_index(paths, cards))
     _manual_save_step(progress, "Writing LLM context files")
     write_text(paths.vault / "llms.txt", render_llms_txt())
@@ -260,7 +262,8 @@ def _rebuild_indexes(
         "cards_normalized": cards_normalized,
         "pdf_filenames_normalized": pdf_filenames_normalized,
         "cross_run_links_synced": cross_run_links_synced,
-        "index_files_written": 6 + len(ARTIFACT_INDEXES) + dashboard_files_written + 1,
+        "index_files_written": 7 + len(ARTIFACT_INDEXES) + dashboard_files_written + 1,
+        "self_improvement_dashboard_changed": int(self_improvement_dashboard["changed"]),
         "llm_files_written": 2,
         "export_files_written": 4,
         "topic_pages_written": len(topic_cards),

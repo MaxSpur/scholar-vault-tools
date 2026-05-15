@@ -388,14 +388,19 @@ def _base_documents() -> dict[str, dict[str, Any]]:
             ],
         },
         "self-improvement.base": {
-            "filters": {"and": ['file.ext == "md"']},
+            "filters": {"and": ['file.ext == "md" || file.ext == "yaml"']},
             "properties": {
                 "file.name": {"displayName": "File"},
                 "title": {"displayName": "Title"},
                 "type": {"displayName": "Type"},
+                "kind": {"displayName": "Kind"},
                 "status": {"displayName": "Status"},
                 "review_status": {"displayName": "Review"},
                 "priority": {"displayName": "Priority"},
+                "verdict": {"displayName": "Verdict"},
+                "target_type": {"displayName": "Target type"},
+                "created_at": {"displayName": "Created"},
+                "updated_at": {"displayName": "Updated"},
                 "file.mtime": {"displayName": "Changed"},
             },
             "views": [
@@ -404,39 +409,48 @@ def _base_documents() -> dict[str, dict[str, Any]]:
                     "name": "Open queue items",
                     "filters": {
                         "and": [
-                            'file.inFolder("tasks")',
-                            'status == "open" || status == "active"',
+                            'file.inFolder("tasks/queue")',
+                            (
+                                'status == "open" || status == "planned" || '
+                                'status == "running" || status == "drafted" || '
+                                'status == "blocked"'
+                            ),
                         ]
                     },
-                    "order": ["file.name", "title", "status", "priority", "file.mtime"],
+                    "order": [
+                        "file.name",
+                        "title",
+                        "kind",
+                        "status",
+                        "priority",
+                        "updated_at",
+                    ],
                 },
                 {
                     "type": "table",
                     "name": "Tool-improvement tasks",
                     "filters": {
                         "and": [
-                            'file.inFolder("tasks")',
-                            (
-                                'file.hasTag("tool-improvement") || '
-                                'file.name.lower().contains("tool")'
-                            ),
+                            'file.inFolder("tasks/queue")',
+                            'kind == "improve_tool"',
+                            'status != "done" && status != "rejected"',
                         ]
                     },
-                    "order": ["file.name", "title", "status", "review_status", "file.mtime"],
+                    "order": ["file.name", "title", "status", "priority", "updated_at"],
                 },
                 {
                     "type": "table",
                     "name": "Feedback needing action",
                     "filters": {
                         "and": [
+                            'file.inFolder("_feedback/ratings")',
                             (
-                                'review_status == "needs_fix" || type == "feedback" '
-                                '|| file.hasTag("feedback")'
+                                'verdict == "needs_fix" || verdict == "rejected" '
+                                '|| verdict == "stale"'
                             ),
-                            'status != "archived" && status != "done"',
                         ]
                     },
-                    "order": ["file.name", "title", "type", "status", "review_status"],
+                    "order": ["file.name", "target", "target_type", "verdict", "created_at"],
                 },
             ],
         },

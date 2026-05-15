@@ -14,6 +14,9 @@
   scaffold, map, audit, link helpers, and the project workspace UI launcher.
 - `scholar_vault/cli_queries.py`: `query ...` command group for durable
   research-query notes and query-to-run/paper/synthesis links.
+- `scholar_vault/cli_self_improvement.py`: `queue ...`, `operations ...`,
+  `feedback ...`, and `tools-task ...` command groups for typed
+  self-improvement state.
 - `scholar_vault/cli_bases.py`: `bases ...` command group for generated
   Obsidian Bases initialization, rebuild, and doctor validation.
 - `scholar_vault/cli_compile.py`: `compile ...` command group for durable
@@ -32,6 +35,10 @@
 - `scholar_vault/diagnostics.py`: read-only status/doctor, `pdf-doctor`, and `notes-missing` reports.
 - `scholar_vault/dashboards.py`: generated Markdown dashboards under `_indexes/`, including paper status, reading queue, metadata issues, PDF issues, and synthesis dashboards.
 - `scholar_vault/maintenance.py`: `maintenance-report` composition and generated maintenance task notes.
+- `scholar_vault/self_improvement.py`: schema-backed queue, operation,
+  feedback, tool-improvement, and self-improvement dashboard helpers. It writes
+  `tasks/queue/*.yaml`, `_operations/log.md`, `_operations/runs/*.yaml`,
+  `_feedback/ratings/*.yaml`, and `_indexes/self-improvement.md`.
 - `scholar_vault/topics.py`: topic-map reports, prompt-boilerplate cleanup presets, topic label normalization, and topic frontmatter mutation.
 - `scholar_vault/search_index.py`: `_indexes/search-index.md` generation for plain-text Obsidian/agent search.
 - `scholar_vault/neighbors.py`: deterministic `_exports/semantic-neighbors.json` generation.
@@ -83,7 +90,19 @@
 - `pdf-doctor`: read-only PDF inventory report for `pdfs/` and the optional staging folder. It flags orphan vault PDFs, missing card PDF files, duplicate hashes, duplicate-style filenames, repeated historical unmatched staged filenames, staged files already present in the vault by hash, and non-duplicate PDFs still actionable in staging.
 - `git-summary`: read-only Git status summary for a vault. It groups changed files by top-level path and classifies them as canonical, generated, or other so rebuild-sized diffs can be reviewed without reading every generated file body.
 - `notes-missing`: read-only paper-card report for selected/attached cards that lack a requested notes subheading such as `PDF reading notes`. It is meant to produce PDF-reading queues for actual vault improvement work.
-- `maintenance-report`: read-only triage composition that writes `_indexes/maintenance-report.md` and `tasks/<date>-maintenance.md` from the current `status`, `pdf-doctor`, `notes-missing`, enrichment, staging, topic-noise, concept, synthesis, and task signals without mutating paper cards, PDFs, run manifests, or metadata.
+- `maintenance-report`: read-only triage composition that writes `_indexes/maintenance-report.md` and `tasks/<date>-maintenance.md` from the current `status`, `pdf-doctor`, `notes-missing`, enrichment, staging, topic-noise, concept, synthesis, and task signals without mutating paper cards, PDFs, run manifests, or metadata. With `--write-queue`, it additionally writes duplicate-resistant typed queue items under `tasks/queue/*.yaml`.
+- `queue list/add/show/plan/close/doctor`: typed improvement queue commands.
+  Queue records are YAML files under `tasks/queue/` and use stable keys where a
+  producer can identify repeated work.
+- `operations log/list/show/doctor`: append-only operation records. `log`
+  writes `_operations/runs/<operation_id>.yaml` and appends a Markdown summary
+  to `_operations/log.md`.
+- `feedback rate/list/report/doctor`: durable ratings for generated artifacts,
+  prompts, queries, or tool behavior. Reports surface feedback needing action
+  and repeated failure themes without mutating canonical knowledge.
+- `tools-task create`: converts feedback or a direct problem statement into an
+  `improve_tool` queue item for the `scholar-vault-tools` repository. It
+  creates task artifacts only; it does not edit another repository.
 - `concept-index`: regenerates `_indexes/concepts.md` from durable `concepts/*.md` metacards and refreshes `llms.txt` / `llms-full.txt` without a full card/runs/topics rebuild.
 - `topic-map`: read-only topic-frequency/noise report by default. With a YAML mapping, or with `--preset prompt-boilerplate`, it can dry-run or `--apply` exact topic frontmatter removals/renames on canonical `papers/*.md` cards, then rebuild derived topic pages and indexes.
 - `project scaffold/list/map/link-*` / `project audit` / `project ui`: lightweight project workspace commands for `projects/<slug>/index.md`. Projects are lenses over shared papers, runs, concepts, syntheses, tasks, and optional proposals; link commands update project frontmatter without duplicating paper cards, refresh only project navigation, `map` writes `project-map.md` including manually linked proposal paths, and `audit` is read-only. The project UI is a thin desktop wrapper over scaffold, all project link commands, map, audit, and list behavior.
@@ -140,7 +159,11 @@
 - Staging scan cache: `.scholar-vault-pdf-scan-cache` beside staged PDFs, keyed by filename plus size/mtime and ignored by JSON export discovery.
 - Raw citation cache: `raw/metadata/<citekey>/`
 - Durable query workbenches: `queries/<slug>.md`
-- Derived indexes and exports: `_indexes/`, `_exports/`, `llms.txt`, `llms-full.txt`. The generated Obsidian-facing navigation layer includes `_indexes/dashboard.md`, `paper-status.md`, `reading-queue.md`, `compile-dashboard.md`, `metadata-issues.md`, `pdf-issues.md`, `synthesis-dashboard.md`, `search-index.md`, and `_exports/semantic-neighbors.json`.
+- Typed queue items: `tasks/queue/*.yaml`
+- Append-only operation log: `_operations/log.md`
+- Operation records: `_operations/runs/*.yaml`
+- Feedback ratings: `_feedback/ratings/*.yaml`
+- Derived indexes and exports: `_indexes/`, `_exports/`, `llms.txt`, `llms-full.txt`. The generated Obsidian-facing navigation layer includes `_indexes/dashboard.md`, `paper-status.md`, `reading-queue.md`, `compile-dashboard.md`, `metadata-issues.md`, `pdf-issues.md`, `synthesis-dashboard.md`, `search-index.md`, `self-improvement.md`, and `_exports/semantic-neighbors.json`.
 - Generated Obsidian Bases: `bases/*.base`. Bases are a view layer over
   existing frontmatter, file links, and canonical records; they are not an
   alternative data model.

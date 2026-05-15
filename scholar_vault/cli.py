@@ -23,6 +23,7 @@ from . import cli_bases as _cli_bases
 from . import cli_compile as _cli_compile
 from . import cli_projects as _cli_projects
 from . import cli_queries as _cli_queries
+from . import cli_self_improvement as _cli_self_improvement
 from . import cli_skills as _cli_skills
 from .bibliography import (
     bibtex_doctor,
@@ -75,16 +76,24 @@ from .topics import apply_topic_map, topic_map_report, topic_preset_mapping
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
 bases_app = _cli_bases.bases_app
 compile_app = _cli_compile.compile_app
+feedback_app = _cli_self_improvement.feedback_app
+operations_app = _cli_self_improvement.operations_app
 project_app = _cli_projects.project_app
 proposal_sprint_app = typer.Typer(help="Proposal sprint workspace helpers.")
+queue_app = _cli_self_improvement.queue_app
 query_app = _cli_queries.query_app
 skills_app = _cli_skills.skills_app
+tools_task_app = _cli_self_improvement.tools_task_app
 app.add_typer(bases_app, name="bases")
 app.add_typer(compile_app, name="compile")
+app.add_typer(feedback_app, name="feedback")
+app.add_typer(operations_app, name="operations")
 app.add_typer(project_app, name="project")
 app.add_typer(proposal_sprint_app, name="proposal-sprint")
+app.add_typer(queue_app, name="queue")
 app.add_typer(query_app, name="query")
 app.add_typer(skills_app, name="skills")
+app.add_typer(tools_task_app, name="tools-task")
 console = Console()
 
 # Compatibility names for callers that imported command functions from scholar_vault.cli.
@@ -122,6 +131,21 @@ query_link_run_command = _cli_queries.query_link_run_command
 query_link_paper_command = _cli_queries.query_link_paper_command
 query_link_synthesis_command = _cli_queries.query_link_synthesis_command
 query_status_command = _cli_queries.query_status_command
+queue_list_command = _cli_self_improvement.queue_list_command
+queue_add_command = _cli_self_improvement.queue_add_command
+queue_show_command = _cli_self_improvement.queue_show_command
+queue_plan_command = _cli_self_improvement.queue_plan_command
+queue_close_command = _cli_self_improvement.queue_close_command
+queue_doctor_command = _cli_self_improvement.queue_doctor_command
+operations_log_command = _cli_self_improvement.operations_log_command
+operations_list_command = _cli_self_improvement.operations_list_command
+operations_show_command = _cli_self_improvement.operations_show_command
+operations_doctor_command = _cli_self_improvement.operations_doctor_command
+feedback_rate_command = _cli_self_improvement.feedback_rate_command
+feedback_list_command = _cli_self_improvement.feedback_list_command
+feedback_report_command = _cli_self_improvement.feedback_report_command
+feedback_doctor_command = _cli_self_improvement.feedback_doctor_command
+tools_task_create_command = _cli_self_improvement.tools_task_create_command
 
 
 def _fish_completion_path() -> Path:
@@ -1656,8 +1680,14 @@ def _print_concept_index(summary: dict[str, Any]) -> None:
 
 def _print_maintenance_report(summary: dict[str, Any]) -> None:
     counts = summary.get("counts") or {}
+    queue = summary.get("queue") or {}
     console.print(f"Wrote maintenance report: {summary.get('report')}")
     console.print(f"Wrote maintenance task: {summary.get('task')}")
+    if queue:
+        console.print(
+            "Wrote maintenance queue items: "
+            f"created={queue.get('created', 0)}, unchanged={queue.get('unchanged', 0)}."
+        )
     console.print(
         "Queues: "
         f"reading={counts.get('reading_queue', 0)}, "
@@ -2930,11 +2960,19 @@ def concept_index_command(
 def maintenance_report_command(
     vault: VaultArg = None,
     staging: StagingArg = None,
+    write_queue: Annotated[
+        bool,
+        typer.Option(
+            "--write-queue",
+            help="Write typed queue items for maintenance findings with stable keys.",
+        ),
+    ] = False,
     json_output: JsonOutputArg = False,
 ) -> None:
     summary = maintenance_report(
         _resolve_vault(vault),
         staging_path=_optional_staging_path(staging),
+        write_queue=write_queue,
     )
     if json_output:
         _print_json(summary)

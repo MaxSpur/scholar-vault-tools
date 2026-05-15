@@ -100,3 +100,7 @@
 - Staging-side caches should not use a `.json` suffix. `import-labs` discovers the newest top-level JSON export, so cache files need a hidden non-JSON name.
 - Rebuild must rerender generated paper Markdown when templates change. Metadata-only rebuilds leave old body layout problems such as missing Quick access sections in existing cards.
 - PyYAML parses unquoted timestamp scalars into `datetime`/`date` objects. Normalize frontmatter-loaded date values back to ISO strings before Pydantic model validation.
+- Self-improvement state should be typed sidecar state, not silent edits to
+  canonical research records. Queue items, operations, and feedback can drive
+  follow-up work, but concepts, syntheses, and paper cards still require
+  explicit evidence-grounded commands or user/agent edits.

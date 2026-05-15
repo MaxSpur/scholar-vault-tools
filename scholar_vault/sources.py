@@ -106,12 +106,17 @@ class VaultPaths:
     concepts: Path
     syntheses: Path
     tasks: Path
+    task_queue: Path
     queries: Path
     projects: Path
     proposals: Path
     bases: Path
     indexes: Path
     exports: Path
+    operations: Path
+    operation_runs: Path
+    feedback: Path
+    feedback_ratings: Path
 
     @classmethod
     def from_root(cls, vault: Path | str) -> VaultPaths:
@@ -136,12 +141,17 @@ class VaultPaths:
             concepts=root / "concepts",
             syntheses=root / "syntheses",
             tasks=root / "tasks",
+            task_queue=root / "tasks" / "queue",
             queries=root / "queries",
             projects=root / "projects",
             proposals=root / "proposals",
             bases=root / "bases",
             indexes=indexes,
             exports=exports,
+            operations=root / "_operations",
+            operation_runs=root / "_operations" / "runs",
+            feedback=root / "_feedback",
+            feedback_ratings=root / "_feedback" / "ratings",
         )
 
     def ensure(self) -> None:
@@ -162,12 +172,17 @@ class VaultPaths:
             self.concepts,
             self.syntheses,
             self.tasks,
+            self.task_queue,
             self.queries,
             self.projects,
             self.proposals,
             self.bases,
             self.indexes,
             self.exports,
+            self.operations,
+            self.operation_runs,
+            self.feedback,
+            self.feedback_ratings,
         ):
             path.mkdir(parents=True, exist_ok=True)
 

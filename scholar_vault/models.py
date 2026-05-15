@@ -27,6 +27,30 @@ AbstractStatus = Literal[
     "unresolved",
     "manual_lock",
 ]
+QueueKind = Literal[
+    "compile_paper",
+    "update_synthesis",
+    "check_contradiction",
+    "discover_sources",
+    "scholar_labs_prompt",
+    "improve_tool",
+    "review_feedback",
+    "lint_fix",
+]
+QueueStatus = Literal["open", "planned", "running", "drafted", "blocked", "done", "rejected"]
+QueuePriority = Literal["low", "normal", "high"]
+QueueCreatedBy = Literal["user", "import", "lint", "agent", "automation", "feedback"]
+RequiredEvidence = Literal["pdf", "metadata", "web", "none"]
+FeedbackTargetType = Literal[
+    "paper_digest",
+    "synthesis",
+    "concept",
+    "task",
+    "query",
+    "prompt_pack",
+    "tool_behavior",
+]
+FeedbackVerdict = Literal["useful", "needs_fix", "rejected", "stale", "excellent"]
 
 
 class Link(BaseModel):
@@ -298,6 +322,141 @@ class ImportLog(BaseModel):
     command: str
     created_at: str
     entries: list[ImportLogEntry] = Field(default_factory=list)
+
+
+class ToolImprovementTask(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_repo: str = "scholar-vault-tools"
+    problem: str = ""
+    reproduction: str = ""
+    expected_behavior: str = ""
+    actual_behavior: str = ""
+    proposed_cli_change: str = ""
+    tests_to_add: list[str] = Field(default_factory=list)
+
+
+class QueueItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    title: str
+    kind: QueueKind
+    status: QueueStatus = "open"
+    priority: QueuePriority = "normal"
+    created_at: str
+    updated_at: str
+    created_by: QueueCreatedBy = "user"
+    project: str | None = None
+    query: str | None = None
+    citekeys: list[str] = Field(default_factory=list)
+    runs: list[str] = Field(default_factory=list)
+    files: list[str] = Field(default_factory=list)
+    required_evidence: RequiredEvidence = "none"
+    success_criteria: str = ""
+    notes: str = ""
+    stable_key: str | None = None
+    linked_feedback: list[str] = Field(default_factory=list)
+    linked_operations: list[str] = Field(default_factory=list)
+    tool_improvement: ToolImprovementTask | None = None
+
+    @field_validator(
+        "citekeys",
+        "runs",
+        "files",
+        "linked_feedback",
+        "linked_operations",
+        mode="before",
+    )
+    @classmethod
+    def coerce_string_lists(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item) for item in value if str(item).strip()]
+        if isinstance(value, str) and value.strip():
+            return [value.strip()]
+        return []
+
+    @field_validator("created_at", "updated_at", mode="before")
+    @classmethod
+    def coerce_timestamps(cls, value: object) -> str:
+        if isinstance(value, str):
+            return value
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        return str(value)
+
+
+class OperationRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation_id: str
+    kind: str
+    started_at: str
+    finished_at: str | None = None
+    agent: str | None = None
+    model: str | None = None
+    command: str | None = None
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    outputs: dict[str, Any] = Field(default_factory=dict)
+    files_changed: list[str] = Field(default_factory=list)
+    evidence_used: list[str] = Field(default_factory=list)
+    checks_run: list[str] = Field(default_factory=list)
+    result: str = "logged"
+    linked_queue_items: list[str] = Field(default_factory=list)
+    linked_feedback: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "files_changed",
+        "evidence_used",
+        "checks_run",
+        "linked_queue_items",
+        "linked_feedback",
+        mode="before",
+    )
+    @classmethod
+    def coerce_record_lists(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item) for item in value if str(item).strip()]
+        if isinstance(value, str) and value.strip():
+            return [value.strip()]
+        return []
+
+    @field_validator("started_at", "finished_at", mode="before")
+    @classmethod
+    def coerce_timestamps(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        return str(value)
+
+
+class FeedbackRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    target: str
+    target_type: FeedbackTargetType
+    verdict: FeedbackVerdict
+    notes: str = ""
+    created_at: str
+    linked_operation: str | None = None
+    linked_queue_item: str | None = None
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def coerce_timestamp(cls, value: object) -> str:
+        if isinstance(value, str):
+            return value
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        return str(value)
 
 
 class PdfCandidate(BaseModel):

@@ -295,6 +295,7 @@ def maintenance_report(
     *,
     staging_path: Path | str | None = None,
     report_date: str | None = None,
+    write_queue: bool = False,
 ) -> dict[str, Any]:
     paths = VaultPaths.from_root(vault)
     paths.indexes.mkdir(parents=True, exist_ok=True)
@@ -331,11 +332,23 @@ def maintenance_report(
         ),
     )
     topics = status_summary.get("topics") or {}
+    queue_summary = None
+    if write_queue:
+        queue_summary = _write_maintenance_queue_items(
+            paths=paths,
+            notes_summary=notes_summary,
+            compile_summary=compile_summary,
+            status_summary=status_summary,
+            pdf_summary=pdf_summary,
+            topics=topics,
+            artifacts=artifacts,
+        )
     return {
         "vault": str(paths.vault),
         "date": current_date,
         "report": ensure_relative(report_path, paths.vault),
         "task": ensure_relative(task_path, paths.vault),
+        "queue": queue_summary,
         "paper_cards_modified": 0,
         "counts": {
             "reading_queue": notes_summary.get("missing", 0),
@@ -356,4 +369,155 @@ def maintenance_report(
                 _artifacts_without_sources(artifacts.get("syntheses") or [])
             ),
         },
+    }
+
+
+def _write_maintenance_queue_items(
+    *,
+    paths: VaultPaths,
+    notes_summary: dict[str, Any],
+    compile_summary: dict[str, Any],
+    status_summary: dict[str, Any],
+    pdf_summary: dict[str, Any],
+    topics: dict[str, Any],
+    artifacts: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    from .self_improvement import create_queue_item, write_self_improvement_dashboard
+
+    specs: list[dict[str, Any]] = []
+    missing_reading = notes_summary.get("missing_cards") or []
+    if missing_reading:
+        specs.append(
+            {
+                "kind": "compile_paper",
+                "title": "Read attached PDFs missing PDF reading notes",
+                "stable_key": "maintenance:reading-notes",
+                "required_evidence": "pdf",
+                "success_criteria": "Each linked paper has PDF-grounded reading notes.",
+                "notes": f"{len(missing_reading)} attached paper(s) are missing reading notes.",
+                "citekeys": [row.get("citekey") for row in missing_reading if row.get("citekey")],
+                "files": [row.get("paper") for row in missing_reading if row.get("paper")],
+            }
+        )
+    compile_rows = [
+        row for row in (compile_summary.get("papers") or []) if row.get("needs_action")
+    ]
+    if compile_rows:
+        specs.append(
+            {
+                "kind": "compile_paper",
+                "title": "Compile or repair paper digest drafts",
+                "stable_key": "maintenance:compile-digests",
+                "required_evidence": "pdf",
+                "success_criteria": (
+                    "Paper digest records are compiled, reviewed, or intentionally deferred."
+                ),
+                "notes": f"{len(compile_rows)} paper digest row(s) need action.",
+                "citekeys": [row.get("citekey") for row in compile_rows if row.get("citekey")],
+                "files": [row.get("paper") for row in compile_rows if row.get("paper")],
+            }
+        )
+    metadata_issues = _metadata_issue_count(status_summary)
+    if metadata_issues:
+        specs.append(
+            {
+                "kind": "lint_fix",
+                "title": "Resolve metadata, citation, abstract, and keyword issues",
+                "stable_key": "maintenance:metadata-issues",
+                "required_evidence": "metadata",
+                "success_criteria": (
+                    "Status and enrichment doctors report no unresolved metadata rows."
+                ),
+                "notes": f"{metadata_issues} metadata issue row(s) were reported.",
+            }
+        )
+    candidate_rows = status_summary.get("candidate_results_without_cards") or []
+    if candidate_rows:
+        specs.append(
+            {
+                "kind": "discover_sources",
+                "title": "Review candidate-only Scholar Labs results",
+                "stable_key": "maintenance:candidate-discovery",
+                "required_evidence": "web",
+                "success_criteria": (
+                    "Candidate-only results are either imported with evidence or "
+                    "intentionally ignored."
+                ),
+                "notes": f"{len(candidate_rows)} candidate result(s) have no canonical paper card.",
+                "runs": [row.get("run_id") for row in candidate_rows if row.get("run_id")],
+            }
+        )
+    staging = pdf_summary.get("staging") or {}
+    actionable_staging = staging.get("actionable_pdf_count") or 0
+    if actionable_staging:
+        specs.append(
+            {
+                "kind": "discover_sources",
+                "title": "Triage actionable staging PDFs",
+                "stable_key": "maintenance:staging-pdfs",
+                "required_evidence": "pdf",
+                "success_criteria": (
+                    "Actionable staging PDFs are attached, imported, or moved aside."
+                ),
+                "notes": (
+                    f"{actionable_staging} staging PDF(s) are not duplicates already in the vault."
+                ),
+            }
+        )
+    noisy_topics = topics.get("noisy") or []
+    if noisy_topics:
+        specs.append(
+            {
+                "kind": "lint_fix",
+                "title": "Clean prompt-boilerplate topic labels",
+                "stable_key": "maintenance:noisy-topics",
+                "required_evidence": "metadata",
+                "success_criteria": (
+                    "Topic-map dry-run no longer reports prompt-boilerplate labels."
+                ),
+                "notes": ", ".join(row.get("topic", "") for row in noisy_topics[:20]),
+            }
+        )
+    synthesis_needs = _artifacts_without_sources(artifacts.get("syntheses") or [])
+    if synthesis_needs:
+        specs.append(
+            {
+                "kind": "update_synthesis",
+                "title": "Add source links to syntheses without enough evidence",
+                "stable_key": "maintenance:synthesis-source-links",
+                "required_evidence": "pdf",
+                "success_criteria": "Syntheses have enough linked source records for their claims.",
+                "notes": f"{len(synthesis_needs)} synthesis note(s) lack source links.",
+                "files": [row.get("path") for row in synthesis_needs if row.get("path")],
+            }
+        )
+
+    created = 0
+    unchanged = 0
+    items: list[dict[str, Any]] = []
+    for spec in specs:
+        summary = create_queue_item(
+            paths.vault,
+            priority="normal",
+            created_by="lint",
+            refresh_dashboard=False,
+            **spec,
+        )
+        created += int(bool(summary.get("created")))
+        unchanged += int(not summary.get("created"))
+        items.append(
+            {
+                "id": summary["id"],
+                "created": summary["created"],
+                "queue_item": summary["queue_item"],
+                "stable_key": spec.get("stable_key"),
+            }
+        )
+    dashboard = write_self_improvement_dashboard(paths.vault)
+    return {
+        "requested": True,
+        "created": created,
+        "unchanged": unchanged,
+        "items": items,
+        "dashboard": dashboard,
     }
