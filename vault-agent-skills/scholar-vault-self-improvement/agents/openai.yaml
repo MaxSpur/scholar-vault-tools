@@ -1,0 +1,4 @@
+agent:
+  display_name: "Scholar Vault Self-Improvement"
+  short_description: "Track queue, operation, feedback, and tool-improvement state"
+  default_prompt: "Use $scholar-vault-self-improvement to inspect or update typed queue items, operation logs, feedback ratings, and scholar-vault-tools improvement requests without treating process state as research evidence."

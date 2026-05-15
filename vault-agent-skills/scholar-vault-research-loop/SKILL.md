@@ -34,7 +34,9 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 6. Create or update metacards when they improve retrieval:
    - `concepts/<slug>.md` for reusable concepts, methods, datasets, visual encodings, evaluation protocols, and terminology.
    - `syntheses/<slug>.md` for cross-paper answers, tensions, and evidence-backed literature review sections.
-   - `tasks/<date>-research-gaps.md` for follow-up reading or missing evidence.
+   - `tasks/<date>-research-gaps.md` for narrative follow-up reading or missing evidence.
+   - Typed queue items via `$scholar-vault-self-improvement` when the follow-up
+     should be tracked, planned, closed, or linked to feedback.
    - Scholar Labs prompt packs via `$scholar-vault-labs-prompts` when the next
      action is a human-run Labs search.
 7. Improve retrieval labels through `topics` only when the PDF evidence supports the label. Use `$scholar-vault-curate-topics` for broad cleanup.

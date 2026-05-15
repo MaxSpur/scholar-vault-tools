@@ -1,4 +1,4 @@
 interface:
   display_name: "Scholar Vault Gap Scout"
-  short_description: "Find next research and metadata gaps"
-  default_prompt: "Use $scholar-vault-gap-scout to identify the next Scholar Vault import, active staging, metadata, and synthesis gaps."
+  short_description: "Find next research, queue, and metadata gaps"
+  default_prompt: "Use $scholar-vault-gap-scout to identify the next Scholar Vault import, active staging, metadata, synthesis, typed queue, and prompt-pack gaps."

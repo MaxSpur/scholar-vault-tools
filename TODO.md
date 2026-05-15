@@ -108,6 +108,8 @@
 - [x] Add PDF-grounded paper digest scaffolding, status/doctor commands, compile dashboard, and a compile-paper vault-agent skill.
 - [x] Add typed self-improvement queue, operation log, feedback records,
   dashboard, and tool-improvement task bridge.
+- [x] Port typed self-improvement workflow guidance into the vault AGENTS
+  template and repository-owned vault-agent skills.
 - [ ] Add an Obsidian setup command that writes safe default graph/search settings, including graph filters that hide generated run/topic/index scaffolding by default.
 - [ ] Reduce paper-card search noise by moving full Scholar Labs prompts out of generated paper cards while preserving run links and run-local provenance.
 - [x] Add a search-facing plain-text index over paper titles, abstracts, summaries, keywords, PDF reading notes, concepts, syntheses, tasks, projects, and proposals without full PDF text.

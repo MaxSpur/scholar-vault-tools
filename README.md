@@ -1237,6 +1237,9 @@ Available skills:
   active staging, metadata, import, and synthesis actions.
 - `$scholar-vault-labs-prompts`: generate, inspect, mark, retire, or link
   Scholar Labs prompt packs while keeping Labs output discovery-only.
+- `$scholar-vault-self-improvement`: inspect or update typed queue items,
+  operation logs, feedback ratings, and `scholar-vault-tools` improvement
+  requests without treating process state as research evidence.
 - `$scholar-vault-read-pdf`: read linked PDFs as the primary evidence and add
   evidence-grounded notes, topics, metadata fixes, syntheses, or metacards.
 - `$scholar-vault-compile-paper`: fill a reusable PDF-grounded
@@ -1253,6 +1256,7 @@ Use $scholar-vault-gap-scout to identify the next import and metadata gaps.
 Use $scholar-vault-synthesize to write a synthesis on OD-flow visualization.
 Use $scholar-vault-curate-topics to propose a cleanup of noisy topics.
 Use $scholar-vault-pdf-triage to inspect current staging PDFs and historical unmatched records.
+Use $scholar-vault-self-improvement to review queue and feedback state.
 Use $scholar-vault-read-pdf to read selected PDFs and refine their cards.
 Use $scholar-vault-compile-paper to compile one paper digest for <citekey>.
 Use $scholar-vault-research-loop to work through this question: <question>.
@@ -1302,8 +1306,11 @@ normal research workflow is:
    connect multiple papers.
 11. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers,
    tensions, and literature-review prose.
-12. Create `tasks/<date>-research-gaps.md` for open questions, unclear
-   evidence, gaps, follow-up reading, or next Scholar Labs prompts.
+12. Create `tasks/<date>-research-gaps.md` for narrative open questions,
+   unclear evidence, gaps, or follow-up reading. Use
+   `$scholar-vault-self-improvement` / `scholar-vault queue ...` for durable
+   typed work items, and use `$scholar-vault-labs-prompts` for next Scholar
+   Labs prompt packs.
 13. For question-centered work, use `queries/<slug>.md` as the workbench note
    and link papers, runs, and syntheses with `scholar-vault query link-*`.
 14. For ongoing workspaces, use `projects/<slug>/index.md` as a lens over

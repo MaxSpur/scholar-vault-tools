@@ -1,6 +1,6 @@
 ---
 name: scholar-vault-orient
-description: Orient an agent inside a Scholar Vault research vault. Use when Codex needs to inspect the vault structure, find relevant canonical papers, Scholar Labs runs, prompt packs, topics, active staging/PDF issues, optional candidate discovery context, metadata issues, or prepare for later synthesis/refinement work without editing files.
+description: Orient an agent inside a Scholar Vault research vault. Use when Codex needs to inspect the vault structure, find relevant canonical papers, Scholar Labs runs, prompt packs, typed queue/feedback state, topics, active staging/PDF issues, optional candidate discovery context, metadata issues, or prepare for later synthesis/refinement work without editing files.
 ---
 
 # Scholar Vault Orient
@@ -28,7 +28,7 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 
 1. Confirm the current folder is a vault root or locate it by finding `config.yaml`, `papers/`, `runs/`, and `llms.txt`.
 2. Read `AGENTS.md` first, then `llms.txt`, then the relevant parts of `llms-full.txt`.
-3. Use `_indexes/papers.md`, `_indexes/topics.md`, `_indexes/missing-pdfs.md`, `_indexes/unmatched.md`, and `_indexes/scholar-labs-prompts.md` as navigation surfaces. Do not scan every PDF.
+3. Use `_indexes/papers.md`, `_indexes/topics.md`, `_indexes/missing-pdfs.md`, `_indexes/unmatched.md`, `_indexes/scholar-labs-prompts.md`, and `_indexes/self-improvement.md` as navigation surfaces. Do not scan every PDF.
 4. Use `rg` over `papers/`, `runs/`, `_indexes/`, and `syntheses/` for user-provided terms, author names, citekeys, topics, and methods.
 5. Read only the paper cards and run notes needed for the question. Prefer canonical `papers/*.md` for source state and `runs/**/*.md` or `runs/**/index.yaml` for Scholar Labs prompt provenance.
 6. Return a concise orientation report with file links, not a long literature review.
@@ -48,6 +48,9 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
   `queries/<slug>/prompt-packs/` or `tasks/scholar-labs-prompts/`. They help the
   user run better Labs searches; they are not evidence and do not create paper
   cards by themselves.
+- Typed queue, operation, and feedback records under `tasks/queue/`,
+  `_operations/`, and `_feedback/` are process state. They help future agents
+  choose and audit work, but they are not scientific evidence.
 - Historical unmatched manifest entries are actionable only when matching non-duplicate PDFs still exist in staging.
 - `enrichment_status: missing` is a diagnostic/stale-or-not-yet-complete state, not automatically a follow-up issue. Prefer `status --json` issue counts and `enrich --ui` actionable rows.
 
@@ -62,6 +65,8 @@ scholar-vault configure
 scholar-vault runs
 scholar-vault labs-prompts list
 scholar-vault labs-prompts doctor --json
+scholar-vault queue list --json
+scholar-vault feedback report --json
 scholar-vault notes-missing --heading "PDF reading notes"
 scholar-vault enrich --dry-run
 scholar-vault match-staging
@@ -77,6 +82,8 @@ When orienting, include:
 - Relevant runs, with run note links and the user-facing run titles.
 - Relevant prompt packs, with status and linked runs when the user is planning
   Scholar Labs follow-up.
+- Relevant queue items or feedback records when the user is planning,
+  auditing, or continuing vault improvement work.
 - Relevant canonical papers, with paper-card links, PDF status, enrichment status, abstract status, and topics.
 - Candidate results only when the user is deciding what to import next, clearly labeled as optional non-canonical discovery context.
 - Unmatched/staged PDF issues only when active, non-duplicate PDFs remain in staging.

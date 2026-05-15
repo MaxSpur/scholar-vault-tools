@@ -1,11 +1,12 @@
 ---
 name: scholar-vault-gap-scout
-description: Scout research, metadata, PDF, and synthesis gaps in a Scholar Vault. Use when Codex is asked what to import next, which PDFs or metadata need attention, which candidate Scholar Labs results deserve follow-up, or what prompt packs should be generated after import and enrichment.
+description: Scout research, metadata, PDF, synthesis, and typed queue gaps in a Scholar Vault. Use when Codex is asked what to import next, which PDFs or metadata need attention, which candidate Scholar Labs results deserve follow-up, which typed queue items should be created, or what prompt packs should be generated after import and enrichment.
 ---
 
 # Scholar Vault Gap Scout
 
-Use this skill to turn vault maintenance and literature gaps into an actionable task note.
+Use this skill to turn vault maintenance and literature gaps into actionable
+task notes, typed queue items, or Scholar Labs prompt-pack recommendations.
 
 ## CLI Environment
 
@@ -31,8 +32,12 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 3. Treat `_indexes/unmatched.md` as historical staging-manifest audit data. Check `scholar-vault pdf-doctor --json` before calling it actionable.
 4. Search `papers/*.md` for `enrichment_status: incomplete`, `citation_status: ambiguous`, `citation_status: unresolved`, `abstract_status: missing`, `abstract_status: ambiguous`, `publication_keywords_status: missing`, and `pdf_status: missing`.
 5. Read relevant `runs/**/index.yaml` or run notes to understand candidate rank, prompt context, and rationale.
-6. Check existing `syntheses/` and `tasks/` if present to avoid duplicating active work.
-7. Write `tasks/<YYYY-MM-DD>-research-gaps.md`. Create `tasks/` if it does not exist.
+6. Check existing `syntheses/`, `tasks/`, `tasks/queue/`, and
+   `_indexes/self-improvement.md` if present to avoid duplicating active work.
+7. Write `tasks/<YYYY-MM-DD>-research-gaps.md` when a narrative report is
+   useful. Use `scholar-vault maintenance-report --write-queue` or
+   `$scholar-vault-self-improvement` / `scholar-vault queue add ...` when the
+   output should be durable typed work.
 8. When the next action is a Google Scholar Labs search, prefer a durable prompt
    pack via `$scholar-vault-labs-prompts` / `scholar-vault labs-prompts generate`
    instead of embedding full prompt text only in the gap report.
@@ -60,6 +65,8 @@ conda activate scholar-vault
 scholar-vault status --json
 scholar-vault pdf-doctor --json
 scholar-vault runs
+scholar-vault maintenance-report --write-queue
+scholar-vault queue list --json
 scholar-vault labs-prompts list
 scholar-vault labs-prompts doctor --json
 scholar-vault match-staging
@@ -103,6 +110,10 @@ created: "<YYYY-MM-DD>"
 - <query/project/gap that should get a prompt pack> - Suggested command:
   `scholar-vault labs-prompts generate --query <slug>` / `--project <slug>` /
   `--from-gaps`
+
+## Typed queue recommendations
+- <gap> - Suggested command:
+  `scholar-vault queue add --kind <kind> --title "..." --required-evidence <pdf|metadata|web|none>`
 ````
 
 Keep tasks concrete enough that a later agent can execute them without rediscovering the whole vault.

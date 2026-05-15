@@ -16,6 +16,10 @@ These instructions apply inside this research vault. They are for agents working
   `tasks/scholar-labs-prompts/` are human-in-the-loop discovery-planning
   artifacts. They help a user run better Google Scholar Labs prompts, but they
   are not evidence and do not create canonical paper cards by themselves.
+- Typed self-improvement state under `tasks/queue/`, `_operations/`, and
+  `_feedback/` tracks work, runs, and ratings. It is process context, not
+  scientific evidence or a replacement for paper cards, PDFs, concepts, or
+  syntheses.
 - Canonical files are `papers/`, `paper-digests/`, `pdfs/`, run
   YAML/manifests under `runs/`, `raw/` inputs, `concepts/`, `syntheses/`,
   `tasks/`, `queries/`, `projects/`, and `proposals/`.
@@ -103,9 +107,13 @@ scholar-vault pdf-doctor --json
 scholar-vault git-summary
 scholar-vault notes-missing --heading "PDF reading notes"
 scholar-vault maintenance-report
+scholar-vault maintenance-report --write-queue
 scholar-vault compile status --json
 scholar-vault labs-prompts list
 scholar-vault labs-prompts doctor --json
+scholar-vault queue list --json
+scholar-vault operations list --json
+scholar-vault feedback report --json
 scholar-vault project list
 scholar-vault runs
 ```
@@ -235,6 +243,49 @@ This records the prompt pack and query on the run, marks the prompt pack
 selected-only import rule: paper cards are still canonical only after an
 accepted PDF, DOI, BibTeX, or manual import path.
 
+## Self-Improvement Queue And Feedback
+
+Use typed self-improvement records when the durable artifact is work tracking,
+workflow memory, feedback, or a tool-improvement request rather than a research
+claim. These records are useful for future agents, but they do not make a
+paper, synthesis, concept, or proposal evidence-grounded.
+
+Useful commands:
+
+```fish
+scholar-vault maintenance-report --write-queue
+scholar-vault queue list --json
+scholar-vault queue add --kind <kind> --title "..." --required-evidence <pdf|metadata|web|none>
+scholar-vault queue show <queue-id> --json
+scholar-vault queue plan <queue-id>
+scholar-vault queue close <queue-id> --status done --notes "..."
+scholar-vault queue doctor --json
+scholar-vault operations log --kind <kind> --message "..." --check "..."
+scholar-vault operations list --json
+scholar-vault operations doctor --json
+scholar-vault feedback rate <target> --target-type <target-type> --verdict <verdict> --notes "..."
+scholar-vault feedback report --json
+scholar-vault feedback doctor --json
+scholar-vault tools-task create --title "..." --problem "..." --test "..."
+```
+
+Supported queue kinds include `compile_paper`, `update_synthesis`,
+`check_contradiction`, `discover_sources`, `scholar_labs_prompt`,
+`improve_tool`, `review_feedback`, and `lint_fix`. Required evidence should
+match the next action: use `pdf` for paper reading or synthesis claims,
+`metadata` for citation/abstract/keyword cleanup, `web` for discovery planning,
+and `none` only for process or tool tasks.
+
+Use `tools-task create` for problems in `scholar-vault-tools` itself. It creates
+an `improve_tool` queue item in the vault; it does not edit the tools
+repository. Use `operations log` for meaningful agent/tool runs that changed
+vault state or closed work, and link queue items or feedback when applicable.
+
+The generated dashboard `_indexes/self-improvement.md` and
+`bases/self-improvement.base` summarize this state. Do not hand-edit those
+generated views; regenerate them with the commands above or `scholar-vault
+rebuild`.
+
 ## Research Workflow
 
 For actual vault improvement after import and enrichment:
@@ -251,7 +302,7 @@ For actual vault improvement after import and enrichment:
 10. Update only touched paper cards with concise `## Notes`.
 11. Create `concepts/<slug>.md` for reusable concepts, methods, algorithms, datasets, visual encodings, evaluation protocols, or terminology.
 12. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers and literature-review prose.
-13. Create `tasks/<date>-research-gaps.md` for open questions, unclear evidence, gaps, or follow-up reading. Use `$scholar-vault-labs-prompts` / `scholar-vault labs-prompts generate ...` for next Scholar Labs prompt packs.
+13. Create `tasks/<date>-research-gaps.md` for narrative open questions, unclear evidence, gaps, or follow-up reading. Use `$scholar-vault-self-improvement` / `scholar-vault queue ...` for durable typed work items, and use `$scholar-vault-labs-prompts` / `scholar-vault labs-prompts generate ...` for next Scholar Labs prompt packs.
 14. Use `queries/<slug>.md` for focused research questions and link papers, runs, and syntheses with `scholar-vault query link-*`.
 15. Run `scholar-vault concept-index` after concept-only edits, `scholar-vault bases rebuild` after query/Base edits, or `scholar-vault rebuild` after broader paper/topic/synthesis/task/project/proposal edits.
 
@@ -335,6 +386,9 @@ matches one of these workflows:
 - Use `$scholar-vault-curate-topics` when cleaning topic labels or prompt-boilerplate topic noise.
 - Use `$scholar-vault-pdf-triage` for active PDF/staging issues before moving or attaching files.
 - Use `$scholar-vault-gap-scout` to write follow-up tasks and research gaps.
+- Use `$scholar-vault-self-improvement` when recording, planning, closing, or
+  reporting typed queue items, operation logs, feedback ratings, or
+  `scholar-vault-tools` improvement requests.
 - Use `$scholar-vault-labs-prompts` when creating, inspecting, marking,
   retiring, or linking Scholar Labs prompt packs.
 - Use `$scholar-vault-pepr-docx` only for PEPR proposal DOCX rendering, references, and pagination checks.
