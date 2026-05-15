@@ -5106,6 +5106,7 @@ def show_skill_sync(
     body.setFont(_summary_font(qt, 11))
     body.setStyleSheet("color: #baffdc;")
     layout.addWidget(body)
+    layout.addSpacing(6)
 
     source_field = qt["QLineEdit"]()
     source_field.setText(str(Path(source).expanduser().resolve()))
@@ -5148,42 +5149,40 @@ def show_skill_sync(
     comparison_row = qt["QHBoxLayout"]()
     comparison_row.setSpacing(10)
 
-    summary_panel = _summary_panel(qt, "#006b45")
-    summary_layout = qt["QVBoxLayout"](summary_panel)
-    summary_layout.setContentsMargins(10, 8, 10, 10)
+    summary_column = qt["QWidget"]()
+    summary_layout = qt["QVBoxLayout"](summary_column)
+    summary_layout.setContentsMargins(0, 0, 0, 0)
     summary_layout.setSpacing(6)
     summary_label = qt["QLabel"]("Roles and comparison details")
     summary_label.setFont(_summary_font(qt, 10, mono=True, bold=True))
-    summary_label.setStyleSheet("color: #8ce7b8; border: none;")
+    summary_label.setStyleSheet("color: #8ce7b8;")
     summary_text = qt["QTextEdit"]()
     summary_text.setReadOnly(True)
     summary_text.setMinimumHeight(120)
-    summary_text.setMaximumHeight(170)
     summary_text.setFont(_summary_font(qt, 10, mono=True))
     summary_text.setStyleSheet(
         "QTextEdit { color: #d7ffe8; background: #00120b; border: 1px solid #006b45; "
         "padding: 8px; }"
     )
-    summary_layout.addWidget(summary_label)
+    summary_layout.addWidget(summary_label, 0)
     summary_layout.addWidget(summary_text, 1)
-    comparison_row.addWidget(summary_panel, 1)
+    comparison_row.addWidget(summary_column, 1)
 
-    skill_panel = _summary_panel(qt, "#69ffad")
-    skill_layout = qt["QVBoxLayout"](skill_panel)
-    skill_layout.setContentsMargins(10, 8, 10, 10)
+    skill_column = qt["QWidget"]()
+    skill_layout = qt["QVBoxLayout"](skill_column)
+    skill_layout.setContentsMargins(0, 0, 0, 0)
     skill_layout.setSpacing(6)
     skill_label = qt["QLabel"]("Skill and AGENTS differences")
     skill_label.setFont(_summary_font(qt, 10, mono=True, bold=True))
-    skill_label.setStyleSheet("color: #69ffad; border: none;")
+    skill_label.setStyleSheet("color: #69ffad;")
     skill_list = qt["QListWidget"]()
     skill_list.setMinimumHeight(120)
-    skill_list.setMaximumHeight(170)
     skill_list.setFont(_summary_font(qt, 10))
     skill_list.setSelectionMode(qt["QListWidget"].SelectionMode.NoSelection)
     skill_list.setSpacing(4)
-    skill_layout.addWidget(skill_label)
+    skill_layout.addWidget(skill_label, 0)
     skill_layout.addWidget(skill_list, 1)
-    comparison_row.addWidget(skill_panel, 1)
+    comparison_row.addWidget(skill_column, 1)
     layout.addLayout(comparison_row, 1)
 
     direction_hint = qt["QLabel"](
@@ -5355,12 +5354,19 @@ def show_skill_sync(
     layout.addWidget(external_panel)
 
     option_row = qt["QHBoxLayout"]()
-    force_box = qt["QCheckBox"]("Allow changed vault skill to overwrite repository copy")
+    option_row.setSpacing(18)
+    force_box = qt["QCheckBox"]("Allow vault overwrite")
     force_box.setFont(_summary_font(qt, 9))
-    archive_box = qt["QCheckBox"](
-        "Archive vault-only target skills during repository -> vault update"
+    force_box.setToolTip(
+        "Allow Pull Selected Into Repository to overwrite an existing differing "
+        "repository copy."
     )
+    archive_box = qt["QCheckBox"]("Archive vault-only on update")
     archive_box.setFont(_summary_font(qt, 9))
+    archive_box.setToolTip(
+        "During Update Vault From Repository, move selected vault-only target skills "
+        "into .sync-backups instead of leaving them installed."
+    )
     archive_box.setStyleSheet("color: #baffdc;")
     option_row.addWidget(force_box)
     option_row.addWidget(archive_box)
@@ -5380,11 +5386,12 @@ def show_skill_sync(
     ]:
         button.setMinimumHeight(34)
         _style_button(button, tone)
-    buttons.addWidget(refresh_button)
+    buttons.addWidget(refresh_button, 0)
+    buttons.addStretch(1)
     buttons.addWidget(adopt_button)
     buttons.addWidget(publish_button)
     buttons.addStretch(1)
-    buttons.addWidget(close_button)
+    buttons.addWidget(close_button, 0)
     layout.addLayout(buttons)
 
     def paths() -> tuple[Path, Path]:
