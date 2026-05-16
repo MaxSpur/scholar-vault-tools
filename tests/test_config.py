@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 import yaml
@@ -14,6 +15,8 @@ from scholar_vault.importer import (
     import_scholar_labs_run,
     initialize_vault,
 )
+
+ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 def _write_export(path: Path, *, prompt: str, exported_at: str) -> Path:
@@ -115,7 +118,8 @@ def test_configure_folder_mode_separate_requires_exports(
     result = CliRunner().invoke(app, ["configure", "--folder-mode", "separate"])
 
     assert result.exit_code != 0
-    assert "--folder-mode separate requires --exports" in result.output
+    output = ANSI_RE.sub("", result.output).replace("\n", " ")
+    assert "--folder-mode separate requires --exports" in output
 
 
 def test_configure_ui_saves_returned_config(

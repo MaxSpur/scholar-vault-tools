@@ -21,6 +21,10 @@
 - A hardening pass can still change vault-facing operator behavior. Before
   calling it done, audit the vault-visible surfaces: `VAULT_AGENTS_TEMPLATE.md`,
   affected `vault-agent-skills/`, README/docs, and smoke/CI coverage.
+- GitHub Linux runners need explicit Qt runtime setup for PySide GUI tests:
+  install the small OpenGL/EGL libraries and run Qt in offscreen mode. CLI
+  tests that inspect Typer/Rich error output should strip ANSI escape codes
+  before matching message text.
 - Compiled paper digests should be durable PDF-grounded artifacts under `paper-digests/`, while paper cards keep compact status, timestamps, and pointers. Scaffolding can create structure, but only an agent/user PDF read should fill claims or mark evidence as grounded.
 - Preserve existing Scholar Labs summaries and provenance when merging later provider BibTeX/CSL or DOI enrichment.
 - Idempotence is easiest when run slugs depend on export metadata and when merges happen before any new card slug is allocated.
