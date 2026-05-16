@@ -678,6 +678,9 @@ def render_self_improvement_dashboard(vault: Path | str, *, now: datetime | None
     operations = _operation_rows(paths)
     feedback = _feedback_rows(paths)
     report = feedback_report(paths.vault)
+    from .discovery import discovery_counts
+
+    discovery_summary = discovery_counts(paths)
     open_by_kind = Counter(
         item.kind for item in queue_items if item.status in OPEN_QUEUE_STATUSES
     )
@@ -701,6 +704,22 @@ def render_self_improvement_dashboard(vault: Path | str, *, now: datetime | None
             ["Kind", "Open items"],
             [[kind, count] for kind, count in sorted(open_by_kind.items())],
             empty="No open queue items.",
+        ),
+        "",
+        "## Discovery candidates",
+        "",
+        "Graph-assisted discovery candidates are prompt-planning context, not evidence or "
+        "canonical paper cards.",
+        "",
+        *_markdown_table(
+            ["Status", "Count"],
+            [
+                [status, count]
+                for status, count in (
+                    discovery_summary.get("discovery_candidate_status") or {}
+                ).items()
+            ],
+            empty="No graph-assisted discovery candidates found.",
         ),
         "",
         "## Stale queue items",

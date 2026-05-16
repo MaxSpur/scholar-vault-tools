@@ -46,14 +46,18 @@ paths.
    - `scholar-vault labs-prompts generate --query <query-slug>`
    - `scholar-vault labs-prompts generate --project <project-slug>`
    - `scholar-vault labs-prompts generate --from-gaps`
-4. Inspect the pack with `scholar-vault labs-prompts show <prompt-pack-id>` and
+4. When the user wants graph-assisted seed curation first, use
+   `scholar-vault discover query --query <query-slug>` or
+   `scholar-vault discover seed --citekey <citekey>`, select/reject candidates,
+   then run `scholar-vault discover to-labs-prompts --query <query-slug>`.
+5. Inspect the pack with `scholar-vault labs-prompts show <prompt-pack-id>` and
    report the strongest prompts and selection guidance to the user.
-5. If the user ran a prompt in Labs but has not imported yet, mark it used:
+6. If the user ran a prompt in Labs but has not imported yet, mark it used:
    `scholar-vault labs-prompts mark-used <prompt-pack-id> --notes "..."`
-6. When a Scholar Labs export from that pack is imported, link provenance with:
+7. When a Scholar Labs export from that pack is imported, link provenance with:
    `scholar-vault import-labs --prompt-pack <prompt-pack-id> --query <query-slug>`
    or after the fact with `scholar-vault labs-prompts link-run <prompt-pack-id> <run-id>`.
-7. Run `scholar-vault labs-prompts doctor --json` after prompt-pack edits or
+8. Run `scholar-vault labs-prompts doctor --json` after prompt-pack edits or
    run-linking work.
 
 ## Optional Seed APIs
@@ -69,6 +73,21 @@ scholar-vault labs-prompts generate --query <query-slug> --seed-api semantic-sch
 Use seed candidates only as suggested titles, citation neighborhoods, and query
 terms for Labs prompt construction. Do not create `papers/*.md` cards from seed
 API output unless the same source later enters through a normal import path.
+
+Durable graph-assisted discovery uses:
+
+```fish
+scholar-vault discover query --query <query-slug> --source openalex,semantic-scholar
+scholar-vault discover seed --citekey <citekey> --source openalex,semantic-scholar
+scholar-vault discover list
+scholar-vault discover select <candidate-id>
+scholar-vault discover reject <candidate-id>
+scholar-vault discover to-labs-prompts --query <query-slug>
+scholar-vault discover doctor --json
+```
+
+Those candidates live under `tasks/discovery-candidates/` and raw provider
+responses under `raw/discovery/`. They are planning artifacts only.
 
 ## Prompt Pack Semantics
 

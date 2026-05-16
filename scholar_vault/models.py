@@ -10,6 +10,8 @@ SourceKind = Literal["scholar_labs", "pdf_drop", "bibtex_import", "doi_import", 
 RunResultStatus = Literal["selected", "candidate", "unmatched", "skipped"]
 RunPdfStatus = Literal["attached", "missing", "unmatched"]
 ManifestDecision = Literal["accepted", "rejected", "skipped", "unresolved"]
+DiscoverySource = Literal["openalex", "semantic_scholar"]
+DiscoveryStatus = Literal["candidate", "selected", "rejected", "imported"]
 DoiStatus = Literal["missing", "detected", "resolved", "verified", "ambiguous", "unresolved"]
 CitationStatus = Literal[
     "missing",
@@ -306,6 +308,44 @@ class RunRecord(BaseModel):
     results: list[RunResultRecord] = Field(default_factory=list)
     matched_files: list[str] = Field(default_factory=list)
     unmatched_files: list[str] = Field(default_factory=list)
+
+
+class DiscoveryCandidate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    source: DiscoverySource
+    title: str
+    authors: list[str] = Field(default_factory=list)
+    year: int | None = None
+    doi: str | None = None
+    url: str | None = None
+    venue: str | None = None
+    abstract: str | None = None
+    cited_by_count: int | None = None
+    seed_citekey: str | None = None
+    query: str | None = None
+    project: str | None = None
+    reason: str = ""
+    status: DiscoveryStatus = "candidate"
+    linked_prompt_pack: str | None = None
+    linked_run: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def clean_title(cls, value: str) -> str:
+        return clean_paper_title(value)
+
+    @field_validator("authors", mode="before")
+    @classmethod
+    def coerce_authors(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item) for item in value if str(item).strip()]
+        if isinstance(value, str) and value.strip():
+            return [value.strip()]
+        return []
 
 
 class ImportLogEntry(BaseModel):

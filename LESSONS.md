@@ -11,6 +11,10 @@
   Link packs to queries and runs, keep Labs summaries non-canonical, and treat
   OpenAlex/Semantic Scholar seed candidates as prompt wording aids unless they
   later enter through the normal PDF, DOI, BibTeX, or manual import paths.
+- Graph-assisted OpenAlex/Semantic Scholar discovery should write durable
+  candidate YAML records and prompt seeds only. Deduplicate against existing
+  paper cards by DOI/title, preserve candidate status, and never turn provider
+  metadata into canonical `papers/*.md` cards automatically.
 - When adding a new vault workflow, update both `VAULT_AGENTS_TEMPLATE.md` and
   repository-owned `vault-agent-skills/` so Codex sessions opened inside a vault
   inherit the new workflow instead of following stale ad hoc notes.

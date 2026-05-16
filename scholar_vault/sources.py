@@ -98,6 +98,7 @@ class VaultPaths:
     raw_unmatched: Path
     raw_imported: Path
     raw_metadata: Path
+    raw_discovery: Path
     pdfs: Path
     papers: Path
     paper_digests: Path
@@ -107,6 +108,7 @@ class VaultPaths:
     syntheses: Path
     tasks: Path
     task_queue: Path
+    discovery_candidates: Path
     queries: Path
     projects: Path
     proposals: Path
@@ -133,6 +135,7 @@ class VaultPaths:
             raw_unmatched=raw / "unmatched",
             raw_imported=raw / "imported",
             raw_metadata=raw / "metadata",
+            raw_discovery=raw / "discovery",
             pdfs=root / "pdfs",
             papers=root / "papers",
             paper_digests=root / "paper-digests",
@@ -142,6 +145,7 @@ class VaultPaths:
             syntheses=root / "syntheses",
             tasks=root / "tasks",
             task_queue=root / "tasks" / "queue",
+            discovery_candidates=root / "tasks" / "discovery-candidates",
             queries=root / "queries",
             projects=root / "projects",
             proposals=root / "proposals",
@@ -164,6 +168,7 @@ class VaultPaths:
             self.raw_unmatched,
             self.raw_imported,
             self.raw_metadata,
+            self.raw_discovery,
             self.pdfs,
             self.papers,
             self.paper_digests,
@@ -173,6 +178,7 @@ class VaultPaths:
             self.syntheses,
             self.tasks,
             self.task_queue,
+            self.discovery_candidates,
             self.queries,
             self.projects,
             self.proposals,

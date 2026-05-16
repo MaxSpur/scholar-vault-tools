@@ -21,6 +21,7 @@ from typer.completion import get_completion_script
 
 from . import cli_bases as _cli_bases
 from . import cli_compile as _cli_compile
+from . import cli_discovery as _cli_discovery
 from . import cli_labs_prompts as _cli_labs_prompts
 from . import cli_projects as _cli_projects
 from . import cli_queries as _cli_queries
@@ -77,6 +78,7 @@ from .topics import apply_topic_map, topic_map_report, topic_preset_mapping
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
 bases_app = _cli_bases.bases_app
 compile_app = _cli_compile.compile_app
+discovery_app = _cli_discovery.discovery_app
 feedback_app = _cli_self_improvement.feedback_app
 labs_prompts_app = _cli_labs_prompts.labs_prompts_app
 operations_app = _cli_self_improvement.operations_app
@@ -88,6 +90,7 @@ skills_app = _cli_skills.skills_app
 tools_task_app = _cli_self_improvement.tools_task_app
 app.add_typer(bases_app, name="bases")
 app.add_typer(compile_app, name="compile")
+app.add_typer(discovery_app, name="discover")
 app.add_typer(feedback_app, name="feedback")
 app.add_typer(labs_prompts_app, name="labs-prompts")
 app.add_typer(operations_app, name="operations")
@@ -127,6 +130,14 @@ compile_scaffold_command = _cli_compile.compile_scaffold_command
 compile_queue_command = _cli_compile.compile_queue_command
 compile_mark_command = _cli_compile.compile_mark_command
 compile_doctor_command = _cli_compile.compile_doctor_command
+discovery_seed_command = _cli_discovery.discovery_seed_command
+discovery_query_command = _cli_discovery.discovery_query_command
+discovery_project_command = _cli_discovery.discovery_project_command
+discovery_list_command = _cli_discovery.discovery_list_command
+discovery_select_command = _cli_discovery.discovery_select_command
+discovery_reject_command = _cli_discovery.discovery_reject_command
+discovery_to_labs_prompts_command = _cli_discovery.discovery_to_labs_prompts_command
+discovery_doctor_command = _cli_discovery.discovery_doctor_command
 labs_prompts_generate_command = _cli_labs_prompts.labs_prompts_generate_command
 labs_prompts_list_command = _cli_labs_prompts.labs_prompts_list_command
 labs_prompts_show_command = _cli_labs_prompts.labs_prompts_show_command
@@ -1472,6 +1483,13 @@ def _print_doctor_summary(summary: dict[str, Any]) -> None:
             "historical unmatched manifest entries={historical_unmatched_entries}."
         ).format(**counts)
     )
+    if counts.get("discovery_candidates") is not None:
+        console.print(
+            (
+                "Discovery candidates={discovery_candidates}; "
+                "open={open_discovery_candidates}; selected={selected_discovery_candidates}."
+            ).format(**counts)
+        )
     if counts.get("active_staging_pdfs") is not None:
         console.print(
             (

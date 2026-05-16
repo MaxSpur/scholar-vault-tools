@@ -44,6 +44,9 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 - `topics` on paper cards are prompt/navigation labels, not publication keywords. `keywords` are publication/provider/PDF keywords.
 - `## Abstract` is provider/PDF/manual metadata. `## Scholar Labs summary` explains why Scholar Labs surfaced the source. Keep those concepts separate.
 - Candidate results without paper cards are optional discovery context in the selected-only workflow. They are not canonical source defects unless the user wants to revisit those Scholar Labs suggestions.
+- Graph-assisted discovery candidates under `tasks/discovery-candidates/` are
+  OpenAlex/Semantic Scholar metadata suggestions and prompt seeds, not
+  canonical sources.
 - Scholar Labs prompt packs are planning artifacts under
   `queries/<slug>/prompt-packs/` or `tasks/scholar-labs-prompts/`. They help the
   user run better Labs searches; they are not evidence and do not create paper
@@ -65,6 +68,8 @@ scholar-vault configure
 scholar-vault runs
 scholar-vault labs-prompts list
 scholar-vault labs-prompts doctor --json
+scholar-vault discover list
+scholar-vault discover doctor --json
 scholar-vault queue list --json
 scholar-vault feedback report --json
 scholar-vault notes-missing --heading "PDF reading notes"

@@ -75,6 +75,7 @@ class SeedCandidate:
     url: str | None = None
     source: str = ""
     citation_count: int | None = None
+    reason: str | None = None
 
 
 def _now_iso() -> str:
@@ -691,6 +692,10 @@ def _named_papers(context: dict[str, Any], seeds: list[SeedCandidate]) -> str:
     return "No seed papers are canonical yet; ask for candidate papers directly tied to the focus."
 
 
+def _has_discovery_seeds(seeds: list[SeedCandidate]) -> bool:
+    return any(seed.source == "discovery" for seed in seeds)
+
+
 def _prompt_text_for_type(
     prompt_type: str,
     context: dict[str, Any],
@@ -699,6 +704,13 @@ def _prompt_text_for_type(
     focus = str(context.get("title") or "this research question")
     terms = _context_terms(context)
     seed_clause = _named_papers(context, seeds)
+    discovery_prefix = ""
+    if _has_discovery_seeds(seeds):
+        discovery_prefix = (
+            "Starting from these candidate papers/terms, find papers that directly address "
+            f"the following relationship: {focus}. Treat the candidates as non-canonical "
+            "seed material only, and verify useful results through DOI/PDF/manual import. "
+        )
     common = (
         "Use Google Scholar Labs as a discovery assistant only. Return scholarly papers, not "
         "general web pages. For each paper, explain the specific relationship it addresses, "
@@ -708,55 +720,61 @@ def _prompt_text_for_type(
     )
     templates = {
         "coverage_gap": (
-            f"For the research focus '{focus}', find papers that cover evidence gaps around "
+            f"{discovery_prefix}For the research focus '{focus}', find papers that cover "
+            f"evidence gaps around "
             f"{terms}. {seed_clause} Prioritize papers that directly connect two or more of "
             f"these concepts and identify what the current vault appears to be missing. {common}"
         ),
         "related_papers_from_seed": (
-            f"Starting from the seed context for '{focus}', find closely related papers that "
-            f"extend, compare against, or are cited alongside the seed papers. {seed_clause} "
+            f"{discovery_prefix}Starting from the seed context for '{focus}', find closely "
+            f"related papers that extend, compare against, or are cited alongside the seed "
+            f"papers. {seed_clause} "
             f"Include both recent follow-ups and foundational papers. {common}"
         ),
         "method_dataset_relation": (
-            f"Find papers for '{focus}' where the method, evaluation protocol, or dataset is "
-            f"comparable to {terms}. Prefer papers that name datasets, benchmarks, instruments, "
-            f"user-study conditions, or reproducible evaluation settings. {common}"
+            f"{discovery_prefix}Find papers for '{focus}' where the method, evaluation "
+            f"protocol, or dataset is comparable to {terms}. Prefer papers that name datasets, "
+            f"benchmarks, instruments, user-study conditions, or reproducible evaluation "
+            f"settings. {common}"
         ),
         "contradiction_check": (
-            f"Find papers that contradict, limit, or complicate the assumptions behind '{focus}'. "
-            f"Look for negative results, boundary conditions, failed replications, weak effects, "
-            f"or critiques involving {terms}. {common}"
+            f"{discovery_prefix}Find papers that contradict, limit, or complicate the "
+            f"assumptions behind '{focus}'. Look for negative results, boundary conditions, "
+            f"failed replications, weak effects, or critiques involving {terms}. {common}"
         ),
         "negative_evidence": (
-            f"Find papers that report null, mixed, harmful, or non-generalizing outcomes relevant "
-            f"to '{focus}'. Prioritize empirical evidence where the expected benefit did not hold, "
-            f"and state what condition made it fail. {common}"
+            f"{discovery_prefix}Find papers that report null, mixed, harmful, or "
+            f"non-generalizing outcomes relevant to '{focus}'. Prioritize empirical evidence "
+            f"where the expected benefit did not hold, and state what condition made it fail. "
+            f"{common}"
         ),
         "review_update": (
-            f"Find recent review, survey, meta-analysis, or position papers that update the "
-            f"literature around '{focus}' and {terms}. Also identify older reviews that are still "
-            f"used as foundations. {common}"
+            f"{discovery_prefix}Find recent review, survey, meta-analysis, or position "
+            f"papers that update the literature around '{focus}' and {terms}. Also identify "
+            f"older reviews that are still used as foundations. {common}"
         ),
         "benchmark_or_dataset_search": (
-            f"Find papers introducing, comparing, or reusing benchmarks, datasets, corpora, "
-            f"protocols, or shared tasks relevant to '{focus}'. Extract dataset names and what "
-            f"relationship each benchmark can test. {common}"
+            f"{discovery_prefix}Find papers introducing, comparing, or reusing benchmarks, "
+            f"datasets, corpora, protocols, or shared tasks relevant to '{focus}'. Extract "
+            f"dataset names and what relationship each benchmark can test. {common}"
         ),
         "proposal_evidence_gap": (
-            f"Find papers that would strengthen a proposal evidence gap for '{focus}'. Prefer "
-            f"sources that can support need, novelty, feasibility, risk, or expected impact. "
+            f"{discovery_prefix}Find papers that would strengthen a proposal evidence gap "
+            f"for '{focus}'. Prefer sources that can support need, novelty, feasibility, "
+            "risk, or expected impact. "
             "Identify which proposal claim each paper could support and where it remains weak. "
             f"{common}"
         ),
         "synthesis_expansion": (
-            f"Find papers that would expand a synthesis for '{focus}' by adding missing methods, "
-            f"contrasting populations/settings, or adjacent theoretical frames. Group results by "
-            f"which synthesis section they would improve. {common}"
+            f"{discovery_prefix}Find papers that would expand a synthesis for '{focus}' by "
+            "adding missing methods, contrasting populations/settings, or adjacent "
+            "theoretical frames. Group results by which synthesis section they would improve. "
+            f"{common}"
         ),
         "failure_modes": (
-            f"Find papers documenting failure modes, threats to validity, implementation barriers, "
-            f"or evaluation pitfalls for '{focus}' and {terms}. Prefer papers with concrete "
-            f"failure conditions and mitigation strategies. {common}"
+            f"{discovery_prefix}Find papers documenting failure modes, threats to validity, "
+            f"implementation barriers, or evaluation pitfalls for '{focus}' and {terms}. "
+            f"Prefer papers with concrete failure conditions and mitigation strategies. {common}"
         ),
     }
     return templates[prompt_type]
@@ -1031,6 +1049,97 @@ def generate_prompt_pack(
     }
 
 
+def generate_prompt_pack_from_seed_candidates(
+    vault: Path | str,
+    *,
+    query: str,
+    seed_candidates: list[SeedCandidate],
+    candidate_refs: list[str],
+) -> dict[str, Any]:
+    from .importer import initialize_vault
+
+    paths = initialize_vault(vault, rebuild=False)
+    context = _collect_context_for_query(paths, _query_slug(query))
+    pack_id = f"query-{context['slug']}-discovery-candidate-labs-prompts"
+    path = paths.queries / context["slug"] / "prompt-packs" / f"{pack_id}.md"
+    existing_frontmatter: dict[str, Any] = {}
+    if path.exists():
+        existing_frontmatter, _ = _load_prompt_pack_path(paths, path)
+    prompts = [_prompt_entry(prompt_type, context, seed_candidates) for prompt_type in PROMPT_TYPES]
+    now = _now_iso()
+    linked_discovery = sorted(
+        set(
+            _as_string_list(existing_frontmatter.get("linked_discovery_candidates"))
+            + list(candidate_refs)
+        ),
+        key=str.casefold,
+    )
+    frontmatter = {
+        "type": "scholar_labs_prompt_pack",
+        "status": _normalize_status(existing_frontmatter.get("status") or "draft"),
+        "query": context.get("query_ref") or "",
+        "project": context.get("project") or "",
+        "created_at": existing_frontmatter.get("created_at") or now,
+        "generated_from": sorted(
+            set(
+                _as_string_list(existing_frontmatter.get("generated_from"))
+                + context["generated_from"]
+                + linked_discovery
+            ),
+            key=str.casefold,
+        ),
+        "linked_runs": sorted(
+            set(_as_string_list(existing_frontmatter.get("linked_runs"))), key=str.casefold
+        ),
+        "linked_tasks": sorted(
+            set(
+                _as_string_list(existing_frontmatter.get("linked_tasks"))
+                + context["linked_tasks"]
+            ),
+            key=str.casefold,
+        ),
+        "linked_syntheses": sorted(
+            set(
+                _as_string_list(existing_frontmatter.get("linked_syntheses"))
+                + context["linked_syntheses_refs"]
+            ),
+            key=str.casefold,
+        ),
+        "linked_concepts": sorted(
+            set(
+                _as_string_list(existing_frontmatter.get("linked_concepts"))
+                + context["linked_concepts_refs"]
+            ),
+            key=str.casefold,
+        ),
+        "linked_discovery_candidates": linked_discovery,
+    }
+    body = _render_prompt_pack(frontmatter, context, prompts, seed_candidates)
+    before = path.read_text(encoding="utf-8") if path.exists() else None
+    _write_prompt_pack(path, frontmatter, body)
+    pack_ref = _prompt_pack_ref(paths, path)
+    state = (
+        "unchanged"
+        if before == path.read_text(encoding="utf-8")
+        else ("updated" if before else "created")
+    )
+    query_changed = _update_query_prompt_pack(paths, context["slug"], pack_ref)
+    _refresh_prompt_navigation(paths)
+    return {
+        "vault": str(paths.vault),
+        "id": pack_id,
+        "prompt_pack": pack_ref,
+        "status": frontmatter["status"],
+        "state": state,
+        "prompt_count": len(prompts),
+        "prompt_types": list(PROMPT_TYPES),
+        "query_updated": query_changed,
+        "seed_provider": "discovery",
+        "seed_candidates": [seed.__dict__ for seed in seed_candidates],
+        "linked_discovery_candidates": linked_discovery,
+    }
+
+
 def list_prompt_packs(vault: Path | str) -> dict[str, Any]:
     from .importer import initialize_vault
 
@@ -1162,16 +1271,31 @@ def link_prompt_pack_run(vault: Path | str, prompt_pack_id: str, run_id: str) ->
         prompt_pack_ref=_prompt_pack_ref(paths, path),
         query_ref=query_ref,
     )
+    discovery_candidates_linked = 0
+    discovery_refs = _as_string_list(frontmatter.get("linked_discovery_candidates"))
+    if discovery_refs:
+        from .discovery import mark_candidates_linked_run
+
+        discovery_candidates_linked = mark_candidates_linked_run(
+            paths.vault,
+            discovery_refs,
+            run_id=run.slug,
+        )
     _refresh_prompt_navigation(paths)
     return {
         "vault": str(paths.vault),
         "id": _prompt_pack_id_from_path(path),
         "prompt_pack": _prompt_pack_ref(paths, path),
         "run": run.slug,
-        "changed": changed or body_changed or query_changed or run_changed,
+        "changed": changed
+        or body_changed
+        or query_changed
+        or run_changed
+        or bool(discovery_candidates_linked),
         "status": "imported",
         "query_changed": query_changed,
         "run_changed": run_changed,
+        "discovery_candidates_linked": discovery_candidates_linked,
     }
 
 

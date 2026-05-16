@@ -32,13 +32,16 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 3. Treat `_indexes/unmatched.md` as historical staging-manifest audit data. Check `scholar-vault pdf-doctor --json` before calling it actionable.
 4. Search `papers/*.md` for `enrichment_status: incomplete`, `citation_status: ambiguous`, `citation_status: unresolved`, `abstract_status: missing`, `abstract_status: ambiguous`, `publication_keywords_status: missing`, and `pdf_status: missing`.
 5. Read relevant `runs/**/index.yaml` or run notes to understand candidate rank, prompt context, and rationale.
-6. Check existing `syntheses/`, `tasks/`, `tasks/queue/`, and
+6. Check graph-assisted candidates with `scholar-vault discover list` and
+   `scholar-vault discover doctor --json` when the user is deciding what to
+   search or import next.
+7. Check existing `syntheses/`, `tasks/`, `tasks/queue/`, and
    `_indexes/self-improvement.md` if present to avoid duplicating active work.
-7. Write `tasks/<YYYY-MM-DD>-research-gaps.md` when a narrative report is
+8. Write `tasks/<YYYY-MM-DD>-research-gaps.md` when a narrative report is
    useful. Use `scholar-vault maintenance-report --write-queue` or
    `$scholar-vault-self-improvement` / `scholar-vault queue add ...` when the
    output should be durable typed work.
-8. When the next action is a Google Scholar Labs search, prefer a durable prompt
+9. When the next action is a Google Scholar Labs search, prefer a durable prompt
    pack via `$scholar-vault-labs-prompts` / `scholar-vault labs-prompts generate`
    instead of embedding full prompt text only in the gap report.
 
@@ -69,6 +72,8 @@ scholar-vault maintenance-report --write-queue
 scholar-vault queue list --json
 scholar-vault labs-prompts list
 scholar-vault labs-prompts doctor --json
+scholar-vault discover list
+scholar-vault discover doctor --json
 scholar-vault match-staging
 scholar-vault enrich --dry-run
 scholar-vault enrich --only missing-abstract --dry-run

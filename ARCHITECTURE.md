@@ -17,6 +17,9 @@
 - `scholar_vault/cli_labs_prompts.py`: `labs-prompts ...` command group for
   Scholar Labs prompt-pack generation, tracking, run linking, retirement, and
   prompt-pack diagnostics.
+- `scholar_vault/cli_discovery.py`: `discover ...` command group for
+  OpenAlex/Semantic Scholar related-paper discovery, candidate status updates,
+  prompt-pack seeding, and discovery diagnostics.
 - `scholar_vault/cli_self_improvement.py`: `queue ...`, `operations ...`,
   `feedback ...`, and `tools-task ...` command groups for typed
   self-improvement state.
@@ -26,7 +29,10 @@
   paper digest scaffolding, status, project queues, marking, and doctor
   validation.
 - `scholar_vault/config.py`: user-level default path storage and latest Scholar Labs export selection.
-- `scholar_vault/models.py`: typed records for exports, paper cards, runs, logs, and PDF candidates. Paper cards are the durable metadata/provenance/notes layer; linked PDFs are the canonical evidence artifacts.
+- `scholar_vault/models.py`: typed records for exports, paper cards, discovery
+  candidates, runs, logs, and PDF candidates. Paper cards are the durable
+  metadata/provenance/notes layer; linked PDFs are the canonical evidence
+  artifacts.
 - `scholar_vault/sources.py`: vault path management, slug and citekey utilities, Markdown parsing, and frontmatter helpers.
 - `scholar_vault/matcher.py`: PDF extraction, metadata inference, and fuzzy matching helpers using DOI, extracted title, filename, and compact first-page text evidence.
 - `scholar_vault/importer.py`: import-focused workflows for `init`, Scholar Labs imports/reruns/resumes, direct PDF/BibTeX/DOI imports, run manifests, staging PDF matching and archive behavior, undo, PDF attachment, manual field corrections, and post-import enrichment coordination. It keeps compatibility wrappers for older imports, but new feature families should not be added here.
@@ -61,6 +67,13 @@
   and can optionally use OpenAlex or Semantic Scholar seed candidates only for
   prompt wording. It does not call Google Scholar or create paper cards from API
   candidates.
+- `scholar_vault/discovery_adapters.py`: small OpenAlex and Semantic Scholar
+  adapter layer for rate-limit-aware cached search and citation-neighborhood
+  metadata fetches under `raw/discovery/`.
+- `scholar_vault/discovery.py`: durable non-canonical discovery candidate
+  workflow. It writes `tasks/discovery-candidates/*.yaml`, deduplicates against
+  canonical cards, updates candidate status, reports diagnostics, and can turn
+  query-linked candidate clusters into Scholar Labs prompt packs.
 - `scholar_vault/bases.py`: deterministic `.base` YAML generation under
   `bases/` plus read-only validation for required Base files and views.
 - `scholar_vault/proposals.py`: proposal sprint scaffolding and proposal evidence audits.
@@ -133,6 +146,13 @@
   or `--seed-api semantic-scholar` may add non-canonical seed candidates to the
   prompt text. `link-run` marks a pack imported, links the run on the pack and
   query note, and backfills `prompt_pack` / `query` onto the run record.
+- `discover seed/query/project/list/select/reject/to-labs-prompts/doctor`:
+  graph-assisted related-paper discovery. OpenAlex and Semantic Scholar results
+  become candidate YAML records or prompt seeds only. `seed` explores citation
+  neighborhoods around a canonical citekey, `query` and `project` search from
+  durable workbench context, `select` / `reject` update candidate status, and
+  `to-labs-prompts --query` creates a normal Scholar Labs prompt pack from
+  active query candidates without creating paper cards.
 - `bases init/rebuild/doctor`: generates `bases/papers.base`,
   `bases/queries.base`, `bases/synthesis-workbench.base`,
   `bases/scholar-labs-workbench.base`, and `bases/self-improvement.base`.
@@ -184,9 +204,15 @@
   `tasks/scholar-labs-prompts/<pack-id>.md`, with frontmatter
   `type: scholar_labs_prompt_pack`, status, source context links, and linked
   run/task/synthesis/concept fields. Prompt text stays in the Markdown body.
+- Discovery candidates: `tasks/discovery-candidates/<candidate-id>.yaml`.
+  These are OpenAlex/Semantic Scholar metadata candidates with source, title,
+  authors, DOI, URL, venue, abstract, cited-by count, seed citekey, query,
+  project, reason, status, linked prompt pack, and linked run fields. They are
+  prompt/search planning artifacts, not canonical paper cards.
 - Raw inputs: `raw/`
 - Staging scan cache: `.scholar-vault-pdf-scan-cache` beside staged PDFs, keyed by filename plus size/mtime and ignored by JSON export discovery.
 - Raw citation cache: `raw/metadata/<citekey>/`
+- Raw discovery cache: `raw/discovery/<provider>/*.json`
 - Durable query workbenches: `queries/<slug>.md`
 - Typed queue items: `tasks/queue/*.yaml`
 - Append-only operation log: `_operations/log.md`

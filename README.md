@@ -158,6 +158,7 @@ scholar-labs-vault/
     unmatched/
     imported/
     metadata/
+    discovery/
   pdfs/
   papers/
   paper-digests/
@@ -167,6 +168,7 @@ scholar-labs-vault/
   syntheses/
   tasks/
     queue/
+    discovery-candidates/
     scholar-labs-prompts/
   queries/
     <query-slug>/prompt-packs/
@@ -334,6 +336,31 @@ scholar-vault labs-prompts generate --query mobility-evidence --seed-api openale
 
 These API candidates are not paper cards. They become canonical only through
 the existing PDF, DOI, BibTeX, or manual import paths.
+
+## Graph-Assisted Discovery
+
+Use `discover` when you want OpenAlex or Semantic Scholar graph/search metadata
+to seed related-paper discovery without creating canonical paper cards.
+Candidates are YAML records under `tasks/discovery-candidates/`, with raw API
+responses cached under `raw/discovery/`.
+
+```fish
+scholar-vault discover seed --citekey <citekey> --source openalex,semantic-scholar
+scholar-vault discover query --query <query-slug> --source openalex,semantic-scholar
+scholar-vault discover project --project <project-slug> --source openalex,semantic-scholar
+scholar-vault discover list
+scholar-vault discover select <candidate-id>
+scholar-vault discover reject <candidate-id>
+scholar-vault discover to-labs-prompts --query <query-slug>
+scholar-vault discover doctor --json
+```
+
+Discovery candidates keep DOI/title/project/query/seed provenance and status
+(`candidate`, `selected`, `rejected`, or `imported`). The discovery workflow
+deduplicates against existing paper cards by DOI and exact normalized title.
+Selected candidates can be turned into a Scholar Labs prompt pack; they still
+become canonical sources only through the existing PDF, DOI, BibTeX, or manual
+import workflows.
 
 List, inspect, and track prompt packs:
 
@@ -1354,6 +1381,8 @@ linked project, or an interpretation changes and the digest needs review.
 - `concepts/*.md`: optional agent-written concept/metacards that connect papers by method, dataset, visual encoding, evaluation protocol, or terminology.
 - `syntheses/*.md`: optional agent-written cross-paper syntheses grounded in PDFs.
 - `tasks/*.md`: optional agent-written follow-up tasks and research gaps.
+- `tasks/discovery-candidates/*.yaml`: non-canonical OpenAlex/Semantic Scholar
+  candidate records for related-paper discovery and Scholar Labs prompt seeds.
 - `queries/*.md`: durable research-query workbench notes with linked papers, runs, syntheses, concepts, prompt packs, and Obsidian Bases embeds.
 - `projects/<slug>/index.md`: optional project lens over shared papers, runs, concepts, syntheses, tasks, and proposals.
 - `projects/<slug>/project-map.md`: generated project map summarizing linked record status, gaps, and next actions.
@@ -1363,6 +1392,7 @@ linked project, or an interpretation changes and the digest needs review.
 - `runs/*/index.yaml`: machine-readable run records used by `resume`, `rerun`, and rebuilds.
 - `runs/*/import-manifest.yaml`: transactional record of proposed matches, decisions, copied PDFs, and created cards.
 - `raw/metadata/<citekey>/`: cached citation provider responses and generated citation artifacts.
+- `raw/discovery/`: cached OpenAlex and Semantic Scholar discovery responses.
 - `raw/metadata/<citekey>/citation.bib` and `citation.csl.json`: preferred provider-backed sources for one-card and whole-library BibLaTeX export.
 - `topics/*.md`: simple topic pages derived from prompt keywords and rationale labels.
 - `_indexes/*.md`: navigation and maintenance views.

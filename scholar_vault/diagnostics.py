@@ -10,6 +10,7 @@ from typing import Any
 
 from .citations import refresh_metadata_completeness
 from .digests import compile_status_summary
+from .discovery import discovery_counts
 from .models import ImportManifest, RunRecord, SourceCard
 from .obsidian import (
     _card_has_valid_pdf,
@@ -381,6 +382,7 @@ def doctor_vault(
     cards_by_path = {_card_ref(card): card for card in cards}
     pdf_summary = pdf_doctor(vault, staging_path=staging_path)
     compile_summary = compile_status_summary(paths, cards=cards)
+    discovery_summary = discovery_counts(paths)
     missing_candidates = [
         {
             "run_id": run.slug,
@@ -448,6 +450,7 @@ def doctor_vault(
             "active_staging_actionable_pdfs": staging_summary.get("actionable_pdf_count"),
             "compile_needs_action": compile_summary.get("needs_action"),
             "paper_digests": compile_summary.get("digests"),
+            **discovery_summary,
         },
         "status_counts": {
             "pdf_status": _status_counts(cards, "pdf_status"),

@@ -102,6 +102,9 @@
   run/query linking, import provenance, Obsidian index/Base support, and
   optional OpenAlex/Semantic Scholar seed candidates that do not create
   canonical paper cards.
+- [x] Add graph-assisted OpenAlex/Semantic Scholar discovery candidates,
+  candidate status transitions, dedupe against canonical cards, and candidate
+  clusters that generate Scholar Labs prompt packs without creating paper cards.
 - [x] Update the vault AGENTS template and repository-owned vault-agent skills
   so vault-local Codex agents know to use Scholar Labs prompt packs instead of
   ad hoc prompt drafts.

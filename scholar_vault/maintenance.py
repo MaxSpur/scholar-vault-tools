@@ -7,6 +7,7 @@ from typing import Any
 from .dashboards import _artifacts_without_sources, _render_command_block, _topic_opportunities
 from .diagnostics import doctor_vault, notes_missing, pdf_doctor
 from .digests import compile_status_summary
+from .discovery import load_discovery_candidates
 from .models import SourceCard
 from .obsidian import _collect_research_artifacts, _markdown_table
 from .render import group_cards_by_topic
@@ -42,6 +43,11 @@ def _render_maintenance_report(
     synthesis_needs = _artifacts_without_sources(syntheses)
     opportunities = _topic_opportunities(topic_cards, syntheses)
     metadata_issues = status_summary.get("metadata_issues") or {}
+    try:
+        discovery_paths = VaultPaths.from_root(status_summary["vault"])
+        discovery_candidates = load_discovery_candidates(discovery_paths)
+    except (OSError, ValueError, KeyError):
+        discovery_candidates = []
     lines = [
         f"# Maintenance Report - {report_date}",
         "",
@@ -64,6 +70,15 @@ def _render_maintenance_report(
                 [
                     "Candidate results without cards",
                     counts.get("candidate_results_without_cards", 0),
+                ],
+                ["Discovery candidates", counts.get("discovery_candidates", 0)],
+                [
+                    "Open discovery candidates",
+                    counts.get("open_discovery_candidates", 0),
+                ],
+                [
+                    "Selected discovery candidates",
+                    counts.get("selected_discovery_candidates", 0),
                 ],
                 ["Historical unmatched entries", counts.get("historical_unmatched_entries", 0)],
                 ["Active staging PDFs", counts.get("active_staging_pdfs") or 0],
@@ -152,6 +167,24 @@ def _render_maintenance_report(
         "## Candidate Discovery Backlog",
         "",
         "These rows are optional discovery context unless you choose to fetch/import PDFs.",
+        "",
+        "### Graph-assisted candidates",
+        "",
+        *_report_table(
+            ["Candidate", "Status", "Source", "Reason"],
+            [
+                [
+                    candidate.title,
+                    candidate.status,
+                    candidate.source,
+                    candidate.reason,
+                ]
+                for candidate in discovery_candidates[:50]
+            ],
+            empty="No graph-assisted discovery candidates found.",
+        ),
+        "",
+        "### Scholar Labs candidates without cards",
         "",
         *_report_table(
             ["Run", "Rank", "Title", "Status"],
@@ -243,6 +276,8 @@ def _render_maintenance_report(
                 'scholar-vault notes-missing --vault /path/to/vault --heading "PDF reading notes"',
                 "scholar-vault compile status --vault /path/to/vault --json",
                 "scholar-vault compile doctor --vault /path/to/vault --json",
+                "scholar-vault discover list --vault /path/to/vault",
+                "scholar-vault discover doctor --vault /path/to/vault --json",
                 "scholar-vault enrich --vault /path/to/vault --ui",
                 "scholar-vault topic-map --vault /path/to/vault --preset prompt-boilerplate",
                 (

@@ -7,6 +7,7 @@ from typing import Any
 from .citations import refresh_metadata_completeness
 from .diagnostics import _repeated_unmatched_files, _unmatched_rows_from_manifests
 from .digests import NEEDS_ACTION_STATUSES, compile_status_summary
+from .discovery import discovery_counts, load_discovery_candidates
 from .models import ImportManifest, RunRecord, SourceCard
 from .obsidian import (
     _artifact_link,
@@ -220,6 +221,23 @@ def _render_dashboard_index(
     tasks = artifacts.get("tasks") or []
     queries = artifacts.get("queries") or []
     projects = artifacts.get("projects") or []
+    discovery_summary = discovery_counts(paths)
+    try:
+        discovery_preview = load_discovery_candidates(paths)[:10]
+    except (OSError, ValueError):
+        discovery_preview = []
+    discovery_preview_rows = []
+    for candidate in discovery_preview:
+        candidate_path = paths.discovery_candidates / f"{candidate.id}.yaml"
+        candidate_ref = ensure_relative(candidate_path, paths.vault)
+        discovery_preview_rows.append(
+            [
+                f"[{candidate.title}](../{candidate_ref})",
+                candidate.status,
+                candidate.source,
+                candidate.reason,
+            ]
+        )
     issue_counts = {
         "Reading queue": len(reading_rows),
         "Compile queue": len(compile_rows),
@@ -234,6 +252,9 @@ def _render_dashboard_index(
         "Tasks": len(tasks),
         "Queries": len(queries),
         "Projects": len(projects),
+        "Discovery candidates": discovery_summary["discovery_candidates"],
+        "Open discovery candidates": discovery_summary["open_discovery_candidates"],
+        "Selected discovery candidates": discovery_summary["selected_discovery_candidates"],
     }
     lines = [
         "# Scholar Vault Dashboard",
@@ -308,6 +329,14 @@ def _render_dashboard_index(
             ["Topic", "Count"],
             [[row["topic"], row["count"]] for row in topic_report["noisy"][:12]],
             empty="No prompt-boilerplate topic labels detected.",
+        ),
+        "",
+        "## Discovery candidate preview",
+        "",
+        *_markdown_table(
+            ["Candidate", "Status", "Source", "Reason"],
+            discovery_preview_rows,
+            empty="No graph-assisted discovery candidates found.",
         ),
         "",
     ]

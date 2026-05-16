@@ -16,6 +16,9 @@ These instructions apply inside this research vault. They are for agents working
   `tasks/scholar-labs-prompts/` are human-in-the-loop discovery-planning
   artifacts. They help a user run better Google Scholar Labs prompts, but they
   are not evidence and do not create canonical paper cards by themselves.
+- Graph-assisted discovery candidates under `tasks/discovery-candidates/` are
+  OpenAlex/Semantic Scholar metadata suggestions and Scholar Labs prompt seeds.
+  They are not evidence and do not create canonical paper cards by themselves.
 - Typed self-improvement state under `tasks/queue/`, `_operations/`, and
   `_feedback/` tracks work, runs, and ratings. It is process context, not
   scientific evidence or a replacement for paper cards, PDFs, concepts, or
@@ -111,6 +114,8 @@ scholar-vault maintenance-report --write-queue
 scholar-vault compile status --json
 scholar-vault labs-prompts list
 scholar-vault labs-prompts doctor --json
+scholar-vault discover list
+scholar-vault discover doctor --json
 scholar-vault queue list --json
 scholar-vault operations list --json
 scholar-vault feedback report --json
@@ -199,6 +204,10 @@ scholar-vault resolve-citation --citekey <citekey> \
 ## Candidate And Staging Semantics
 
 - Candidate results without paper cards are optional discovery context in the selected-only workflow. They are not maintenance defects.
+- Discovery candidates under `tasks/discovery-candidates/` are optional
+  non-canonical graph/search metadata. Use `scholar-vault discover select` or
+  `reject` to curate them, and `scholar-vault discover to-labs-prompts --query
+  <query-slug>` to turn active query candidates into a prompt pack.
 - `_indexes/missing-pdfs.md` is not an action queue unless explicitly revisiting Scholar Labs candidates.
 - `_indexes/scholar-labs-prompts.md` tracks active prompt packs and import
   status. It is a planning/dashboard surface, not a source of evidence.
@@ -224,12 +233,18 @@ scholar-vault labs-prompts show <prompt-pack-id>
 scholar-vault labs-prompts mark-used <prompt-pack-id> --notes "..."
 scholar-vault labs-prompts link-run <prompt-pack-id> <run-id>
 scholar-vault labs-prompts doctor --json
+scholar-vault discover query --query <query-slug> --source openalex,semantic-scholar
+scholar-vault discover seed --citekey <citekey> --source openalex,semantic-scholar
+scholar-vault discover to-labs-prompts --query <query-slug>
 ```
 
 Default prompt generation is local and offline. Optional `--seed-api openalex`
 or `--seed-api semantic-scholar` may suggest seed titles and terms for prompt
 wording only. Do not treat those API candidates as canonical papers unless they
 later enter the vault through the PDF, DOI, BibTeX, or manual import path.
+For durable seed curation, prefer `scholar-vault discover ...`; it caches raw
+provider responses under `raw/discovery/`, stores candidate status under
+`tasks/discovery-candidates/`, and feeds selected candidates into prompt packs.
 
 When importing a Google Scholar Labs export that came from a prompt pack, keep
 the provenance linked:
