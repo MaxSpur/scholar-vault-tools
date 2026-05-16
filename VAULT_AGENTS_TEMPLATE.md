@@ -111,6 +111,11 @@ scholar-vault git-summary
 scholar-vault notes-missing --heading "PDF reading notes"
 scholar-vault maintenance-report
 scholar-vault maintenance-report --write-queue
+scholar-vault lint-wiki --json
+scholar-vault lint-wiki --write-queue --write-report
+scholar-vault eval list
+scholar-vault eval run
+scholar-vault eval report
 scholar-vault compile status --json
 scholar-vault labs-prompts list
 scholar-vault labs-prompts doctor --json
@@ -300,6 +305,39 @@ The generated dashboard `_indexes/self-improvement.md` and
 `bases/self-improvement.base` summarize this state. Do not hand-edit those
 generated views; regenerate them with the commands above or `scholar-vault
 rebuild`.
+
+## Semantic Lint And Evals
+
+Use `scholar-vault lint-wiki` as a deterministic safety layer before treating
+wiki structure as healthy. It can flag missing source links, syntheses relying
+on papers without PDFs or digests, stale or incomplete digests, empty query
+workbenches, unlinked prompt packs/runs, malformed queue or feedback records,
+invalid generated Bases, detectable dead links, and tracked generated-file
+changes.
+
+```fish
+scholar-vault lint-wiki --json
+scholar-vault lint-wiki --write-queue --write-report
+```
+
+Semantic lint is not an oracle. It does not prove a claim is true, complete, or
+well interpreted, and it must not replace PDF reading. It writes reports and
+typed queue items only when requested; it must not silently rewrite paper
+cards, concepts, syntheses, or digests.
+
+Use `_evals/*.yaml` for deterministic non-LLM eval definitions, then run:
+
+```fish
+scholar-vault eval list
+scholar-vault eval run
+scholar-vault eval run --kind retrieval
+scholar-vault eval report
+```
+
+Initial eval kinds are `retrieval`, `grounding`, `synthesis`, and
+`proposal_audit`. Eval history lives in `_exports/eval-history.json`; reports
+live in `_indexes/eval-report.md`. Eval failures may create queue items with
+`eval run --write-queue`.
 
 ## Research Workflow
 

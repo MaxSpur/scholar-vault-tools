@@ -110,6 +110,7 @@ class VaultPaths:
     task_queue: Path
     discovery_candidates: Path
     queries: Path
+    evals: Path
     projects: Path
     proposals: Path
     bases: Path
@@ -147,6 +148,7 @@ class VaultPaths:
             task_queue=root / "tasks" / "queue",
             discovery_candidates=root / "tasks" / "discovery-candidates",
             queries=root / "queries",
+            evals=root / "_evals",
             projects=root / "projects",
             proposals=root / "proposals",
             bases=root / "bases",
@@ -180,6 +182,7 @@ class VaultPaths:
             self.task_queue,
             self.discovery_candidates,
             self.queries,
+            self.evals,
             self.projects,
             self.proposals,
             self.bases,

@@ -33,9 +33,11 @@ ARTIFACT_DEFAULT_TYPES = {
     "proposals": "proposal",
 }
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\((<?[^)>\n]+(?:\.md|/)?>?)\)")
+WIKILINK_RE = re.compile(r"!?\[\[([^\]\n]+)\]\]")
 PAPER_PATH_RE = re.compile(r"papers/[^)\]>\s]+\.md")
 PDF_READING_NOTES_RE = re.compile(r"^###\s+PDF reading notes\b", re.IGNORECASE | re.MULTILINE)
 VAULT_NOTE_ROOTS = {
+    "bases",
     "concepts",
     "papers",
     "paper-digests",
@@ -210,11 +212,35 @@ def _extract_markdown_targets(text: str) -> list[str]:
     return [target for target in targets if target]
 
 
+def _extract_wikilink_targets(text: str) -> list[str]:
+    targets: list[str] = []
+    for match in WIKILINK_RE.finditer(text):
+        target = match.group(1).split("|", 1)[0].split("#", 1)[0].strip()
+        if not target or "://" in target:
+            continue
+        targets.append(urllib.parse.unquote(target))
+    return targets
+
+
+def _extract_note_targets(text: str) -> list[str]:
+    targets = [*_extract_markdown_targets(text), *_extract_wikilink_targets(text)]
+    seen: set[str] = set()
+    unique: list[str] = []
+    for target in targets:
+        key = target.strip()
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(key)
+    return unique
+
+
 def _extract_paper_refs(text: str) -> list[str]:
     refs = set(PAPER_PATH_RE.findall(text))
-    for target in _extract_markdown_targets(text):
+    for target in _extract_note_targets(text):
         if "papers/" in target and target.endswith(".md"):
             refs.add(target[target.index("papers/") :])
+        elif target.startswith("papers/") and not Path(target).suffix:
+            refs.add(f"{target}.md")
     return sorted(refs)
 
 
@@ -227,3 +253,30 @@ def _resolve_markdown_target(paths: VaultPaths, source: Path, target: str) -> Pa
     if target_path.parts and target_path.parts[0] in VAULT_NOTE_ROOTS:
         return (paths.vault / target_path).resolve()
     return (source.parent / target_path).resolve()
+
+
+def _resolve_note_target(paths: VaultPaths, source: Path, target: str) -> Path | None:
+    target = target.split("|", 1)[0].split("#", 1)[0].strip()
+    if not target or "://" in target:
+        return None
+    target_path = Path(target)
+    if target_path.is_absolute():
+        return target_path.resolve()
+    if target_path.parts and target_path.parts[0] in VAULT_NOTE_ROOTS:
+        candidate = (paths.vault / target_path).resolve()
+        if candidate.suffix or candidate.exists():
+            return candidate
+        return candidate.with_suffix(".md")
+    if "/" in target:
+        candidate = (source.parent / target_path).resolve()
+        if candidate.suffix or candidate.exists():
+            return candidate
+        return candidate.with_suffix(".md")
+    matches = []
+    for root_name in VAULT_NOTE_ROOTS:
+        root = paths.vault / root_name
+        if root.exists():
+            matches.extend(path for path in root.rglob("*.md") if path.stem == target)
+    if len(matches) == 1:
+        return matches[0].resolve()
+    return None

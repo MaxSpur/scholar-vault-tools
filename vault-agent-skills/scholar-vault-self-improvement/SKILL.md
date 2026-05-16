@@ -38,6 +38,8 @@ paths.
 2. For broad maintenance triage, prefer
    `scholar-vault maintenance-report --write-queue`; it creates duplicate-safe
    queue items with stable keys.
+   Use `scholar-vault lint-wiki --write-queue --write-report` when the triage
+   target is semantic wiki structure rather than broad maintenance status.
 3. For a new typed task, use `scholar-vault queue add` with the narrowest
    correct `--kind`, `--required-evidence`, and links such as `--citekey`,
    `--run`, `--file`, `--query`, or `--project`.
@@ -60,6 +62,8 @@ paths.
 
 ```fish
 scholar-vault maintenance-report --write-queue
+scholar-vault lint-wiki --write-queue --write-report
+scholar-vault eval run --write-queue
 scholar-vault queue add --kind discover_sources --title "Review candidate-only Labs results" --required-evidence web --run <run-id> --success-criteria "Candidates are imported with evidence or intentionally ignored."
 scholar-vault queue add --kind compile_paper --title "Read and compile <citekey>" --required-evidence pdf --citekey <citekey>
 scholar-vault queue add --kind update_synthesis --title "Repair source links in <synthesis>" --required-evidence pdf --file syntheses/<slug>.md

@@ -41,7 +41,7 @@ QueueKind = Literal[
 ]
 QueueStatus = Literal["open", "planned", "running", "drafted", "blocked", "done", "rejected"]
 QueuePriority = Literal["low", "normal", "high"]
-QueueCreatedBy = Literal["user", "import", "lint", "agent", "automation", "feedback"]
+QueueCreatedBy = Literal["user", "import", "lint", "eval", "agent", "automation", "feedback"]
 RequiredEvidence = Literal["pdf", "metadata", "web", "none"]
 FeedbackTargetType = Literal[
     "paper_digest",

@@ -231,6 +231,7 @@ def render_vault_readme() -> str:
         "compiled source digests live in `paper-digests/`, canonical evidence PDFs live in "
         "`pdfs/`, Scholar Labs runs live in `runs/`, durable agent-written "
         "concepts/syntheses/tasks/queries/projects/proposals live in their named folders, "
+        "deterministic eval definitions live in `_evals/`, "
         "typed improvement state lives in `tasks/queue/`, `_operations/`, and `_feedback/`, "
         "and derived navigation lives in "
         "`bases/`, `_indexes/`, `_exports/`, `llms.txt`, and `llms-full.txt`.\n"
@@ -268,6 +269,8 @@ def render_llms_txt() -> str:
         "- Reusable paper digests: paper-digests/ and _indexes/compile-dashboard.md\n"
         "- Dashboard hub: _indexes/dashboard.md\n"
         "- Maintenance triage: scholar-vault maintenance-report --vault /path/to/vault\n"
+        "- Semantic lint: scholar-vault lint-wiki --vault /path/to/vault\n"
+        "- Deterministic evals: _evals/ and scholar-vault eval run --vault /path/to/vault\n"
         "- Concepts and method cards: concepts/ and _indexes/concepts.md\n"
         "- Synthesis notes: syntheses/ and _indexes/syntheses.md\n"
         "- Open questions and research gaps: tasks/ and _indexes/tasks.md\n"
@@ -305,6 +308,10 @@ def render_llms_full(
             "- Start with llms.txt, _indexes/dashboard.md, and relevant projects, "
             "concepts, and syntheses.",
             "- Use `scholar-vault maintenance-report --vault /path/to/vault` for broad triage.",
+            "- Use `scholar-vault lint-wiki --vault /path/to/vault` for deterministic "
+            "semantic structure checks.",
+            "- Use `_evals/` for deterministic retrieval, grounding, synthesis, and proposal "
+            "audit checks.",
             "- Use concepts/ for reusable methods, algorithms, visual encodings, datasets, "
             "evaluation protocols, and terminology.",
             "- Use paper-digests/ for reusable single-paper digests compiled from linked PDFs.",
@@ -330,8 +337,11 @@ def render_llms_full(
             "- _indexes/queries.md",
             "- _indexes/projects.md",
             "- _indexes/self-improvement.md",
+            "- _indexes/lint-wiki-report.md",
+            "- _indexes/eval-report.md",
             "- bases/",
             "- _exports/semantic-neighbors.json",
+            "- _exports/eval-history.json",
             "",
         ]
     )

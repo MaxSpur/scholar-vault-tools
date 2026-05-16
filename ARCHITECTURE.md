@@ -28,6 +28,9 @@
 - `scholar_vault/cli_compile.py`: `compile ...` command group for durable
   paper digest scaffolding, status, project queues, marking, and doctor
   validation.
+- `scholar_vault/cli_semantic.py`: `lint-wiki` and `eval ...` command wiring
+  for deterministic semantic lint, queue/report output, eval history, and eval
+  reports.
 - `scholar_vault/config.py`: user-level default path storage and latest Scholar Labs export selection.
 - `scholar_vault/models.py`: typed records for exports, paper cards, discovery
   candidates, runs, logs, and PDF candidates. Paper cards are the durable
@@ -48,6 +51,15 @@
   feedback, tool-improvement, and self-improvement dashboard helpers. It writes
   `tasks/queue/*.yaml`, `_operations/log.md`, `_operations/runs/*.yaml`,
   `_feedback/ratings/*.yaml`, and `_indexes/self-improvement.md`.
+- `scholar_vault/semantic.py`: shared stable finding IDs, severity/action
+  records, Markdown report rendering, and duplicate-resistant queue creation
+  for semantic lint and eval failures.
+- `scholar_vault/semantic_lint.py`: deterministic `lint-wiki` checks for stale,
+  ungrounded, incomplete, weakly linked, invalid generated, or malformed vault
+  artifacts. It writes reports and queue items only when explicitly requested.
+- `scholar_vault/evals.py`: deterministic non-LLM eval definition loading,
+  execution, queue integration, `_exports/eval-history.json`, and
+  `_indexes/eval-report.md`.
 - `scholar_vault/topics.py`: topic-map reports, prompt-boilerplate cleanup presets, topic label normalization, and topic frontmatter mutation.
 - `scholar_vault/search_index.py`: `_indexes/search-index.md` generation for plain-text Obsidian/agent search.
 - `scholar_vault/neighbors.py`: deterministic `_exports/semantic-neighbors.json` generation.
@@ -115,6 +127,17 @@
 - `git-summary`: read-only Git status summary for a vault. It groups changed files by top-level path and classifies them as canonical, generated, or other so rebuild-sized diffs can be reviewed without reading every generated file body.
 - `notes-missing`: read-only paper-card report for selected/attached cards that lack a requested notes subheading such as `PDF reading notes`. It is meant to produce PDF-reading queues for actual vault improvement work.
 - `maintenance-report`: read-only triage composition that writes `_indexes/maintenance-report.md` and `tasks/<date>-maintenance.md` from the current `status`, `pdf-doctor`, `notes-missing`, enrichment, staging, topic-noise, concept, synthesis, and task signals without mutating paper cards, PDFs, run manifests, or metadata. With `--write-queue`, it additionally writes duplicate-resistant typed queue items under `tasks/queue/*.yaml`.
+- `lint-wiki`: deterministic semantic lint for source-wiki structure. It
+  reports stale, ungrounded, incomplete, weakly linked, malformed, or invalid
+  generated artifacts with severity `info|warning|error` and action
+  `report_only|create_queue_item|needs_user_review|needs_tool_change`.
+  `--json` prints machine output, `--write-report` writes
+  `_indexes/lint-wiki-report.md`, and `--write-queue` creates stable-key queue
+  items without rewriting scientific content.
+- `eval list/run/report`: loads `_evals/*.yaml` definitions, runs deterministic
+  non-LLM evals for retrieval, grounding, synthesis, and proposal audits,
+  stores history under `_exports/eval-history.json`, optionally creates queue
+  items for failures, and writes `_indexes/eval-report.md`.
 - `queue list/add/show/plan/close/doctor`: typed improvement queue commands.
   Queue records are YAML files under `tasks/queue/` and use stable keys where a
   producer can identify repeated work.
@@ -214,11 +237,12 @@
 - Raw citation cache: `raw/metadata/<citekey>/`
 - Raw discovery cache: `raw/discovery/<provider>/*.json`
 - Durable query workbenches: `queries/<slug>.md`
+- Deterministic eval definitions: `_evals/*.yaml`
 - Typed queue items: `tasks/queue/*.yaml`
 - Append-only operation log: `_operations/log.md`
 - Operation records: `_operations/runs/*.yaml`
 - Feedback ratings: `_feedback/ratings/*.yaml`
-- Derived indexes and exports: `_indexes/`, `_exports/`, `llms.txt`, `llms-full.txt`. The generated Obsidian-facing navigation layer includes `_indexes/dashboard.md`, `paper-status.md`, `reading-queue.md`, `compile-dashboard.md`, `metadata-issues.md`, `pdf-issues.md`, `synthesis-dashboard.md`, `search-index.md`, `self-improvement.md`, and `_exports/semantic-neighbors.json`.
+- Derived indexes and exports: `_indexes/`, `_exports/`, `llms.txt`, `llms-full.txt`. The generated Obsidian-facing navigation layer includes `_indexes/dashboard.md`, `paper-status.md`, `reading-queue.md`, `compile-dashboard.md`, `metadata-issues.md`, `pdf-issues.md`, `synthesis-dashboard.md`, `search-index.md`, `self-improvement.md`, `lint-wiki-report.md`, `eval-report.md`, `_exports/semantic-neighbors.json`, and `_exports/eval-history.json`.
 - Generated Obsidian Bases: `bases/*.base`. Bases are a view layer over
   existing frontmatter, file links, and canonical records; they are not an
   alternative data model.
@@ -231,7 +255,7 @@
 The vault is intended to be versioned, but rebuilds intentionally rewrite many
 derived views. Version-control policy is based on file responsibility:
 
-- Canonical records: `papers/`, `paper-digests/`, `pdfs/`, run
+- Canonical records: `papers/`, `paper-digests/`, `pdfs/`, `_evals/`, run
   YAML/manifests under `runs/`, `raw/`, `concepts/`, `syntheses/`, `tasks/`,
   `queries/`, `projects/`, and `proposals/`.
   These should be reviewed as durable user or tool state. Paper cards are

@@ -111,6 +111,8 @@
 - [x] Add PDF-grounded paper digest scaffolding, status/doctor commands, compile dashboard, and a compile-paper vault-agent skill.
 - [x] Add typed self-improvement queue, operation log, feedback records,
   dashboard, and tool-improvement task bridge.
+- [x] Add deterministic semantic lint and lightweight eval commands with
+  stable finding IDs, queue/report output, and eval history.
 - [x] Port typed self-improvement workflow guidance into the vault AGENTS
   template and repository-owned vault-agent skills.
 - [ ] Add an Obsidian setup command that writes safe default graph/search settings, including graph filters that hide generated run/topic/index scaffolding by default.

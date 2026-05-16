@@ -26,6 +26,7 @@ from . import cli_labs_prompts as _cli_labs_prompts
 from . import cli_projects as _cli_projects
 from . import cli_queries as _cli_queries
 from . import cli_self_improvement as _cli_self_improvement
+from . import cli_semantic as _cli_semantic
 from . import cli_skills as _cli_skills
 from .bibliography import (
     bibtex_doctor,
@@ -79,6 +80,7 @@ app = typer.Typer(help="Local-first research source wiki and vault manager.")
 bases_app = _cli_bases.bases_app
 compile_app = _cli_compile.compile_app
 discovery_app = _cli_discovery.discovery_app
+eval_app = _cli_semantic.eval_app
 feedback_app = _cli_self_improvement.feedback_app
 labs_prompts_app = _cli_labs_prompts.labs_prompts_app
 operations_app = _cli_self_improvement.operations_app
@@ -91,6 +93,7 @@ tools_task_app = _cli_self_improvement.tools_task_app
 app.add_typer(bases_app, name="bases")
 app.add_typer(compile_app, name="compile")
 app.add_typer(discovery_app, name="discover")
+app.add_typer(eval_app, name="eval")
 app.add_typer(feedback_app, name="feedback")
 app.add_typer(labs_prompts_app, name="labs-prompts")
 app.add_typer(operations_app, name="operations")
@@ -100,9 +103,14 @@ app.add_typer(queue_app, name="queue")
 app.add_typer(query_app, name="query")
 app.add_typer(skills_app, name="skills")
 app.add_typer(tools_task_app, name="tools-task")
+app.command("lint-wiki")(_cli_semantic.lint_wiki_command)
 console = Console()
 
 # Compatibility names for callers that imported command functions from scholar_vault.cli.
+lint_wiki_command = _cli_semantic.lint_wiki_command
+eval_list_command = _cli_semantic.eval_list_command
+eval_run_command = _cli_semantic.eval_run_command
+eval_report_command = _cli_semantic.eval_report_command
 skills_install_external_command = _cli_skills.skills_install_external_command
 skills_update_external_command = _cli_skills.skills_update_external_command
 skills_install_obsidian_command = _cli_skills.skills_install_obsidian_command

@@ -174,6 +174,7 @@ scholar-labs-vault/
     <query-slug>/prompt-packs/
   projects/
   proposals/
+  _evals/
   _operations/
     log.md
     runs/
@@ -209,11 +210,14 @@ scholar-labs-vault/
     projects.md
     proposals.md
     self-improvement.md
+    lint-wiki-report.md
+    eval-report.md
   _exports/
     library.bib
     library.json
     library.csl.json
     semantic-neighbors.json
+    eval-history.json
 ```
 
 `AGENTS.md` is initialized with the vault-specific agent operating rules from
@@ -635,6 +639,12 @@ scholar-vault status --vault ~/Documents/Research/scholar-labs-vault --json
 scholar-vault doctor --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault git-summary --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault maintenance-report --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault lint-wiki --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault lint-wiki --vault ~/Documents/Research/scholar-labs-vault --json
+scholar-vault lint-wiki --vault ~/Documents/Research/scholar-labs-vault --write-queue --write-report
+scholar-vault eval list --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault eval run --vault ~/Documents/Research/scholar-labs-vault --kind retrieval
+scholar-vault eval report --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault notes-missing --vault ~/Documents/Research/scholar-labs-vault --heading "PDF reading notes"
 scholar-vault concept-index --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault query create --vault ~/Documents/Research/scholar-labs-vault "How do collaborative map workbenches support mobility decisions?" --project map-lens-deformation --slug collaborative-map-workbenches
@@ -669,6 +679,44 @@ concept, and synthesis checks without modifying paper cards or run data.
 With `--write-queue`, it also writes typed maintenance queue items under
 `tasks/queue/*.yaml` using stable keys so repeated reports do not duplicate the
 same work.
+
+`lint-wiki` is a deterministic semantic lint layer for the source wiki. It
+flags stale, ungrounded, incomplete, or weakly linked artifacts such as
+syntheses without sources, syntheses citing papers without PDFs or digests,
+concepts without supporting sources, incomplete paper-digest templates, stale
+digests relative to changed cards or query notes, empty query workbenches,
+unlinked Scholar Labs prompt packs or runs, malformed queue/feedback/tool-task
+records, invalid generated Bases, detectable dead vault links, and tracked
+changes to generated files. `--write-report` writes
+`_indexes/lint-wiki-report.md`; `--write-queue` creates duplicate-resistant
+queue items using stable finding IDs.
+
+Semantic lint is a safety layer, not an oracle. It cannot prove that a claim is
+true, complete, or well interpreted; it only proves that a deterministic
+structural signal was present or absent. A good finding is actionable, for
+example "synthesis cites `papers/source.md`, but that paper has no digest." A
+bad finding would claim "the synthesis is scientifically wrong" without reading
+the linked PDF. Lint never calls an LLM and never rewrites paper cards,
+concepts, syntheses, or digests; it writes reports and queue records only when
+asked.
+
+`eval` runs lightweight deterministic vault evals from YAML files under
+`_evals/`. Supported kinds are `retrieval`, `grounding`, `synthesis`, and
+`proposal_audit`. Initial evals check expected citekeys for a query, required
+source links in a synthesis, forbidden source-only Scholar Labs citations, and
+expected proposal source-matrix coverage. `eval run` records history in
+`_exports/eval-history.json`, `eval report` writes `_indexes/eval-report.md`,
+and `eval run --write-queue` turns failures into stable queue items.
+
+Example eval definition:
+
+```yaml
+id: retrieval-mobility
+kind: retrieval
+query: mobility-decision-support
+expected_citekeys:
+  - Schottler2021GeospatialNetworks
+```
 
 `queue`, `operations`, `feedback`, and `tools-task` provide the typed
 self-improvement substrate. Queue items live under `tasks/queue/`, operation
@@ -1387,6 +1435,8 @@ linked project, or an interpretation changes and the digest needs review.
 - `projects/<slug>/index.md`: optional project lens over shared papers, runs, concepts, syntheses, tasks, and proposals.
 - `projects/<slug>/project-map.md`: generated project map summarizing linked record status, gaps, and next actions.
 - `proposals/*.md` or `proposals/<slug>/*.md`: optional proposal workspaces, outlines, source matrices, and draft evidence layers.
+- `_evals/*.yaml`: deterministic eval definitions for retrieval, grounding,
+  synthesis, and proposal source-matrix checks.
 - `papers/*.md` body sections: human-readable keywords, abstract, and primary Scholar Labs summary. Long prose is not duplicated in frontmatter.
 - `runs/<run_id>/<Short Title.md>`: Obsidian-friendly per-run provenance pages that keep all Scholar Labs candidate results.
 - `runs/*/index.yaml`: machine-readable run records used by `resume`, `rerun`, and rebuilds.
@@ -1399,6 +1449,7 @@ linked project, or an interpretation changes and the digest needs review.
 - `bases/*.base`: generated Obsidian Bases workbench views over existing vault state.
 - `llms.txt` and `llms-full.txt`: short and expanded agent navigation summaries.
 - `_exports/library.*`: plain-file exports for Zotero migration or other tools.
+- `_exports/eval-history.json`: generated eval run history.
 
 ## Git workflow for the vault
 
@@ -1406,9 +1457,9 @@ Rebuilds can produce large but expected diffs. Treat the vault as a mix of
 canonical records and generated views:
 
 - Commit canonical changes when they reflect intentional work: `papers/`,
-  `paper-digests/`, `pdfs/`, `raw/`, run YAML/manifests under `runs/`, and durable notes under
-  `concepts/`, `syntheses/`, `tasks/`, `queries/`, `projects/`, and
-  `proposals/`.
+  `paper-digests/`, `pdfs/`, `raw/`, `_evals/`, run YAML/manifests under
+  `runs/`, and durable notes under `concepts/`, `syntheses/`, `tasks/`,
+  `queries/`, `projects/`, and `proposals/`.
 - Treat `_indexes/`, `topics/`, `llms.txt`, `llms-full.txt`, `_exports/`,
   `bases/`, rendered run Markdown under `runs/`, and
   `projects/*/project-map.md` as generated output. Do not hand-edit these

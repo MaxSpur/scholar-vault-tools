@@ -115,3 +115,6 @@
   canonical research records. Queue items, operations, and feedback can drive
   follow-up work, but concepts, syntheses, and paper cards still require
   explicit evidence-grounded commands or user/agent edits.
+- Semantic lint and evals should stay deterministic and structural. They can
+  produce reports and stable queue items, but they must not become a hidden LLM
+  judgment layer or silently rewrite scientific prose.

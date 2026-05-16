@@ -70,6 +70,9 @@ scholar-vault labs-prompts list
 scholar-vault labs-prompts doctor --json
 scholar-vault discover list
 scholar-vault discover doctor --json
+scholar-vault lint-wiki --json
+scholar-vault eval list
+scholar-vault eval report --json
 scholar-vault queue list --json
 scholar-vault feedback report --json
 scholar-vault notes-missing --heading "PDF reading notes"

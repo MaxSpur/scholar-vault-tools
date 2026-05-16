@@ -40,6 +40,7 @@ CANONICAL_TOP_LEVELS = {
     "queries",
     "projects",
     "proposals",
+    "_evals",
 }
 GENERATED_TOP_LEVELS = {"_indexes", "topics", "_exports", "bases"}
 GENERATED_FILES = {"llms.txt", "llms-full.txt"}
