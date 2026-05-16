@@ -37,6 +37,9 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 
 - `papers/*.md` are canonical source records for metadata, links, provenance, and notes.
 - Linked `pdfs/*.pdf` files are the canonical evidence artifacts.
+- Paper cards may carry both `linked_queries` and `linked_query_paths`.
+  `linked_query_paths` are plain relative paths for Obsidian Bases path filters
+  and should not be changed to wikilinks.
 - `runs/<run_id>/<Short Title>.md` is the Obsidian-facing Scholar Labs run note; `runs/<run_id>/index.yaml` is the machine-readable run record.
 - `pdfs/` stores attached canonical PDFs.
 - `raw/` stores raw exports, staged/archive data, and provider metadata; treat it as immutable unless the user explicitly asks for vault maintenance.
@@ -66,6 +69,8 @@ conda activate scholar-vault
 scholar-vault status --json
 scholar-vault configure
 scholar-vault runs
+scholar-vault query list --json
+scholar-vault query doctor --json
 scholar-vault labs-prompts list
 scholar-vault labs-prompts doctor --json
 scholar-vault discover list
@@ -75,12 +80,16 @@ scholar-vault eval list
 scholar-vault eval report --json
 scholar-vault queue list --json
 scholar-vault feedback report --json
+scholar-vault schema export --json
 scholar-vault notes-missing --heading "PDF reading notes"
 scholar-vault enrich --dry-run
 scholar-vault match-staging
 ```
 
 Use `scholar-vault rebuild` only after actual manual edits to canonical cards. Orientation should normally be read-only.
+Use `scholar-vault query rename`, `query archive`, or `query doctor --fix`
+when query lifecycle state needs repair; do not infer lifecycle state from file
+moves alone.
 
 ## Report Shape
 

@@ -57,6 +57,10 @@ paths.
 8. Run `scholar-vault queue doctor --json`, `scholar-vault operations doctor
    --json`, and `scholar-vault feedback doctor --json` after manual edits or
    bulk workflow changes.
+9. For a full maintenance pass, follow
+   `docs/manual-self-improvement-runbook.md` from the `scholar-vault-tools`
+   repository. The manual runbook is currently preferred over scheduled
+   automations.
 
 ## Command Patterns
 
@@ -69,6 +73,7 @@ scholar-vault queue add --kind compile_paper --title "Read and compile <citekey>
 scholar-vault queue add --kind update_synthesis --title "Repair source links in <synthesis>" --required-evidence pdf --file syntheses/<slug>.md
 scholar-vault operations log --kind research-loop --message "Compiled <citekey> digest." --queue-item <queue-id> --check "scholar-vault compile doctor --json"
 scholar-vault feedback rate paper-digests/<citekey>.md --target-type paper_digest --verdict needs_fix --notes "Missing limitations section."
+scholar-vault schema export --json
 scholar-vault tools-task create --title "Improve queue duplicate warning" --problem "..." --expected-behavior "..." --test "CLI duplicate stable-key coverage"
 ```
 
@@ -82,3 +87,6 @@ scholar-vault tools-task create --title "Improve queue duplicate warning" --prob
   relevant linked PDFs have been read or the item is explicitly rejected.
 - Do not hand-edit `_indexes/self-improvement.md` or
   `bases/self-improvement.base`; they are generated views.
+- Do not set up autonomous scheduled rewriting of digests, concepts, syntheses,
+  paper cards, or proposals from queue, feedback, lint, or eval output. Use the
+  manual runbook and explicit edits instead.

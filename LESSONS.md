@@ -18,6 +18,9 @@
 - When adding a new vault workflow, update both `VAULT_AGENTS_TEMPLATE.md` and
   repository-owned `vault-agent-skills/` so Codex sessions opened inside a vault
   inherit the new workflow instead of following stale ad hoc notes.
+- A hardening pass can still change vault-facing operator behavior. Before
+  calling it done, audit the vault-visible surfaces: `VAULT_AGENTS_TEMPLATE.md`,
+  affected `vault-agent-skills/`, README/docs, and smoke/CI coverage.
 - Compiled paper digests should be durable PDF-grounded artifacts under `paper-digests/`, while paper cards keep compact status, timestamps, and pointers. Scaffolding can create structure, but only an agent/user PDF read should fill claims or mark evidence as grounded.
 - Preserve existing Scholar Labs summaries and provenance when merging later provider BibTeX/CSL or DOI enrichment.
 - Idempotence is easiest when run slugs depend on export metadata and when merges happen before any new card slug is allocated.

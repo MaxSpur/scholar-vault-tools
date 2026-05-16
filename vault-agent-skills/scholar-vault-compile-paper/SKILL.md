@@ -69,6 +69,12 @@ scholar-vault compile mark <citekey> --status compiled
 scholar-vault compile mark <citekey> --status reviewed
 ```
 
+`compile mark` rejects `compiled` and `reviewed` unless the digest is ready:
+`evidence_level` is not `metadata_only`, `source_pages_checked` is filled, the
+paper has a resolving PDF link, and scaffold/template placeholders are gone.
+Use `--force` only when the user explicitly wants the override, then log the
+reason with `scholar-vault operations log`.
+
 Use `--status stale` when a paper, query, project, or related interpretation
 changes and the digest needs a fresh pass.
 9. Run:
@@ -98,7 +104,11 @@ proposal evidence.
 ## Boundaries
 
 - Do not write claims from Scholar Labs summaries unless the PDF confirms them.
-- Do not call a digest `compiled` if it is still `metadata_only`.
+- Do not call a digest `compiled` or `reviewed` if it is still
+  `metadata_only`, has no checked source pages, lacks a resolving PDF link, or
+  still contains scaffold placeholders.
+- Do not use `compile mark --force` unless the user explicitly asks for that
+  exception and the reason is recorded.
 - Do not overwrite user-authored digest prose with a new scaffold unless the
   user explicitly asks for `--force`.
 - Do not hand-edit generated folders. Use `compile mark`, `compile doctor`,

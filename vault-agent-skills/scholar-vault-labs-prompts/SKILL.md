@@ -42,6 +42,9 @@ paths.
 2. Prefer existing query/project state over inventing a new prompt context.
    Use `scholar-vault query create ...` or `scholar-vault project scaffold ...`
    only when the user wants that durable workspace.
+   If a query slug changes, use `scholar-vault query rename OLD NEW`; do not
+   manually move query-local prompt-pack folders or hand-edit linked query
+   paths.
 3. Generate exactly one prompt-pack scope:
    - `scholar-vault labs-prompts generate --query <query-slug>`
    - `scholar-vault labs-prompts generate --project <project-slug>`
@@ -110,3 +113,6 @@ criteria and tell the user which Labs results to select/import.
 - Do not create canonical paper cards from API seed candidates.
 - Do not overwrite query/project/synthesis prose when a generated prompt pack
   is enough.
+- Do not manually relocate query-local prompt packs after a query rename; use
+  the query lifecycle commands so runs, prompt packs, discovery candidates,
+  queue items, paper links, and Bases-visible fields stay aligned.

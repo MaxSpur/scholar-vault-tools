@@ -34,6 +34,9 @@ These instructions apply inside this research vault. They are for agents working
   `scholar-vault` command instead.
 - Durable agent-written work belongs in non-generated folders such as `concepts/`, `syntheses/`, `tasks/`, `queries/`, `projects/`, and `proposals/`.
 - Query notes are question-centered workbenches over shared papers, runs, syntheses, and prompt packs. They are not daily notes and do not replace canonical paper cards.
+- Paper cards may expose both `linked_queries` and `linked_query_paths`.
+  `linked_query_paths` are plain relative paths used by Obsidian Bases path
+  filters such as `this.file.path`; do not convert them to wikilinks.
 - Projects are lenses over shared papers, runs, concepts, syntheses, tasks, and optional proposals. They link to paper cards instead of duplicating source content.
 - Do not create new top-level folders unless the user explicitly instructs you to.
 - Proposal workspaces are one workflow, not the primary vault workflow.
@@ -117,6 +120,8 @@ scholar-vault eval list
 scholar-vault eval run
 scholar-vault eval report
 scholar-vault compile status --json
+scholar-vault query list --json
+scholar-vault query doctor --json
 scholar-vault labs-prompts list
 scholar-vault labs-prompts doctor --json
 scholar-vault discover list
@@ -124,6 +129,7 @@ scholar-vault discover doctor --json
 scholar-vault queue list --json
 scholar-vault operations list --json
 scholar-vault feedback report --json
+scholar-vault schema export --json
 scholar-vault project list
 scholar-vault runs
 ```
@@ -142,8 +148,11 @@ scholar-vault references
 ```
 
 After editing only `concepts/`, run `scholar-vault concept-index`. After
-editing query notes or Base views, run `scholar-vault bases rebuild`. After
-editing paper cards, topics, syntheses, tasks, or proposal evidence surfaces,
+editing query notes or Base views, run `scholar-vault bases rebuild`. Use
+`scholar-vault query rename`, `scholar-vault query archive`, and
+`scholar-vault query doctor --fix` for query lifecycle/path repairs instead of
+moving query files or editing query-linked metadata by hand. After editing paper
+cards, topics, syntheses, tasks, or proposal evidence surfaces,
 run:
 
 ```fish
@@ -205,6 +214,21 @@ scholar-vault resolve-citation --citekey <citekey> \
   --url <url> \
   --lock
 ```
+
+## Paper Digest Status
+
+Before marking a digest `compiled` or `reviewed`, confirm it is no longer a
+metadata-only scaffold:
+
+- `evidence_level` is not `metadata_only`;
+- `source_pages_checked` is filled with the PDF pages or sections inspected;
+- the paper has a linked PDF path that resolves inside the vault;
+- scaffold/template placeholders have been removed from the digest body.
+
+`scholar-vault compile mark <citekey> --status compiled|reviewed` enforces
+these checks and `scholar-vault lint-wiki --json` reports matching findings.
+Use `--force` only when the user explicitly wants to override the guard, and
+log the reason with `scholar-vault operations log`.
 
 ## Candidate And Staging Semantics
 
@@ -286,6 +310,7 @@ scholar-vault operations doctor --json
 scholar-vault feedback rate <target> --target-type <target-type> --verdict <verdict> --notes "..."
 scholar-vault feedback report --json
 scholar-vault feedback doctor --json
+scholar-vault schema export --json
 scholar-vault tools-task create --title "..." --problem "..." --test "..."
 ```
 
@@ -306,6 +331,11 @@ The generated dashboard `_indexes/self-improvement.md` and
 generated views; regenerate them with the commands above or `scholar-vault
 rebuild`.
 
+For a full maintenance pass, follow `docs/manual-self-improvement-runbook.md`
+from the `scholar-vault-tools` repository. Manual self-improvement runs are
+currently preferred over scheduled automations: they surface deterministic
+signals and queue items without autonomously rewriting scientific content.
+
 ## Semantic Lint And Evals
 
 Use `scholar-vault lint-wiki` as a deterministic safety layer before treating
@@ -313,7 +343,9 @@ wiki structure as healthy. It can flag missing source links, syntheses relying
 on papers without PDFs or digests, stale or incomplete digests, empty query
 workbenches, unlinked prompt packs/runs, malformed queue or feedback records,
 invalid generated Bases, detectable dead links, and tracked generated-file
-changes.
+changes. It also reports digests that are marked ready while still
+metadata-only, missing checked source pages, missing PDF links, or retaining
+template placeholders.
 
 ```fish
 scholar-vault lint-wiki --json
@@ -356,7 +388,7 @@ For actual vault improvement after import and enrichment:
 11. Create `concepts/<slug>.md` for reusable concepts, methods, algorithms, datasets, visual encodings, evaluation protocols, or terminology.
 12. Create `syntheses/<slug>.md` for evidence-backed cross-paper answers and literature-review prose.
 13. Create `tasks/<date>-research-gaps.md` for narrative open questions, unclear evidence, gaps, or follow-up reading. Use `$scholar-vault-self-improvement` / `scholar-vault queue ...` for durable typed work items, and use `$scholar-vault-labs-prompts` / `scholar-vault labs-prompts generate ...` for next Scholar Labs prompt packs.
-14. Use `queries/<slug>.md` for focused research questions and link papers, runs, and syntheses with `scholar-vault query link-*`.
+14. Use `queries/<slug>.md` for focused research questions and link papers, runs, and syntheses with `scholar-vault query link-*`. Use `scholar-vault query rename`, `query archive`, and `query doctor --fix` for lifecycle changes so prompt packs, runs, queue items, discovery candidates, paper links, and Bases-visible fields stay aligned.
 15. Run `scholar-vault concept-index` after concept-only edits, `scholar-vault bases rebuild` after query/Base edits, or `scholar-vault rebuild` after broader paper/topic/synthesis/task/project/proposal edits.
 
 ## Project Workflow
