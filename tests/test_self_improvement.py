@@ -10,6 +10,7 @@ from scholar_vault.cli import app
 from scholar_vault.importer import _save_card, initialize_vault
 from scholar_vault.maintenance import maintenance_report
 from scholar_vault.models import FeedbackRecord, OperationRecord, QueueItem, SourceCard
+from scholar_vault.schema import export_schema
 from scholar_vault.self_improvement import (
     create_queue_item,
     doctor_feedback,
@@ -264,3 +265,21 @@ def test_queue_and_feedback_report_do_not_modify_paper_cards(tmp_path) -> None:
 
     assert report["needing_action"]
     assert paper_path.read_text(encoding="utf-8") == paper_before
+
+
+def test_schema_export_includes_self_improvement_and_workbench_schemas(tmp_path) -> None:
+    output = tmp_path / "schemas.json"
+
+    payload = export_schema(output)
+    cli_result = CliRunner().invoke(app, ["schema", "export", "--json"])
+
+    assert output.exists()
+    assert payload["schemas"]["queue_item"]["title"] == "QueueItem"
+    assert "operation_record" in payload["schemas"]
+    assert "feedback_record" in payload["schemas"]
+    assert "prompt_pack" in payload["schemas"]
+    assert "discovery_candidate" in payload["schemas"]
+    assert "paper_digest" in payload["schemas"]
+    assert "eval_spec" in payload["schemas"]
+    assert cli_result.exit_code == 0, cli_result.output
+    assert "queue_item" in json.loads(cli_result.output)["schemas"]

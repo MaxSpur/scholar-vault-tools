@@ -118,3 +118,11 @@
 - Semantic lint and evals should stay deterministic and structural. They can
   produce reports and stable queue items, but they must not become a hidden LLM
   judgment layer or silently rewrite scientific prose.
+- Compile status transitions need structural guards. A digest cannot be treated
+  as compiled or reviewed while it is metadata-only, lacks checked source pages,
+  lacks a valid PDF link, or still contains scaffold placeholders unless the
+  override is explicit and logged.
+- Query slugs are durable path identity. Rename helpers must rewrite explicit
+  query paths across prompt packs, runs, queue items, discovery candidates, and
+  Bases-visible paper fields; archive should preserve paths by setting status
+  instead of moving notes.

@@ -10,7 +10,12 @@ from pydantic import ValidationError
 
 from .bases import doctor_bases
 from .diagnostics import git_summary
-from .digests import DIGEST_REQUIRED_FIELDS, DIGEST_TEMPLATE_SECTIONS
+from .digests import (
+    DIGEST_REQUIRED_FIELDS,
+    DIGEST_TEMPLATE_SECTIONS,
+    digest_completion_issues,
+    normalize_digest_frontmatter,
+)
 from .models import FeedbackRecord, QueueItem, SourceCard
 from .obsidian import (
     _as_string_list,
@@ -377,10 +382,38 @@ def _lint_digests(paths: VaultPaths, cards: list[SourceCard]) -> list[SemanticFi
                     success_criteria="The digest contains every required section heading.",
                 )
             )
+        paper_ref = str(frontmatter.get("paper") or "")
+        card = cards_by_ref.get(paper_ref)
+        digest = normalize_digest_frontmatter(frontmatter, card=card, paths=paths if card else None)
+        for issue in digest_completion_issues(paths, path, digest, body, card=card):
+            findings.append(
+                _finding(
+                    "lint",
+                    check=str(issue["check"]),
+                    subject=rel,
+                    severity="error",
+                    action="create_queue_item",
+                    title="Repair compiled paper digest readiness",
+                    message=str(issue["message"]),
+                    files=[rel],
+                    citekeys=[str(issue.get("citekey") or path.stem)],
+                    details={
+                        key: value
+                        for key, value in issue.items()
+                        if key not in {"message", "citekey"}
+                    },
+                    queue_kind="compile_paper",
+                    required_evidence="pdf",
+                    success_criteria=(
+                        "The digest has PDF evidence, checked source pages, valid PDF links, "
+                        "and no template placeholders before it is marked compiled or "
+                        "reviewed."
+                    ),
+                )
+            )
         status = str(frontmatter.get("status") or "")
         if status == "stale":
             continue
-        paper_ref = str(frontmatter.get("paper") or "")
         digest_time = _parse_datetime(str(frontmatter.get("reviewed_at") or ""))
         digest_time = digest_time or _parse_datetime(str(frontmatter.get("compiled_at") or ""))
         digest_time = digest_time or _mtime(path)

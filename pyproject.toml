@@ -16,6 +16,7 @@ dependencies = [
   "bibtexparser>=1.4.4",
   "Jinja2>=3.1.6",
   "pdfminer.six>=20260107",
+  "pydantic>=2.12,<3",
   "PyMuPDF>=1.26.0",
   "pypdf>=6.10.2",
   "PySide6>=6.10.0",

@@ -115,6 +115,9 @@
   stable finding IDs, queue/report output, and eval history.
 - [x] Port typed self-improvement workflow guidance into the vault AGENTS
   template and repository-owned vault-agent skills.
+- [x] Harden the self-improvement implementation with a pydantic v2 dependency,
+  CI, smoke test, compile readiness guards, query lifecycle commands,
+  Obsidian Bases acceptance docs, manual runbook, and schema export.
 - [ ] Add an Obsidian setup command that writes safe default graph/search settings, including graph filters that hide generated run/topic/index scaffolding by default.
 - [ ] Reduce paper-card search noise by moving full Scholar Labs prompts out of generated paper cards while preserving run links and run-local provenance.
 - [x] Add a search-facing plain-text index over paper titles, abstracts, summaries, keywords, PDF reading notes, concepts, syntheses, tasks, projects, and proposals without full PDF text.

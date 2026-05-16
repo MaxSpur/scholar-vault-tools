@@ -62,6 +62,7 @@ def _base_documents() -> dict[str, dict[str, Any]]:
                 "last_reviewed_at": {"displayName": "Reviewed"},
                 "topics": {"displayName": "Topics"},
                 "linked_queries": {"displayName": "Queries"},
+                "linked_query_paths": {"displayName": "Query paths"},
                 "linked_projects": {"displayName": "Projects"},
                 "file.mtime": {"displayName": "Changed"},
             },
@@ -77,6 +78,7 @@ def _base_documents() -> dict[str, dict[str, Any]]:
                         "pdf_status",
                         "topics",
                         "linked_queries",
+                        "linked_query_paths",
                     ],
                 },
                 {
@@ -97,6 +99,7 @@ def _base_documents() -> dict[str, dict[str, Any]]:
                         "paper_digest",
                         "last_compiled_at",
                         "linked_queries",
+                        "linked_query_paths",
                     ],
                 },
                 {
@@ -192,7 +195,9 @@ def _base_documents() -> dict[str, dict[str, Any]]:
                             (
                                 "file.hasLink(this.file) || "
                                 "(file.hasProperty(\"linked_queries\") && "
-                                "list(linked_queries).contains(this.file.path))"
+                                "list(linked_queries).contains(this.file.path)) || "
+                                "(file.hasProperty(\"linked_query_paths\") && "
+                                "list(linked_query_paths).contains(this.file.path))"
                             ),
                         ]
                     },
@@ -202,6 +207,7 @@ def _base_documents() -> dict[str, dict[str, Any]]:
                         "status",
                         "review_status",
                         "linked_queries",
+                        "linked_query_paths",
                         "file.mtime",
                     ],
                 },

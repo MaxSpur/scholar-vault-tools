@@ -45,9 +45,13 @@ SelectedOnlyOption = Annotated[
         help="When scaffolding a run, use selected results with canonical paper cards only.",
     ),
 ]
-ForceOption = Annotated[
+ScaffoldForceOption = Annotated[
     bool,
     typer.Option("--force", help="Overwrite an existing digest scaffold."),
+]
+MarkForceOption = Annotated[
+    bool,
+    typer.Option("--force", help="Allow compiled/reviewed marks despite readiness issues."),
 ]
 ProjectOption = Annotated[str, typer.Option("--project", help="Project workspace slug.")]
 CitekeyArg = Annotated[
@@ -155,7 +159,7 @@ def compile_scaffold_command(
     citekey: CitekeyOption = None,
     run_id: RunOption = None,
     selected_only: SelectedOnlyOption = False,
-    force: ForceOption = False,
+    force: ScaffoldForceOption = False,
     json_output: JsonOutputArg = False,
 ) -> None:
     summary = compile_scaffold(
@@ -189,13 +193,14 @@ def compile_mark_command(
     citekey: CitekeyArg,
     status: CompileStatusOption,
     vault: VaultArg = None,
+    force: MarkForceOption = False,
     json_output: JsonOutputArg = False,
 ) -> None:
     if status not in MARKABLE_DIGEST_STATUSES:
         raise typer.BadParameter(
             f"--status must be one of: {', '.join(MARKABLE_DIGEST_STATUSES)}"
         )
-    summary = compile_mark(_resolve_vault(vault), citekey, status=status)
+    summary = compile_mark(_resolve_vault(vault), citekey, status=status, force=force)
     if json_output:
         _print_json(summary)
     else:

@@ -16,11 +16,14 @@ from .cli_common import (
     console,
 )
 from .queries import (
+    query_archive,
     query_create,
+    query_doctor,
     query_link_paper,
     query_link_run,
     query_link_synthesis,
     query_list,
+    query_rename,
     query_show,
     query_status,
 )
@@ -28,6 +31,7 @@ from .queries import (
 query_app = typer.Typer(help="Research query workspace helpers.")
 
 QuerySlugArg = Annotated[str, typer.Argument(help="Research query slug.")]
+NewQuerySlugArg = Annotated[str, typer.Argument(help="New research query slug.")]
 QuestionArg = Annotated[str, typer.Argument(help="Research question text.")]
 RunIdArg = Annotated[
     str,
@@ -44,6 +48,11 @@ SynthesisArg = Annotated[str, typer.Argument(help="Synthesis slug or syntheses/<
 ProjectOption = Annotated[str | None, typer.Option("--project", help="Project slug.")]
 SlugOption = Annotated[str | None, typer.Option("--slug", help="Query note slug.")]
 PriorityOption = Annotated[str, typer.Option("--priority", help="Query priority label.")]
+FixOption = Annotated[
+    bool,
+    typer.Option("--fix", help="Apply safe query metadata repairs."),
+]
+ArchiveNotesOption = Annotated[str, typer.Option("--notes", help="Archive note.")]
 
 
 def _print_query_list(summary: dict[str, object]) -> None:
@@ -110,6 +119,27 @@ def _print_query_status(summary: dict[str, object]) -> None:
     _print_issue_counts("Query Status Issues", summary.get("issue_counts") or {})
 
 
+def _print_query_rename(summary: dict[str, object]) -> None:
+    console.print(
+        f"Query renamed: {summary.get('previous_query')} -> {summary.get('query')} "
+        f"(prompt packs={summary.get('prompt_pack_paths_updated', 0)})."
+    )
+
+
+def _print_query_archive(summary: dict[str, object]) -> None:
+    state = "updated" if summary.get("changed") else "unchanged"
+    console.print(f"Query {state}: {summary.get('query')} -> archived.")
+
+
+def _print_query_doctor(summary: dict[str, object]) -> None:
+    status = "OK" if summary.get("ok") else "ISSUES"
+    console.print(f"Query doctor: {status}")
+    _print_issue_counts("Query Doctor Issues", summary.get("issue_counts") or {})
+    fixes = summary.get("fixes") or {}
+    if fixes:
+        _print_issue_counts("Query Doctor Fixes", fixes)
+
+
 @query_app.command("create")
 def query_create_command(
     question: QuestionArg,
@@ -155,6 +185,34 @@ def query_show_command(
         _print_json(summary)
     else:
         _print_query_show(summary)
+
+
+@query_app.command("rename")
+def query_rename_command(
+    slug: QuerySlugArg,
+    new_slug: NewQuerySlugArg,
+    vault: VaultArg = None,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = query_rename(_resolve_vault(vault), slug, new_slug)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_query_rename(summary)
+
+
+@query_app.command("archive")
+def query_archive_command(
+    slug: QuerySlugArg,
+    vault: VaultArg = None,
+    notes: ArchiveNotesOption = "",
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = query_archive(_resolve_vault(vault), slug, notes=notes)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_query_archive(summary)
 
 
 @query_app.command("link-run")
@@ -210,3 +268,16 @@ def query_status_command(
         _print_json(summary)
     else:
         _print_query_status(summary)
+
+
+@query_app.command("doctor")
+def query_doctor_command(
+    vault: VaultArg = None,
+    fix: FixOption = False,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = query_doctor(_resolve_vault(vault), fix=fix)
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_query_doctor(summary)

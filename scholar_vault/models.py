@@ -184,6 +184,7 @@ class SourceCard(BaseModel):
     evidence_level: str = "unknown"
     paper_digest: str | None = None
     linked_queries: list[str] = Field(default_factory=list)
+    linked_query_paths: list[str] = Field(default_factory=list)
     linked_projects: list[str] = Field(default_factory=list)
     doi_status: DoiStatus = "missing"
     doi_source: str | None = None
@@ -219,7 +220,7 @@ class SourceCard(BaseModel):
     def clean_title(cls, value: str) -> str:
         return clean_paper_title(value)
 
-    @field_validator("linked_queries", "linked_projects", mode="before")
+    @field_validator("linked_queries", "linked_query_paths", "linked_projects", mode="before")
     @classmethod
     def coerce_link_lists(cls, value: object) -> list[str]:
         if value is None:
@@ -260,6 +261,7 @@ class SourceCard(BaseModel):
             "evidence_level": self.evidence_level,
             "paper_digest": self.paper_digest,
             "linked_queries": self.linked_queries,
+            "linked_query_paths": self.linked_query_paths,
             "linked_projects": self.linked_projects,
             "doi_status": self.doi_status,
             "doi_source": self.doi_source,

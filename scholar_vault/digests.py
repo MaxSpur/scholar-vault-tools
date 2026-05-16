@@ -56,6 +56,11 @@ DIGEST_TEMPLATE_SECTIONS = (
     "Evidence notes",
 )
 NEEDS_ACTION_STATUSES = {"uncompiled", "draft", "stale"}
+DIGEST_COMPLETION_STATUSES = {"compiled", "reviewed"}
+DIGEST_TEMPLATE_PLACEHOLDER_RE = re.compile(
+    r"To be filled by an agent or reviewer after reading the PDF",
+    re.IGNORECASE,
+)
 
 
 def _now_iso() -> str:
@@ -222,6 +227,114 @@ def render_digest_markdown(paths: VaultPaths, card: SourceCard, *, status: str =
 
 def _write_digest(path: Path, frontmatter: dict[str, Any], body: str) -> None:
     write_text(path, f"---\n{dump_frontmatter(frontmatter).strip()}\n---\n\n{body.strip()}\n")
+
+
+def _template_placeholder_sections(body: str) -> list[str]:
+    sections: list[str] = []
+    matches = list(re.finditer(r"^##\s+(.+?)\s*$", body, flags=re.MULTILINE))
+    for index, match in enumerate(matches):
+        section = match.group(1).strip()
+        start = match.end()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
+        if DIGEST_TEMPLATE_PLACEHOLDER_RE.search(body[start:end]):
+            sections.append(section)
+    if not sections and DIGEST_TEMPLATE_PLACEHOLDER_RE.search(body):
+        sections.append("body")
+    return sections
+
+
+def digest_completion_issues(
+    paths: VaultPaths,
+    digest_path: Path,
+    digest_frontmatter: dict[str, Any],
+    body: str,
+    *,
+    card: SourceCard | None = None,
+    target_status: str | None = None,
+) -> list[dict[str, Any]]:
+    status = str(target_status or digest_frontmatter.get("status") or "")
+    if status not in DIGEST_COMPLETION_STATUSES:
+        return []
+
+    digest_ref = ensure_relative(digest_path, paths.vault)
+    citekey = str(
+        digest_frontmatter.get("citekey") or (card and _card_id(card)) or digest_path.stem
+    )
+    issues: list[dict[str, Any]] = []
+    evidence_level = str(digest_frontmatter.get("evidence_level") or "")
+    if evidence_level == "metadata_only":
+        issues.append(
+            {
+                "kind": "compiled/reviewed digest still marked metadata_only",
+                "check": "paper-digest-ready-metadata-only",
+                "field": "evidence_level",
+                "message": (
+                    f"{digest_ref} is being marked {status} while evidence_level is "
+                    "metadata_only."
+                ),
+                "citekey": citekey,
+            }
+        )
+    if not _as_string_list(digest_frontmatter.get("source_pages_checked")):
+        issues.append(
+            {
+                "kind": "compiled/reviewed digest has no source_pages_checked",
+                "check": "paper-digest-ready-missing-source-pages",
+                "field": "source_pages_checked",
+                "message": (
+                    f"{digest_ref} is being marked {status} without source_pages_checked."
+                ),
+                "citekey": citekey,
+            }
+        )
+
+    pdf_ref = str(digest_frontmatter.get("pdf") or "").strip()
+    if not pdf_ref:
+        issues.append(
+            {
+                "kind": "compiled/reviewed digest has no linked PDF",
+                "check": "paper-digest-ready-missing-pdf-link",
+                "field": "pdf",
+                "message": f"{digest_ref} is being marked {status} without a linked PDF.",
+                "citekey": citekey,
+            }
+        )
+    elif not (paths.vault / pdf_ref).exists():
+        issues.append(
+            {
+                "kind": "compiled/reviewed digest PDF link is missing",
+                "check": "paper-digest-ready-missing-pdf-link",
+                "field": "pdf",
+                "message": f"{digest_ref} links missing PDF {pdf_ref}.",
+                "citekey": citekey,
+                "pdf": pdf_ref,
+            }
+        )
+    elif card is not None and not _card_has_valid_pdf(paths, card):
+        issues.append(
+            {
+                "kind": "compiled/reviewed digest paper card has no valid PDF",
+                "check": "paper-digest-ready-missing-pdf-link",
+                "field": "pdf",
+                "message": f"{digest_ref} links a paper card without a valid PDF.",
+                "citekey": citekey,
+                "pdf": pdf_ref,
+            }
+        )
+
+    placeholder_sections = _template_placeholder_sections(body)
+    if placeholder_sections:
+        issues.append(
+            {
+                "kind": "compiled/reviewed digest still has template placeholders",
+                "check": "paper-digest-ready-template-placeholders",
+                "field": "body",
+                "message": f"{digest_ref} still has unfilled digest template placeholders.",
+                "citekey": citekey,
+                "sections": placeholder_sections,
+            }
+        )
+    return issues
 
 
 def _sync_card_to_digest(
@@ -393,12 +506,19 @@ def _compile_row(paths: VaultPaths, card: SourceCard) -> dict[str, Any]:
         issues.append("digest pdf link differs from card")
     if digest and digest.get("status") != card.compiled_status:
         issues.append("digest status differs from paper card")
-    if (
-        digest
-        and digest.get("evidence_level") == "metadata_only"
-        and status in {"compiled", "reviewed"}
-    ):
-        issues.append("compiled digest still marked metadata_only")
+    if digest and digest_exists:
+        _, body = read_frontmatter_markdown(digest_path)
+        issues.extend(
+            issue["kind"]
+            for issue in digest_completion_issues(
+                paths,
+                digest_path,
+                digest,
+                body,
+                card=card,
+                target_status=status,
+            )
+        )
     return {
         "citekey": _card_id(card),
         "paper": _card_ref(card),
@@ -501,6 +621,7 @@ def compile_mark(
     citekey: str,
     *,
     status: str,
+    force: bool = False,
 ) -> dict[str, Any]:
     if status not in MARKABLE_DIGEST_STATUSES:
         raise ValueError(f"Unsupported compile status: {status}")
@@ -513,6 +634,20 @@ def compile_mark(
         raise ValueError(f"Digest does not exist for {_card_id(card)}. Run compile scaffold first.")
     frontmatter, body = read_frontmatter_markdown(digest_path)
     digest = normalize_digest_frontmatter(frontmatter, card=card, paths=paths)
+    transition_issues = digest_completion_issues(
+        paths,
+        digest_path,
+        digest,
+        body,
+        card=card,
+        target_status=status,
+    )
+    if transition_issues and not force:
+        details = "\n".join(f"- {issue['message']}" for issue in transition_issues)
+        raise ValueError(
+            f"Cannot mark {_card_id(card)} as {status} until digest readiness issues are "
+            f"fixed:\n{details}\nUse --force to override this guard."
+        )
     before_digest = dump_frontmatter(digest)
     now = _now_iso()
     digest["status"] = status
@@ -557,6 +692,8 @@ def compile_mark(
         "changed": changed,
         "digest_changed": digest_changed,
         "card_changed": card_changed,
+        "forced": bool(force and transition_issues),
+        "transition_issues": transition_issues,
         "refresh": refresh,
         "rebuild": refresh,
     }
@@ -634,6 +771,23 @@ def compile_doctor(vault: Path | str) -> dict[str, Any]:
                         "kind": "missing digest section",
                         "section": section,
                         "digest": ensure_relative(digest_path, paths.vault),
+                    }
+                )
+            card = cards_by_paper.get(str(digest.get("paper") or ""))
+            for transition_issue in digest_completion_issues(
+                paths,
+                digest_path,
+                digest,
+                body,
+                card=card,
+            ):
+                issues.append(
+                    {
+                        "kind": transition_issue["kind"],
+                        "check": transition_issue["check"],
+                        "citekey": transition_issue.get("citekey"),
+                        "digest": ensure_relative(digest_path, paths.vault),
+                        "field": transition_issue.get("field"),
                     }
                 )
     issue_counts = Counter(str(issue["kind"]) for issue in issues)

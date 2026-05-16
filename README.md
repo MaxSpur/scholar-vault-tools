@@ -725,6 +725,12 @@ feedback ratings live under `_feedback/ratings/`, and `tools-task create`
 creates `improve_tool` queue items for the `scholar-vault-tools` repo without
 editing that repo.
 
+`schema export` prints or writes the machine-readable schema bundle for queue
+items, operation records, feedback, prompt packs, discovery candidates, paper
+digests, and eval specs. For a manual maintenance sequence, see
+`docs/manual-self-improvement-runbook.md`; this is preferred over scheduled
+automations.
+
 `notes-missing` is read-only. It lists active, attached paper cards whose
 `## Notes` section does not contain a requested subheading, for example
 `### PDF reading notes`. Use it to build a reading queue for selected sources.
@@ -740,7 +746,11 @@ notes are not generated-only files; they are the Obsidian place to launch and
 track a specific research question. Link sources with `query link-paper`, link
 Scholar Labs provenance with `query link-run`, link outputs with
 `query link-synthesis`, and inspect the workbench with `query show` or
-`query status`.
+`query status`. Use `query rename OLD NEW` for a path-aware rename across prompt
+packs, linked runs, queue items, discovery candidates, and Bases-visible paper
+fields. Use `query archive SLUG` to leave the note in place but remove it from
+active query views, and `query doctor --fix` for conservative backlink/path
+repairs.
 
 A new query note starts with Obsidian Bases embeds:
 
@@ -771,8 +781,10 @@ Open `queries/collaborative-map-workbenches.md` in Obsidian to work from the
 question instead of from a daily note. The `Query outputs` view uses Obsidian
 Bases `this.file` behavior when embedded, so files that link to the current
 query note or list the current query path in `linked_queries` appear in the
-view. If Obsidian changes active-file behavior, the explicit `linked_*`
-frontmatter remains the fallback source of truth for CLI status and filtering.
+view. Paper cards also expose `linked_query_paths`, an explicit path fallback
+for Bases filters that compare values with `this.file.path`. If Obsidian
+changes active-file behavior, the explicit `linked_*` frontmatter remains the
+fallback source of truth for CLI status and filtering.
 
 `bases init` and `bases rebuild` write deterministic `.base` files under
 `bases/`: `papers.base`, `queries.base`, `synthesis-workbench.base`,
@@ -780,11 +792,16 @@ frontmatter remains the fallback source of truth for CLI status and filtering.
 validates the generated YAML and required view names without requiring Obsidian
 to be open. No Dataview dependency is added. Paper-card frontmatter exposes the
 workbench fields `reading_status`, `compiled_status`, `review_status`,
-`last_read_at`, `last_compiled_at`, `evidence_level`, `linked_queries`, and
-`linked_projects` for these views. Bases are a user-facing interface over
-existing vault state, not an alternative canonical data model: PDFs and
+`last_read_at`, `last_compiled_at`, `evidence_level`, `linked_queries`,
+`linked_query_paths`, and `linked_projects` for these views. Bases are a
+user-facing interface over existing vault state, not an alternative canonical
+data model: PDFs and
 `papers/*.md` remain canonical evidence records, query notes are durable
 workbench notes, and `_indexes/` / `bases/` are deterministic navigation layers.
+
+See `docs/obsidian-bases-acceptance.md` for the manual Obsidian acceptance
+checklist, including `this.file`, linked query paths, and wikilink-vs-path
+frontmatter behavior.
 
 `project scaffold <slug>` creates `projects/<slug>/index.md`. A project is a
 lightweight lens over shared papers, runs, concepts, syntheses, tasks, and
@@ -1417,8 +1434,12 @@ scholar-vault compile doctor --json
 ```
 
 Scaffolding is idempotent and will not overwrite an existing digest unless
-`--force` is passed. Mark a digest `stale` when the paper, a linked query, a
-linked project, or an interpretation changes and the digest needs review.
+`--force` is passed. `compile mark --status compiled` and
+`compile mark --status reviewed` reject digests that still have
+`evidence_level: metadata_only`, no `source_pages_checked`, missing PDF links,
+or unfilled scaffold placeholders unless `--force` is passed. Mark a digest
+`stale` when the paper, a linked query, a linked project, or an interpretation
+changes and the digest needs review.
 
 ## Generated Records
 

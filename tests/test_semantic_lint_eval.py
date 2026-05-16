@@ -87,6 +87,14 @@ def test_lint_wiki_detects_semantic_checks(tmp_path) -> None:
         {"type": "paper_digest", "citekey": "Broken2026", "paper": "papers/source.md"},
         "## Core contribution\n\nOnly one section.",
     )
+    unready_frontmatter = _digest_frontmatter("Unready2026", "papers/source.md", pdf="")
+    unready_frontmatter["evidence_level"] = "metadata_only"
+    unready_frontmatter["source_pages_checked"] = []
+    _write_md(
+        paths.paper_digests / "Unready2026.md",
+        unready_frontmatter,
+        "## Core contribution\n\n_To be filled by an agent or reviewer after reading the PDF._",
+    )
     _write_md(paths.syntheses / "empty.md", {"type": "synthesis"}, "# Empty\n")
     _write_md(
         paths.syntheses / "weak.md",
@@ -149,6 +157,10 @@ def test_lint_wiki_detects_semantic_checks(tmp_path) -> None:
         "concept-sources-no-digests",
         "paper-digest-missing-required-fields",
         "paper-digest-missing-required-sections",
+        "paper-digest-ready-metadata-only",
+        "paper-digest-ready-missing-pdf-link",
+        "paper-digest-ready-missing-source-pages",
+        "paper-digest-ready-template-placeholders",
         "paper-digest-stale",
         "query-no-linked-work",
         "prompt-pack-used-without-run",

@@ -13,7 +13,8 @@
 - `scholar_vault/cli_projects.py`: `project ...` command group, including
   scaffold, map, audit, link helpers, and the project workspace UI launcher.
 - `scholar_vault/cli_queries.py`: `query ...` command group for durable
-  research-query notes and query-to-run/paper/synthesis links.
+  research-query notes, lifecycle helpers, and query-to-run/paper/synthesis
+  links.
 - `scholar_vault/cli_labs_prompts.py`: `labs-prompts ...` command group for
   Scholar Labs prompt-pack generation, tracking, run linking, retirement, and
   prompt-pack diagnostics.
@@ -31,6 +32,8 @@
 - `scholar_vault/cli_semantic.py`: `lint-wiki` and `eval ...` command wiring
   for deterministic semantic lint, queue/report output, eval history, and eval
   reports.
+- `scholar_vault/cli_schema.py`: `schema export` command wiring for the
+  machine-readable schema bundle.
 - `scholar_vault/config.py`: user-level default path storage and latest Scholar Labs export selection.
 - `scholar_vault/models.py`: typed records for exports, paper cards, discovery
   candidates, runs, logs, and PDF candidates. Paper cards are the durable
@@ -88,6 +91,9 @@
   query-linked candidate clusters into Scholar Labs prompt packs.
 - `scholar_vault/bases.py`: deterministic `.base` YAML generation under
   `bases/` plus read-only validation for required Base files and views.
+- `scholar_vault/schema.py`: JSON-schema export helpers for queue items,
+  operations, feedback, prompt packs, discovery candidates, paper digests, and
+  eval specs.
 - `scholar_vault/proposals.py`: proposal sprint scaffolding and proposal evidence audits.
 - `scholar_vault/render.py`: Jinja-backed Markdown rendering for cards, run pages, indexes, topics, and LLM summary files. Vault-local `AGENTS.md` initialization reads `VAULT_AGENTS_TEMPLATE.md`; the repository root `AGENTS.md` is only for agents working on this tools repo.
 - `scholar_vault/bibtex.py`: BibTeX parsing plus BibLaTeX-oriented rendering, validation, and export helpers.
@@ -153,13 +159,17 @@
 - `concept-index`: regenerates `_indexes/concepts.md` from durable `concepts/*.md` metacards and refreshes `llms.txt` / `llms-full.txt` without a full card/runs/topics rebuild.
 - `topic-map`: read-only topic-frequency/noise report by default. With a YAML mapping, or with `--preset prompt-boilerplate`, it can dry-run or `--apply` exact topic frontmatter removals/renames on canonical `papers/*.md` cards, then rebuild derived topic pages and indexes.
 - `project scaffold/list/map/link-*` / `project audit` / `project ui`: lightweight project workspace commands for `projects/<slug>/index.md`. Projects are lenses over shared papers, runs, concepts, syntheses, tasks, and optional proposals; link commands update project frontmatter without duplicating paper cards, refresh only project navigation, `map` writes `project-map.md` including manually linked proposal paths, and `audit` is read-only. The project UI is a thin desktop wrapper over scaffold, all project link commands, map, audit, and list behavior.
-- `query create/list/show/link-run/link-paper/link-synthesis/status`: durable
-  question-centered workbench commands for `queries/<slug>.md`. Query notes
-  store the research question, status, project, linked runs, linked papers,
-  linked syntheses, linked concepts, Scholar Labs prompt pack, priority, review
-  state, and a tool-refreshed unread-linked-paper list for Bases. `link-paper`
-  also adds the query path to the paper card's `linked_queries` frontmatter
-  while preserving the existing paper-card body.
+- `query create/list/show/rename/archive/link-run/link-paper/link-synthesis/status/doctor`:
+  durable question-centered workbench commands for `queries/<slug>.md`. Query
+  notes store the research question, status, project, linked runs, linked
+  papers, linked syntheses, linked concepts, Scholar Labs prompt pack, priority,
+  review state, and tool-refreshed unread/uncompiled linked-paper lists for
+  Bases. `link-paper` also adds the query path to paper-card `linked_queries`
+  and `linked_query_paths` frontmatter while preserving the existing body.
+  `rename` updates prompt packs, linked run YAML/notes, queue items, feedback
+  targets, discovery candidates, and Bases-visible fields where the old path is
+  explicit. `archive` keeps the note path stable and sets `status: archived`.
+  `doctor --fix` performs conservative backlink/path repairs.
 - `labs-prompts generate/list/show/mark-used/link-run/retire/doctor`: durable
   Scholar Labs prompt-pack workbench. `generate` accepts exactly one of
   `--query`, `--project`, or `--from-gaps`; generated packs include structured
@@ -185,8 +195,13 @@
   workflow under `paper-digests/`. `scaffold` creates stable templates for one
   citekey or selected papers from a run, `queue --project` lists linked project
   papers needing compile, `mark` changes digest/card state, and `doctor`
-  validates required frontmatter and sections. The CLI never reads PDFs or
-  invents claims; agents/users fill digest prose.
+  validates required frontmatter, required sections, PDF readiness, checked
+  source pages, and unfilled template placeholders. `mark --status
+  compiled/reviewed` rejects unready digests unless `--force` is passed. The CLI
+  never reads PDFs or invents claims; agents/users fill digest prose.
+- `schema export`: prints or writes a JSON schema bundle for queue items,
+  operations, feedback, prompt packs, discovery candidates, paper digests, and
+  deterministic eval specs.
 - `proposal-audit`: read-only evidence audit for a `proposals/<slug>` workspace. It checks outline citations against PDF reading notes, read-paper proposal roles, source-matrix links, raw idea notes, and draft claims that still cite Scholar Labs summaries instead of PDF-grounded evidence. Source matrices include proposal-local `*matrix*.md` files plus Markdown files named by outline frontmatter `evidence_matrix` / `evidence_matrices`, including shared matrices under `syntheses/`.
 - `proposal-sprint scaffold`: idempotently creates or updates a proposal workspace with an index, outline, source matrix, reading log, and raw idea card, then rebuilds derived navigation.
 - `skills diff` / `skills adopt` / `skills publish` / `skills ui`: safe synchronization for repository-owned vault-agent Codex skills and the vault agent guide between this repository and a vault. The repository source folder is `vault-agent-skills/` plus `VAULT_AGENTS_TEMPLATE.md`; the vault target folder is `.agents/skills/` plus vault-local `AGENTS.md`. This keeps vault-agent skills out of the tools repo's own `.agents/skills/` auto-scan path. The terminal commands dry-run by default, `adopt` copies vault-side target skills or `AGENTS.md` back into the repository source of truth, `publish` updates the vault target from repository source skills and the vault guide template, and vault-only skill extras are kept unless explicitly archived into `.sync-backups/`. Diff rows include source/target modification-time hints and recommendations, but copying remains explicit. The UI uses one scrollable per-item checklist of differing skills/guide items; buttons label and execute the copy direction as `Update Vault From Repository` or `Pull Selected Into Repository`, and it includes compact external-source preview/install controls backed by the generic external installer.
@@ -215,7 +230,8 @@
 - Canonical card/index record: `papers/<slug>.md`. Paper frontmatter includes
   workbench fields for Obsidian Bases: `reading_status`, `compiled_status`,
   `review_status`, `last_read_at`, `last_compiled_at`, `last_reviewed_at`,
-  `evidence_level`, `paper_digest`, `linked_queries`, and `linked_projects`.
+  `evidence_level`, `paper_digest`, `linked_queries`, `linked_query_paths`, and
+  `linked_projects`.
 - Durable compiled paper digest: `paper-digests/<citekey>.md` with
   `type: paper_digest`, links back to the paper card/PDF, compile/review
   timestamps, evidence level, linked workbench records, checked page/figure/table
@@ -246,6 +262,9 @@
 - Generated Obsidian Bases: `bases/*.base`. Bases are a view layer over
   existing frontmatter, file links, and canonical records; they are not an
   alternative data model.
+- User-facing acceptance docs: `docs/obsidian-bases-acceptance.md` for manual
+  Obsidian Bases checks and `docs/manual-self-improvement-runbook.md` for the
+  preferred manual hardening/maintenance command sequence.
 - Optional agent-written metacards and workspaces: `paper-digests/`,
   `concepts/`, `syntheses/`, `tasks/`, `queries/`, `projects/`, and
   `proposals/`

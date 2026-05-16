@@ -25,6 +25,7 @@ from . import cli_discovery as _cli_discovery
 from . import cli_labs_prompts as _cli_labs_prompts
 from . import cli_projects as _cli_projects
 from . import cli_queries as _cli_queries
+from . import cli_schema as _cli_schema
 from . import cli_self_improvement as _cli_self_improvement
 from . import cli_semantic as _cli_semantic
 from . import cli_skills as _cli_skills
@@ -88,6 +89,7 @@ project_app = _cli_projects.project_app
 proposal_sprint_app = typer.Typer(help="Proposal sprint workspace helpers.")
 queue_app = _cli_self_improvement.queue_app
 query_app = _cli_queries.query_app
+schema_app = _cli_schema.schema_app
 skills_app = _cli_skills.skills_app
 tools_task_app = _cli_self_improvement.tools_task_app
 app.add_typer(bases_app, name="bases")
@@ -101,6 +103,7 @@ app.add_typer(project_app, name="project")
 app.add_typer(proposal_sprint_app, name="proposal-sprint")
 app.add_typer(queue_app, name="queue")
 app.add_typer(query_app, name="query")
+app.add_typer(schema_app, name="schema")
 app.add_typer(skills_app, name="skills")
 app.add_typer(tools_task_app, name="tools-task")
 app.command("lint-wiki")(_cli_semantic.lint_wiki_command)
@@ -156,10 +159,14 @@ labs_prompts_doctor_command = _cli_labs_prompts.labs_prompts_doctor_command
 query_create_command = _cli_queries.query_create_command
 query_list_command = _cli_queries.query_list_command
 query_show_command = _cli_queries.query_show_command
+query_rename_command = _cli_queries.query_rename_command
+query_archive_command = _cli_queries.query_archive_command
 query_link_run_command = _cli_queries.query_link_run_command
 query_link_paper_command = _cli_queries.query_link_paper_command
 query_link_synthesis_command = _cli_queries.query_link_synthesis_command
 query_status_command = _cli_queries.query_status_command
+query_doctor_command = _cli_queries.query_doctor_command
+schema_export_command = _cli_schema.schema_export_command
 queue_list_command = _cli_self_improvement.queue_list_command
 queue_add_command = _cli_self_improvement.queue_add_command
 queue_show_command = _cli_self_improvement.queue_show_command

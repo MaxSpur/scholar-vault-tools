@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from typer.testing import CliRunner
 
 from scholar_vault.cli import app
 from scholar_vault.digests import (
+    DIGEST_TEMPLATE_SECTIONS,
     compile_doctor,
     compile_mark,
     compile_queue,
@@ -25,6 +27,12 @@ from scholar_vault.sources import (
 
 def _write_digest_frontmatter(path, frontmatter, body) -> None:
     write_text(path, f"---\n{dump_frontmatter(frontmatter).strip()}\n---\n\n{body.strip()}\n")
+
+
+def _complete_digest_body() -> str:
+    return "\n\n".join(
+        f"## {section}\n\nRecorded with page evidence." for section in DIGEST_TEMPLATE_SECTIONS
+    )
 
 
 def test_compile_scaffold_creates_stable_digest_and_updates_card(tmp_path) -> None:
@@ -78,13 +86,23 @@ def test_compile_scaffold_creates_stable_digest_and_updates_card(tmp_path) -> No
 def test_compile_mark_transitions_status_and_timestamps(tmp_path) -> None:
     vault = tmp_path / "vault"
     paths = initialize_vault(vault)
-    _save_card(paths, SourceCard(slug="source", citekey="Source2026", title="Source Paper"))
+    (paths.pdfs / "source.pdf").write_bytes(b"%PDF-1.4 source\n")
+    _save_card(
+        paths,
+        SourceCard(
+            slug="source",
+            citekey="Source2026",
+            title="Source Paper",
+            pdf="pdfs/source.pdf",
+            pdf_status="attached",
+        ),
+    )
     compile_scaffold(vault, citekey="Source2026")
     digest_path = paths.paper_digests / "Source2026.md"
     frontmatter, body = read_frontmatter_markdown(digest_path)
     frontmatter["evidence_level"] = "pdf_grounded"
     frontmatter["source_pages_checked"] = ["1-12"]
-    _write_digest_frontmatter(digest_path, frontmatter, body)
+    _write_digest_frontmatter(digest_path, frontmatter, _complete_digest_body())
 
     compiled = compile_mark(vault, "Source2026", status="compiled")
     reviewed = compile_mark(vault, "Source2026", status="reviewed")
@@ -102,6 +120,28 @@ def test_compile_mark_transitions_status_and_timestamps(tmp_path) -> None:
     assert card_frontmatter["last_reviewed_at"]
     assert card_frontmatter["evidence_level"] == "pdf_grounded"
     assert compile_doctor(vault)["ok"] is True
+
+
+def test_compile_mark_rejects_unready_digest_without_force(tmp_path) -> None:
+    vault = tmp_path / "vault"
+    paths = initialize_vault(vault)
+    _save_card(paths, SourceCard(slug="source", citekey="Source2026", title="Source Paper"))
+    compile_scaffold(vault, citekey="Source2026")
+
+    with pytest.raises(ValueError, match="digest readiness issues"):
+        compile_mark(vault, "Source2026", status="compiled")
+
+    forced = compile_mark(vault, "Source2026", status="compiled", force=True)
+    doctor = compile_doctor(vault)
+
+    assert forced["forced"] is True
+    assert {issue["check"] for issue in forced["transition_issues"]} >= {
+        "paper-digest-ready-metadata-only",
+        "paper-digest-ready-missing-source-pages",
+        "paper-digest-ready-missing-pdf-link",
+        "paper-digest-ready-template-placeholders",
+    }
+    assert "compiled/reviewed digest still marked metadata_only" in doctor["issue_counts"]
 
 
 def test_compile_run_scaffold_project_queue_and_rebuild(tmp_path) -> None:
