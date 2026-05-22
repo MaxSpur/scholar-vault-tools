@@ -399,22 +399,22 @@ def test_labs_intake_links_selected_run_and_papers_to_project(
     assert calls["papers"] == [(vault, "bird-vocoder", "brittanpowell1997mechanisms")]
 
 
-def test_start_scaffolds_project_and_routes_to_ask(tmp_path: Path) -> None:
+def test_start_scaffolds_clean_project_only(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     initialize_vault(vault)
 
     summary = autopilot.start(
         vault,
         "budgie-vocoder",
-        "Which acoustic evidence supports a budgerigar synthesizer?",
         title="Budgerigar Vocoder",
-        slug="budgie-vocoder-scan",
     )
 
-    assert summary["mode"] == "ask"
+    assert summary["mode"] == "project"
     assert (vault / "projects" / "budgie-vocoder" / "index.md").exists()
-    assert summary["session"]["project"] == "budgie-vocoder"
-    assert summary["session"]["query_path"] == "queries/budgie-vocoder-scan.md"
+    assert summary["project"]["project"] == "projects/budgie-vocoder/index.md"
+    assert summary["project"]["state"] in {"created", "updated", "unchanged"}
+    assert "intake" in summary["next_step"]
+    assert not (vault / "_sessions" / "current.yaml").exists()
 
 
 def test_intake_marks_session_blocked_for_manual_pdf_matches(
@@ -447,6 +447,41 @@ def test_intake_marks_session_blocked_for_manual_pdf_matches(
 
     assert summary["session"]["status"] == "blocked"
     assert "manual review" in summary["blockers"][0]
+
+
+def test_intake_does_not_block_on_leftover_shared_staging_pdfs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    export = staging / "labs.json"
+    export.write_text("{}", encoding="utf-8")
+    initialize_vault(vault)
+    autopilot.ask(vault, "Which bird papers are useful?")
+
+    monkeypatch.setattr(
+        autopilot,
+        "import_scholar_labs_run",
+        lambda *args, **kwargs: {
+            "run": "20260522_bird-vocoder",
+            "selected": 1,
+            "matched": 1,
+            "unmatched": 12,
+            "decision_summary": {
+                "commit_proposals_skipped": 0,
+                "results_without_candidate": 8,
+            },
+        },
+    )
+    monkeypatch.setattr(autopilot, "compile_scaffold", lambda *args, **kwargs: {})
+    monkeypatch.setattr(autopilot, "_run_quality_checks", lambda *args, **kwargs: {})
+
+    summary = autopilot.intake(vault, export=export, staging=staging)
+
+    assert summary["session"]["status"] == "imported"
+    assert summary["blockers"] == []
 
 
 def test_improve_prioritizes_session_queue_and_writes_report(

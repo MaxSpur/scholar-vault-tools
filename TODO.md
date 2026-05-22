@@ -105,6 +105,9 @@
 - [x] Make project-scoped autopilot handle multi-export workflows by linking
   Labs runs/papers to projects, supporting project-scoped improve/answer
   handoffs, and documenting the Bird Vocoder tutorial.
+- [x] Keep `start` as clean project scaffolding only and support shared staging
+  folders where PDFs and Scholar Labs JSON exports from multiple prompts live
+  together.
 
 ## Obsidian usability and vault navigation
 

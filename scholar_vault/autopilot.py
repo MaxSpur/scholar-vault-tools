@@ -244,69 +244,19 @@ def ask(
 def start(
     vault: Path | str,
     project: str,
-    question: str,
     *,
     title: str | None = None,
-    slug: str | None = None,
-    export: Path | None = None,
-    staging: Path | None = None,
-    pdf_only: bool = False,
-    seed_api: str = "none",
-    refresh_seeds: bool = False,
-    copy: bool = False,
-    open_scholar: bool = False,
-    auto_enrich: bool = True,
-    upgrade_pdfs: bool = True,
 ) -> dict[str, Any]:
-    if export is not None and pdf_only:
-        raise ValueError("Use either --export for Scholar Labs JSON or --pdf-only, not both.")
     paths = initialize_vault(vault, rebuild=False)
     project_summary = project_scaffold(paths.vault, project, title=title)
-    if export is not None or pdf_only:
-        intake_summary = intake(
-            paths.vault,
-            export=export,
-            staging=staging,
-            question=question,
-            project=project,
-            slug=slug,
-            new_session=True,
-            pdf_only=pdf_only,
-            auto_enrich=auto_enrich,
-            upgrade_pdfs=upgrade_pdfs,
-        )
-        return {
-            "vault": str(paths.vault),
-            "mode": "pdf-only" if pdf_only else "intake",
-            "project": project_summary,
-            "intake": intake_summary,
-            "session": intake_summary["session"],
-            "next_step": (
-                "Run `scholar-vault answer \"synthesis question\"` when ready."
-                if not intake_summary.get("blockers")
-                else "Resolve the listed blocker(s), then rerun intake."
-            ),
-        }
-
-    ask_summary = ask(
-        paths.vault,
-        question,
-        project=project,
-        slug=slug,
-        seed_api=seed_api,
-        refresh_seeds=refresh_seeds,
-        copy=copy,
-        open_scholar=open_scholar,
-        new_session=True,
-    )
     return {
         "vault": str(paths.vault),
-        "mode": "ask",
+        "mode": "project",
         "project": project_summary,
-        "ask": ask_summary,
-        "session": ask_summary["session"],
-        "prompt": ask_summary["prompt"],
-        "next_step": ask_summary["next_step"],
+        "next_step": (
+            "Import Scholar Labs exports with `scholar-vault intake --project ...`, "
+            "or PDFs with `scholar-vault intake --pdf-only --project ...`."
+        ),
     }
 
 
@@ -589,12 +539,9 @@ def _blockers_from_import(summary: dict[str, Any]) -> list[str]:
         blockers.append(
             f"{skipped} staged PDF match(es) need manual review before they can be imported."
         )
-    unmatched = int(summary.get("unmatched") or 0)
     selected = int(summary.get("selected") or 0)
     if not selected:
         blockers.append("No selected papers were imported from the Scholar Labs export.")
-    elif unmatched and unmatched > selected:
-        blockers.append(f"{unmatched} unmatched staged PDF/result entries need review.")
     return blockers
 
 

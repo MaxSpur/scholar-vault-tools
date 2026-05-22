@@ -73,6 +73,12 @@
 - Prefer moving used exports into a folder over renaming them. Scholar Labs prompt-derived JSON names can already be long enough to approach filesystem limits.
 - When defaulting to the "latest" browser export, only consider top-level `.json` files in the configured exports folder or staging fallback. Ignore `used/` so reruns do not accidentally re-ingest archived exports.
 - Represent shared Scholar Labs downloads by omitting the `exports` config key. That keeps CLI, GUI, and import fallback behavior on one data model instead of adding a second mode flag to persisted config.
+- Keep project creation separate from discovery and import. `start` should only
+  scaffold a clean project lens; prompts, JSON exports, and PDFs enter through
+  explicit `ask` or `intake` commands so provenance stays clear.
+- A shared staging folder may contain PDFs and JSON exports from several Scholar
+  Labs prompts. Unmatched staged PDFs are normal backlog, not blockers; only
+  ambiguous/manual match decisions should stop autopilot intake.
 - PDF title metadata and first extracted text lines are often journal headers, especially for IEEE papers. Match against filename and compact no-space title text as fallbacks before declaring a staged PDF unmatched.
 - Moderate filename-only matches are risky when extracted title/text does not corroborate them. Keep exact or strong filename evidence useful, but cap unconfirmed partial filename scores below the review threshold.
 - Short first-page title fragments can produce inflated fuzzy scores when they share generic domain terms with a longer Scholar title. Partial/token-set scoring should require coverage of a meaningful fraction of the longer title, not only the shorter fragment.

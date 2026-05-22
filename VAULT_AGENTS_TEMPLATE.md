@@ -152,18 +152,21 @@ scholar-vault improve --no-agent
 scholar-vault answer "focused synthesis question"
 ```
 
-For brand-new projects, `scholar-vault start <project-slug> "question"` can
-scaffold the project and then route to `ask`, Labs `intake`, or PDF-only
-intake depending on the options passed.
+For brand-new projects, use `scholar-vault start <project-slug> --title "..."`
+only to scaffold a clean project workspace. Keep imports explicit with
+`intake`, `ask`, or PDF-only intake after that.
 
 If the user already ran Google Scholar Labs and has a JSON export, `ask` is not
 required for provenance. The JSON contains the exact prompt. Prefer
-`scholar-vault intake --export <json> --staging <pdf-folder> --project <slug>
+`scholar-vault intake --export <json> --staging <staging-folder> --project <slug>
 --slug <query-slug> --question "short query question" --new-session` to create
 the session/query from that export, record a used-prompt pack, and link the run
 to the project context. For PDFs without a Labs JSON, prefer
-`scholar-vault intake --pdf-only --staging <pdf-folder> --project <slug>
+`scholar-vault intake --pdf-only --staging <staging-folder> --project <slug>
 --slug <query-slug> --question "short query question" --new-session`.
+Shared staging folders can contain PDFs and JSON exports from multiple prompts;
+explicit `--export` selects the Labs run, and unrelated leftover PDFs are not
+blockers unless the importer reports an ambiguous/manual match decision.
 For project-wide synthesis across multiple imports, prefer
 `scholar-vault answer --project <slug> --budget-papers <N> "question"` so the
 handoff covers all linked project papers and runs.

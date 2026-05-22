@@ -29,27 +29,23 @@ lower-level importer. The JSON export includes the exact top-level `prompt`;
 project/query metadata or `--new-session`:
 
 ```fish
-scholar-vault start budgie-vocoder \
-  "Which acoustic evidence supports a budgerigar synthesizer?" \
-  --title "Budgerigar Vocoder" \
-  --slug budgie-vocoder-scan \
-  --export ~/Downloads/scholar-labs-budgerigar.json \
-  --staging ~/Downloads/budgie-pdfs
+scholar-vault start budgie-vocoder --title "Budgerigar Vocoder"
 
-# Equivalent explicit form:
 scholar-vault intake \
   --project budgie-vocoder \
   --slug budgie-vocoder-scan \
   --question "Which acoustic evidence supports a budgerigar synthesizer?" \
-  --export ~/Downloads/scholar-labs-budgerigar.json \
-  --staging ~/Downloads/budgie-pdfs \
+  --export ~/Downloads/scholar-labs-staging/scholar-labs-budgerigar.json \
+  --staging ~/Downloads/scholar-labs-staging \
   --new-session
 ```
 
 Here `budgie-vocoder` is the project slug and `budgie-vocoder-scan` is the
 query slug for `queries/budgie-vocoder-scan.md`. `intake` records the exact
 JSON prompt as a used prompt pack under that query and links it to the imported
-run.
+run. The staging folder can be shared across prompts; explicit `--export`
+selects the Labs run, and unrelated PDFs left in staging are not treated as
+blockers.
 
 Import a specific Labs export directly when bypassing `intake`:
 
@@ -103,7 +99,7 @@ When the PDFs belong to a query/project and there is no Labs JSON, prefer
 PDF-only intake:
 
 ```fish
-scholar-vault intake --pdf-only --project budgie-vocoder --slug budgie-vocoder-pdf-seed --question "Which acoustic evidence supports a budgerigar synthesizer?" --staging ~/Downloads/budgie-pdfs --new-session
+scholar-vault intake --pdf-only --project budgie-vocoder --slug budgie-vocoder-pdf-seed --question "Which acoustic evidence supports a budgerigar synthesizer?" --staging ~/Downloads/scholar-labs-staging --new-session
 ```
 
 This imports PDFs, links imported citekeys to the query/project, and scaffolds

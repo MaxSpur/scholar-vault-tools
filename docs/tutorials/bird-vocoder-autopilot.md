@@ -22,44 +22,54 @@ The example project is **Bird Vocoder**. Replace paths and names as needed.
 
 ## 1. Prepare Your Files
 
-Use one staging folder per Labs export, or make a temporary per-export subset
-before each intake. This keeps PDFs from prompt 2 from appearing as unmatched
-leftovers during the prompt 1 import.
+Use your normal shared staging folder. It can contain PDFs from several Labs
+prompts plus the JSON exports. The importer will match the PDFs that belong to
+the export you name and leave unrelated PDFs in staging for later imports.
+Leftover staged PDFs are not blockers; only ambiguous/manual match decisions
+should block.
 
 Example:
 
 ```fish
-mkdir -p ~/Downloads/bird-vocoder-prompt-1-pdfs
-mkdir -p ~/Downloads/bird-vocoder-prompt-2-pdfs
+mkdir -p ~/Downloads/scholar-labs-staging
 ```
 
-Keep the two Scholar Labs JSON exports somewhere stable enough for import:
+Keep the two Scholar Labs JSON exports in staging or pass their exact paths:
 
 ```fish
-~/Downloads/bird-vocoder-prompt-1.json
-~/Downloads/bird-vocoder-prompt-2.json
+~/Downloads/scholar-labs-staging/bird-vocoder-prompt-1.json
+~/Downloads/scholar-labs-staging/bird-vocoder-prompt-2.json
 ```
 
-## 2. Create The Project And Import The First Export
+## 2. Create The Project
 
-Use `start` for the first export. It scaffolds the project, creates a query and
-session, records the exact JSON prompt as a used prompt pack, imports matched
-PDFs, links selected papers and the run to the project, scaffolds digests, runs
-checks, and writes a session report.
+Use `start` only to create the clean project workspace.
 
 ```fish
-scholar-vault start bird-vocoder \
-  "What research supports modeling psittacine vocal production with analog electronic synthesis or a vocoder-like model?" \
-  --title "Bird Vocoder" \
+scholar-vault start bird-vocoder --title "Bird Vocoder"
+```
+
+## 3. Import The First Export
+
+Run `intake` for the first export. It creates a query and session, records the
+exact JSON prompt as a used prompt pack, imports matched PDFs, links selected
+papers and the run to the project, scaffolds digests, runs checks, and writes a
+session report.
+
+```fish
+scholar-vault intake \
+  --project bird-vocoder \
   --slug bird-vocoder-acoustic-mechanisms \
-  --export ~/Downloads/bird-vocoder-prompt-1.json \
-  --staging ~/Downloads/bird-vocoder-prompt-1-pdfs
+  --question "What research supports modeling psittacine vocal production with analog electronic synthesis or a vocoder-like model?" \
+  --export ~/Downloads/scholar-labs-staging/bird-vocoder-prompt-1.json \
+  --staging ~/Downloads/scholar-labs-staging \
+  --new-session
 ```
 
 Use a query slug that names the scan, not the whole project. A project can have
 multiple query slugs.
 
-## 3. Import The Second Export Into The Same Project
+## 4. Import The Second Export Into The Same Project
 
 Use `intake --new-session` for each additional Labs prompt/export. Give it a
 different query slug so the prompt/run provenance stays clear.
@@ -69,8 +79,8 @@ scholar-vault intake \
   --project bird-vocoder \
   --slug bird-vocoder-speech-imitation \
   --question "Which studies explain psittacine speech imitation and vocal-tract filtering for synthesis?" \
-  --export ~/Downloads/bird-vocoder-prompt-2.json \
-  --staging ~/Downloads/bird-vocoder-prompt-2-pdfs \
+  --export ~/Downloads/scholar-labs-staging/bird-vocoder-prompt-2.json \
+  --staging ~/Downloads/scholar-labs-staging \
   --new-session
 ```
 
@@ -83,7 +93,7 @@ scholar-vault intake --ui
 Accept only the matches you trust. Then rerun the explicit `intake` command for
 that export if needed.
 
-## 4. Check The Project
+## 5. Check The Project
 
 ```fish
 scholar-vault project map bird-vocoder
@@ -94,7 +104,7 @@ scholar-vault session list
 The project map should show linked runs and linked papers. Undownloaded Labs
 results should not appear as canonical papers.
 
-## 5. Optional Codex Improvement Pass
+## 6. Optional Codex Improvement Pass
 
 This is useful when imported cards have unresolved metadata, missing abstracts,
 or empty digests. It is not always necessary; if `intake` reports no blockers
@@ -108,7 +118,7 @@ The handoff tells Codex to work in `workspace-write`, read PDFs before claims,
 fill digests only when guards pass, and leave explicit blockers for papers it
 cannot process.
 
-## 6. Ask For The Dossier
+## 7. Ask For The Dossier
 
 Start with a bounded pass. The agent should read the most relevant project
 papers, write durable paper digests/notes, and create or update a synthesis
@@ -143,12 +153,15 @@ PDF reading work.
 If you have PDFs but no Scholar Labs JSON export, use PDF-only intake:
 
 ```fish
-scholar-vault start bird-vocoder \
-  "What research supports modeling psittacine vocal production with analog electronic synthesis or a vocoder-like model?" \
-  --title "Bird Vocoder" \
+scholar-vault start bird-vocoder --title "Bird Vocoder"
+
+scholar-vault intake \
+  --pdf-only \
+  --project bird-vocoder \
   --slug bird-vocoder-pdf-seed \
-  --staging ~/Downloads/bird-vocoder-pdfs \
-  --pdf-only
+  --question "What research supports modeling psittacine vocal production with analog electronic synthesis or a vocoder-like model?" \
+  --staging ~/Downloads/scholar-labs-staging \
+  --new-session
 ```
 
 This path has weaker Scholar Labs provenance, but it still creates paper cards,

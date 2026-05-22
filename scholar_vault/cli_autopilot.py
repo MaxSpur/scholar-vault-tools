@@ -198,17 +198,11 @@ def _print_intake(summary: dict[str, object]) -> None:
 
 
 def _print_start(summary: dict[str, object]) -> None:
-    mode = summary.get("mode")
-    if mode == "ask":
-        console.print(str(summary.get("prompt") or ""))
-        console.print("")
-        console.print(f"Next: {summary.get('next_step')}")
-        return
-    intake_summary = summary.get("intake") or {}
-    if isinstance(intake_summary, dict):
-        _print_intake(intake_summary)
-    else:
-        console.print(f"Next: {summary.get('next_step')}")
+    project = summary.get("project") or {}
+    if isinstance(project, dict):
+        console.print(f"Project: {project.get('project')}")
+        console.print(f"State: {project.get('state')}")
+    console.print(f"Next: {summary.get('next_step')}")
 
 
 def _print_improve(summary: dict[str, object]) -> None:
@@ -241,36 +235,14 @@ def _print_answer(summary: dict[str, object]) -> None:
 
 def start_command(
     project: ProjectArg,
-    question: QuestionArg,
     vault: VaultArg = None,
     title: ProjectTitleOption = None,
-    slug: SlugOption = None,
-    export: ExportOption = None,
-    staging: StagingOption = None,
-    pdf_only: PdfOnlyOption = False,
-    seed_api: SeedApiOption = "none",
-    refresh_seeds: RefreshSeedsOption = False,
-    copy: CopyOption = False,
-    open_scholar: OpenScholarOption = False,
-    auto_enrich: AutoEnrichOption = True,
-    upgrade_pdfs: UpgradePdfsOption = True,
     json_output: JsonOutputArg = False,
 ) -> None:
     summary = start(
         _resolve_vault(vault),
         project,
-        question,
         title=title,
-        slug=slug,
-        export=export,
-        staging=staging,
-        pdf_only=pdf_only,
-        seed_api=_seed_api(seed_api),
-        refresh_seeds=refresh_seeds,
-        copy=copy,
-        open_scholar=open_scholar,
-        auto_enrich=auto_enrich,
-        upgrade_pdfs=upgrade_pdfs,
     )
     if json_output:
         _print_json(summary)

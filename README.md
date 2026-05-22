@@ -264,13 +264,10 @@ scholar-vault answer "focused synthesis question"
 The detailed commands still exist, but these four steps are the front door for
 normal use.
 
-For a brand-new project, `start` combines project scaffolding with either
-`ask` or `intake`:
+For a brand-new project, `start` only creates the clean project workspace:
 
 ```fish
-scholar-vault start budgie-vocoder \
-  "Which acoustic evidence supports a budgerigar synthesizer?" \
-  --title "Budgerigar Vocoder"
+scholar-vault start budgie-vocoder --title "Budgerigar Vocoder"
 ```
 
 For a concrete multi-prompt project walkthrough, see
@@ -352,28 +349,28 @@ Scholar Labs JSON export. The export includes the exact prompt under its
 top-level `prompt` field, and the imported run stores that prompt as run
 provenance.
 
-For a new project, the shortest path is:
+For a new project, create the clean project first:
 
 ```fish
-scholar-vault start budgie-vocoder \
-  "Which acoustic evidence supports a budgerigar synthesizer?" \
-  --title "Budgerigar Vocoder" \
-  --slug budgie-vocoder-scan \
-  --export ~/Downloads/scholar-labs-budgerigar.json \
-  --staging ~/Downloads/budgie-pdfs
+scholar-vault start budgie-vocoder --title "Budgerigar Vocoder"
 ```
 
-The equivalent explicit intake command is:
+Then import the already-exported Labs JSON and staged PDFs:
 
 ```fish
 scholar-vault intake \
   --project budgie-vocoder \
   --slug budgie-vocoder-scan \
   --question "Which acoustic evidence supports a budgerigar synthesizer?" \
-  --export ~/Downloads/scholar-labs-budgerigar.json \
-  --staging ~/Downloads/budgie-pdfs \
+  --export ~/Downloads/scholar-labs-staging/scholar-labs-budgerigar.json \
+  --staging ~/Downloads/scholar-labs-staging \
   --new-session
 ```
+
+The staging folder can be the same shared folder you use for all Scholar Labs
+downloads. It may contain PDFs and JSON exports from several prompts; the
+explicit `--export` path selects which Labs prompt/run to import, and unrelated
+PDFs remain in staging for later imports.
 
 `budgie-vocoder` is the project slug. `budgie-vocoder-scan` is the query slug:
 the short stable filename for the research-query note at
@@ -450,24 +447,16 @@ command catalog and lower-level workflows.
 
 ## Direct PDF Workflow
 
-Use this when you found or downloaded a paper yourself and do not have a
-Scholar Labs JSON export or prompt summary.
-
 Use this when you found or downloaded papers yourself and do not have a Scholar
 Labs JSON export.
 
-For a new project, use PDF-only autopilot:
+For a new project, create the clean project first:
 
 ```fish
-scholar-vault start budgie-vocoder \
-  "Which acoustic evidence supports a budgerigar synthesizer?" \
-  --title "Budgerigar Vocoder" \
-  --slug budgie-vocoder-pdf-seed \
-  --staging ~/Downloads/budgie-pdfs \
-  --pdf-only
+scholar-vault start budgie-vocoder --title "Budgerigar Vocoder"
 ```
 
-The equivalent explicit command is:
+Then run PDF-only intake:
 
 ```fish
 scholar-vault intake \
@@ -475,14 +464,16 @@ scholar-vault intake \
   --project budgie-vocoder \
   --slug budgie-vocoder-pdf-seed \
   --question "Which acoustic evidence supports a budgerigar synthesizer?" \
-  --staging ~/Downloads/budgie-pdfs \
+  --staging ~/Downloads/scholar-labs-staging \
   --new-session
 ```
 
 PDF-only intake imports the PDFs, links imported citekeys to the query and
 project, scaffolds paper digests, runs the deterministic checks, writes the
 session report, and logs the operation. The original downloaded PDFs stay where
-they are.
+they are. In a shared staging folder, PDF-only intake treats every staged PDF as
+intentional input for that PDF-only pass, so use it when the folder currently
+contains only the PDFs you want to import without Labs provenance.
 
 The lower-level `import-pdf --ui` workflow remains available when you want a
 desktop file picker or need to import PDFs outside a session.

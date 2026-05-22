@@ -149,9 +149,9 @@
 
 - `configure`: stores user-level defaults for the vault, staging folder, optional export folder, and code directory in `~/.config/scholar-vault/config.yaml`. `--ui` opens a native folder-picker dialog. `--folder-mode shared` omits `exports` so staging is used for PDFs and Scholar Labs JSON exports; `--folder-mode separate` records an explicit exports folder. Commands use these defaults unless explicit paths are passed.
 - `init`: creates the vault folder structure, generated starter docs, and a vault-specific `AGENTS.md` operating guide when those files do not already exist.
-- `start`: project-first autopilot entry point. It scaffolds the project and
-  routes to `ask`, Labs `intake`, or PDF-only `intake` based on whether the
-  user supplies an export or `--pdf-only`.
+- `start`: project-first autopilot entry point. It only scaffolds a clean
+  project workspace; prompt generation and imports stay explicit follow-up
+  commands.
 - `ask` / `intake` / `improve` / `answer`: user-facing autopilot over the
   existing query, prompt-pack, import, digest, maintenance, lint, eval, rebuild,
   Bases, Obsidian, operation-log, and Codex handoff commands. `ask` never
