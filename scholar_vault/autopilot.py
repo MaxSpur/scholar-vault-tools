@@ -13,12 +13,19 @@ from .bases import doctor_bases, rebuild_bases
 from .config import configured_path, latest_export_json
 from .digests import compile_doctor, compile_scaffold, compile_status
 from .evals import render_eval_report, run_evals
-from .importer import import_scholar_labs_run, initialize_vault
-from .labs_prompts import generate_prompt_pack, resolve_prompt_pack
+from .importer import (
+    find_staged_run_matches,
+    import_pdf_dropins,
+    import_scholar_labs_run,
+    import_staged_pdf_match,
+    initialize_vault,
+)
+from .labs_prompts import generate_prompt_pack, record_used_prompt_pack, resolve_prompt_pack
 from .maintenance import maintenance_report
 from .models import ScholarLabsExport
 from .obsidian_setup import doctor_obsidian
-from .queries import query_create
+from .projects import project_link_paper, project_scaffold
+from .queries import _query_slug, query_create, query_link_paper
 from .rebuild import rebuild_vault
 from .self_improvement import log_operation, write_self_improvement_dashboard
 from .semantic_lint import lint_wiki
@@ -223,6 +230,75 @@ def ask(
     }
 
 
+def start(
+    vault: Path | str,
+    project: str,
+    question: str,
+    *,
+    title: str | None = None,
+    slug: str | None = None,
+    export: Path | None = None,
+    staging: Path | None = None,
+    pdf_only: bool = False,
+    seed_api: str = "none",
+    refresh_seeds: bool = False,
+    copy: bool = False,
+    open_scholar: bool = False,
+    auto_enrich: bool = True,
+    upgrade_pdfs: bool = True,
+) -> dict[str, Any]:
+    if export is not None and pdf_only:
+        raise ValueError("Use either --export for Scholar Labs JSON or --pdf-only, not both.")
+    paths = initialize_vault(vault, rebuild=False)
+    project_summary = project_scaffold(paths.vault, project, title=title)
+    if export is not None or pdf_only:
+        intake_summary = intake(
+            paths.vault,
+            export=export,
+            staging=staging,
+            question=question,
+            project=project,
+            slug=slug,
+            new_session=True,
+            pdf_only=pdf_only,
+            auto_enrich=auto_enrich,
+            upgrade_pdfs=upgrade_pdfs,
+        )
+        return {
+            "vault": str(paths.vault),
+            "mode": "pdf-only" if pdf_only else "intake",
+            "project": project_summary,
+            "intake": intake_summary,
+            "session": intake_summary["session"],
+            "next_step": (
+                "Run `scholar-vault answer \"synthesis question\"` when ready."
+                if not intake_summary.get("blockers")
+                else "Resolve the listed blocker(s), then rerun intake."
+            ),
+        }
+
+    ask_summary = ask(
+        paths.vault,
+        question,
+        project=project,
+        slug=slug,
+        seed_api=seed_api,
+        refresh_seeds=refresh_seeds,
+        copy=copy,
+        open_scholar=open_scholar,
+        new_session=True,
+    )
+    return {
+        "vault": str(paths.vault),
+        "mode": "ask",
+        "project": project_summary,
+        "ask": ask_summary,
+        "session": ask_summary["session"],
+        "prompt": ask_summary["prompt"],
+        "next_step": ask_summary["next_step"],
+    }
+
+
 def _current_or_named_session(paths: VaultPaths, session_id: str | None = None) -> dict[str, Any]:
     if session_id:
         return load_session(paths, session_id)
@@ -232,12 +308,68 @@ def _current_or_named_session(paths: VaultPaths, session_id: str | None = None) 
     return session
 
 
+def _load_export(export_path: Path) -> ScholarLabsExport:
+    return ScholarLabsExport.model_validate_json(export_path.read_text(encoding="utf-8"))
+
+
 def _load_export_prompt(export_path: Path) -> str:
-    export = ScholarLabsExport.model_validate_json(export_path.read_text(encoding="utf-8"))
+    export = _load_export(export_path)
     prompt = " ".join(export.prompt.split())
     if not prompt:
         raise ValueError(f"Scholar Labs export has no prompt: {export_path}")
     return prompt
+
+
+def _desired_query_ref(question: str, slug: str | None) -> str:
+    return f"queries/{_query_slug(slug or question)}.md"
+
+
+def _current_session_conflict(
+    current: dict[str, Any],
+    *,
+    question: str | None = None,
+    project: str | None = None,
+    slug: str | None = None,
+) -> str | None:
+    if question is not None and current.get("question") != question:
+        return (
+            f"current session question is `{current.get('question')}`, "
+            f"but intake requested `{question}`"
+        )
+    if project is not None and current.get("project") != project:
+        return (
+            f"current session project is `{current.get('project') or '-'}`, "
+            f"but intake requested `{project}`"
+        )
+    if slug is not None:
+        desired_query = _desired_query_ref(question or current.get("question") or slug, slug)
+        if current.get("query_path") != desired_query:
+            return (
+                f"current session query is `{current.get('query_path') or '-'}`, "
+                f"but intake requested `{desired_query}`"
+            )
+    return None
+
+
+def _bootstrap_session(
+    paths: VaultPaths,
+    *,
+    question: str,
+    project: str | None,
+    slug: str | None,
+    new_session: bool,
+) -> dict[str, Any]:
+    if project:
+        project_scaffold(paths.vault, project)
+    query_summary = query_create(paths.vault, question, project=project, slug=slug)
+    session, _created = create_or_reuse_session(
+        paths,
+        question=question,
+        project=project,
+        query_path=str(query_summary["query"]),
+        new_session=new_session,
+    )
+    return update_session_status(paths, session, "waiting_for_labs_export")
 
 
 def _intake_session(
@@ -258,26 +390,158 @@ def _intake_session(
     if current is not None:
         if not explicit_bootstrap:
             return current
+        conflict = _current_session_conflict(
+            current,
+            question=" ".join(question.split()) if question else None,
+            project=project,
+            slug=slug,
+        )
+        if conflict:
+            raise ValueError(f"{conflict}. Pass --new-session or --session to disambiguate.")
+        return current
 
     export_prompt = _load_export_prompt(export_path)
     session_question = " ".join((question or export_prompt).split())
-    query_summary = query_create(paths.vault, session_question, project=project, slug=slug)
-    query_path = str(query_summary["query"])
-    if (
-        current is not None
-        and current.get("query_path") == query_path
-        and current.get("question") == session_question
-        and current.get("project") == (project or "")
-    ):
-        return current
-    session, _created = create_or_reuse_session(
+    return _bootstrap_session(
         paths,
         question=session_question,
         project=project,
-        query_path=query_path,
+        new_session=new_session,
+        slug=slug,
+    )
+
+
+def _pdf_only_session(
+    paths: VaultPaths,
+    *,
+    session_id: str | None,
+    question: str | None,
+    project: str | None,
+    slug: str | None,
+    new_session: bool,
+) -> dict[str, Any]:
+    if session_id:
+        return load_session(paths, session_id)
+
+    explicit_bootstrap = bool(question or project or slug or new_session)
+    current = None if new_session else load_current_session(paths)
+    if current is not None:
+        if not explicit_bootstrap:
+            return current
+        conflict = _current_session_conflict(
+            current,
+            question=" ".join(question.split()) if question else None,
+            project=project,
+            slug=slug,
+        )
+        if conflict:
+            raise ValueError(f"{conflict}. Pass --new-session or --session to disambiguate.")
+        return current
+
+    session_question = " ".join((question or "").split())
+    if not session_question:
+        raise ValueError("PDF-only intake needs --question when no current session is active.")
+    return _bootstrap_session(
+        paths,
+        question=session_question,
+        project=project,
+        slug=slug,
         new_session=new_session,
     )
-    return update_session_status(paths, session, "waiting_for_labs_export")
+
+
+def _ensure_used_prompt_pack(
+    paths: VaultPaths,
+    session: dict[str, Any],
+    *,
+    export_path: Path,
+    dry_run: bool,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if dry_run or session.get("prompt_pack_path") or not session.get("query_path"):
+        return {}, session
+    export = _load_export(export_path)
+    prompt = " ".join(export.prompt.split())
+    if not prompt:
+        return {}, session
+    prompt_pack_summary = record_used_prompt_pack(
+        paths.vault,
+        query=Path(str(session["query_path"])).stem,
+        project=str(session.get("project") or "") or None,
+        prompt=prompt,
+        export_path=export_path,
+        exported_at=export.exported_at,
+    )
+    session = {**session, "prompt_pack_path": prompt_pack_summary["prompt_pack"]}
+    session = write_session(paths, session)
+    return prompt_pack_summary, session
+
+
+def _run_staging_match_ui(paths: VaultPaths, staging_path: Path) -> dict[str, Any]:
+    try:
+        from .gui import GuiUnavailable
+        from .gui_staging_match import choose_staging_match
+    except Exception as exc:  # pragma: no cover - optional desktop dependency
+        return {"opened": False, "resolved": 0, "error": str(exc)}
+
+    imported: list[dict[str, Any]] = []
+
+    def search_callback(
+        query_title: str | None,
+        query_pdf: str | None,
+        query_min_score: int,
+        query_limit: int,
+        query_unselected_only: bool,
+        progress,
+    ) -> dict[str, Any]:
+        return find_staged_run_matches(
+            paths.vault,
+            staging_path,
+            title=query_title,
+            pdf_path=Path(query_pdf).expanduser().resolve() if query_pdf else None,
+            min_score=query_min_score,
+            limit=query_limit,
+            unselected_only=query_unselected_only,
+            progress=progress,
+        )
+
+    def import_callback(row: dict[str, Any]) -> None:
+        pdf_path = str(row.get("pdf_path") or "")
+        run_id = str(row.get("run_id") or "")
+        if not pdf_path or not run_id:
+            raise ValueError("Choose a staged PDF and matching run result before importing.")
+        summary = import_staged_pdf_match(
+            paths.vault,
+            run_id,
+            pdf_path,
+            rank=int(row["rank"]) if str(row.get("rank") or "").strip() else None,
+            scholar_cid=str(row.get("scholar_cid") or "") or None,
+            result_title=str(row.get("result_title") or "") or None,
+            score=int(row["score"]) if str(row.get("score") or "").strip() else None,
+            match_reason=str(row.get("reason") or "") or None,
+            auto_enrich=True,
+            archive_matched=True,
+        )
+        imported.append(summary)
+
+    try:
+        selected_run = choose_staging_match(
+            str(paths.vault),
+            str(staging_path),
+            search_callback,
+            min_score=60,
+            limit=50,
+            unselected_only=True,
+            import_callback=import_callback,
+        )
+    except GuiUnavailable as exc:  # pragma: no cover - optional desktop dependency
+        return {"opened": False, "resolved": 0, "error": str(exc)}
+
+    return {
+        "opened": True,
+        "selected_run": selected_run,
+        "resolved": len(imported),
+        "imports": imported,
+    }
 
 
 def _blockers_from_import(summary: dict[str, Any]) -> list[str]:
@@ -330,6 +594,138 @@ def _run_quality_checks(
     return checks
 
 
+def _link_pdf_imports(
+    paths: VaultPaths,
+    session: dict[str, Any],
+    import_summary: dict[str, Any],
+) -> dict[str, Any]:
+    query_slug = Path(session["query_path"]).stem if session.get("query_path") else ""
+    project_slug = str(session.get("project") or "")
+    linked_query = 0
+    linked_project = 0
+    scaffolded = 0
+    rows: list[dict[str, Any]] = []
+    for row in import_summary.get("pdfs") or []:
+        citekey = str(row.get("citekey") or "").strip()
+        if not citekey:
+            continue
+        item: dict[str, Any] = {"citekey": citekey, "paper": row.get("paper")}
+        if query_slug:
+            query_summary = query_link_paper(paths.vault, query_slug, citekey)
+            item["query_linked"] = query_summary.get("changed")
+            linked_query += int(bool(query_summary.get("changed")))
+        if project_slug:
+            project_summary = project_link_paper(paths.vault, project_slug, citekey)
+            item["project_linked"] = project_summary.get("changed")
+            linked_project += int(bool(project_summary.get("changed")))
+        scaffold_summary = compile_scaffold(paths.vault, citekey=citekey)
+        item["digest_scaffold"] = scaffold_summary
+        scaffolded += int(scaffold_summary.get("changed") or 0)
+        rows.append(item)
+    return {
+        "count": len(rows),
+        "linked_query": linked_query,
+        "linked_project": linked_project,
+        "digest_scaffolds_changed": scaffolded,
+        "items": rows,
+    }
+
+
+def _intake_pdf_only(
+    paths: VaultPaths,
+    *,
+    session_id: str | None,
+    staging_path: Path,
+    question: str | None,
+    project: str | None,
+    slug: str | None,
+    new_session: bool,
+    dry_run: bool,
+    auto_enrich: bool,
+) -> dict[str, Any]:
+    session = _pdf_only_session(
+        paths,
+        session_id=session_id,
+        question=question,
+        project=project,
+        slug=slug,
+        new_session=new_session,
+    )
+    checks: dict[str, Any] = {}
+    link_summary: dict[str, Any] = {}
+    blockers: list[str] = []
+    if dry_run:
+        pdfs = sorted(staging_path.glob("*.pdf"))
+        import_summary: dict[str, Any] = {
+            "dry_run": True,
+            "staging_folder": str(staging_path),
+            "pdf_count": len(pdfs),
+            "pdfs": [{"source": str(path), "title": path.stem} for path in pdfs],
+        }
+    else:
+        import_summary = import_pdf_dropins(
+            paths.vault,
+            staging_path,
+            auto_enrich=auto_enrich,
+        )
+        imported = int(import_summary.get("imported") or 0)
+        if not imported:
+            blockers.append("No PDFs were imported from the staging folder.")
+        else:
+            link_summary = _link_pdf_imports(paths, session, import_summary)
+        session = update_session_status(
+            paths,
+            session,
+            "blocked" if blockers else "imported",
+            blockers=blockers,
+            run_id="",
+        )
+        checks = _run_quality_checks(paths, staging_path=staging_path)
+
+    report = write_session_report(
+        paths,
+        session,
+        checks=checks,
+        next_user_action=(
+            "Resolve the blocker(s), then rerun `scholar-vault intake --pdf-only`."
+            if blockers
+            else "Run `scholar-vault answer \"synthesis question\"` when ready."
+        ),
+    )
+    log_operation(
+        paths.vault,
+        kind="autopilot_intake_pdf_only",
+        message=f"Imported PDF-only session `{session['id']}`.",
+        command="scholar-vault intake --pdf-only",
+        inputs={
+            "session": session["id"],
+            "staging": str(staging_path),
+            "dry_run": dry_run,
+        },
+        outputs={
+            "import": import_summary,
+            "links": link_summary,
+            "report": report,
+            "blockers": blockers,
+        },
+        checks_run=list(checks.keys()),
+        result="blocked" if blockers else ("dry-run" if dry_run else "imported"),
+    )
+    return {
+        "vault": str(paths.vault),
+        "session": session,
+        "export": None,
+        "staging": str(staging_path),
+        "import": import_summary,
+        "links": link_summary,
+        "scaffold": link_summary,
+        "checks": checks,
+        "report": report,
+        "blockers": blockers,
+        "pdf_only": True,
+    }
+
+
 def intake(
     vault: Path | str,
     *,
@@ -340,12 +736,26 @@ def intake(
     project: str | None = None,
     slug: str | None = None,
     new_session: bool = False,
+    pdf_only: bool = False,
+    ui: bool = False,
     dry_run: bool = False,
     auto_enrich: bool = True,
     upgrade_pdfs: bool = True,
 ) -> dict[str, Any]:
     paths = initialize_vault(vault, rebuild=False)
     staging_path = _resolve_staging(staging)
+    if pdf_only:
+        return _intake_pdf_only(
+            paths,
+            session_id=session_id,
+            staging_path=staging_path,
+            question=question,
+            project=project,
+            slug=slug,
+            new_session=new_session,
+            dry_run=dry_run,
+            auto_enrich=auto_enrich,
+        )
     export_path = _resolve_export(export, staging=staging_path)
     session = _intake_session(
         paths,
@@ -355,6 +765,12 @@ def intake(
         project=project,
         slug=slug,
         new_session=new_session,
+    )
+    prompt_pack_summary, session = _ensure_used_prompt_pack(
+        paths,
+        session,
+        export_path=export_path,
+        dry_run=dry_run,
     )
     query_slug = Path(session["query_path"]).stem if session.get("query_path") else None
     prompt_pack = session.get("prompt_pack_path") or None
@@ -373,6 +789,25 @@ def intake(
     )
     blockers = _blockers_from_import(import_summary) if not dry_run else []
     run_id = str(import_summary.get("run") or "")
+    ui_summary: dict[str, Any] = {}
+    if blockers and ui and run_id and not dry_run:
+        ui_summary = _run_staging_match_ui(paths, staging_path)
+        if ui_summary.get("resolved"):
+            import_summary = import_scholar_labs_run(
+                paths.vault,
+                export_path,
+                staging_path,
+                dry_run=False,
+                commit=True,
+                archive_matched=True,
+                archive_export=True,
+                auto_enrich=auto_enrich,
+                upgrade_pdfs=upgrade_pdfs,
+                prompt_pack=prompt_pack,
+                query=query_slug,
+            )
+            blockers = _blockers_from_import(import_summary)
+            run_id = str(import_summary.get("run") or run_id)
     scaffold_summary = {}
     checks: dict[str, Any] = {}
     if not dry_run and run_id:
@@ -400,11 +835,14 @@ def intake(
             "export": str(export_path),
             "staging": str(staging_path),
             "dry_run": dry_run,
+            "ui": ui,
         },
         outputs={
             "run": run_id,
             "import": import_summary,
+            "prompt_pack": prompt_pack_summary,
             "scaffold": scaffold_summary,
+            "ui": ui_summary,
             "report": report,
             "blockers": blockers,
         },
@@ -417,10 +855,13 @@ def intake(
         "export": str(export_path),
         "staging": str(staging_path),
         "import": import_summary,
+        "prompt_pack": prompt_pack_summary,
         "scaffold": scaffold_summary,
+        "ui": ui_summary,
         "checks": checks,
         "report": report,
         "blockers": blockers,
+        "pdf_only": False,
     }
 
 

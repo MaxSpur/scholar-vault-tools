@@ -34,6 +34,16 @@ ACTIVE_SESSION_STATUSES = tuple(status for status in SESSION_STATUSES if status 
 HANDOFF_KINDS = ("post-import", "improve", "answer")
 
 
+def _as_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
 def now_iso() -> str:
     return datetime.now().astimezone().replace(microsecond=0).isoformat()
 
@@ -297,6 +307,7 @@ def write_session_report(
     imported: list[dict[str, str]] = []
     pdfs: list[str] = []
     digest_rows: list[dict[str, str]] = []
+    seen_papers: set[str] = set()
     if run:
         for result in run.results:
             if result.status != "selected" or not result.paper_card:
@@ -305,6 +316,7 @@ def write_session_report(
             title = card.title if card else result.title
             pdf = card.pdf if card and card.pdf else ""
             status, digest_ref = _digest_status(paths, card) if card else ("missing", "")
+            seen_papers.add(result.paper_card)
             imported.append(
                 {
                     "paper": result.paper_card,
@@ -317,6 +329,35 @@ def write_session_report(
             digest_rows.append(
                 {
                     "paper": result.paper_card,
+                    "digest": digest_ref or "(not scaffolded)",
+                    "status": status,
+                }
+            )
+    query_ref = str(session.get("query_path") or "")
+    query_path = paths.vault / query_ref if query_ref else None
+    if query_path and query_path.exists():
+        query_frontmatter, _query_body = read_frontmatter_markdown(query_path)
+        for paper_ref in _as_string_list(query_frontmatter.get("linked_papers")):
+            if paper_ref in seen_papers:
+                continue
+            card = cards.get(paper_ref) or cards.get(Path(paper_ref).stem)
+            if card is None:
+                continue
+            seen_papers.add(paper_ref)
+            pdf = card.pdf or ""
+            status, digest_ref = _digest_status(paths, card)
+            imported.append(
+                {
+                    "paper": paper_ref,
+                    "title": card.title,
+                    "pdf": pdf,
+                }
+            )
+            if pdf:
+                pdfs.append(pdf)
+            digest_rows.append(
+                {
+                    "paper": paper_ref,
                     "digest": digest_ref or "(not scaffolded)",
                     "status": status,
                 }

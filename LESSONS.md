@@ -143,3 +143,6 @@
 - Intake should not require a vault-generated prompt when a Scholar Labs export
   already carries the exact top-level prompt. Preserve that prompt on the run
   and let users attach a shorter query slug/question for vault organization.
+- Autopilot should avoid hidden current-session surprises. When users pass
+  explicit project, slug, or question metadata that conflicts with the current
+  session, require `--new-session` or `--session` instead of guessing.

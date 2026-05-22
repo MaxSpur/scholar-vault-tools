@@ -115,6 +115,7 @@ app.add_typer(schema_app, name="schema")
 app.add_typer(session_app, name="session")
 app.add_typer(skills_app, name="skills")
 app.add_typer(tools_task_app, name="tools-task")
+app.command("start")(_cli_autopilot.start_command)
 app.command("ask")(_cli_autopilot.ask_command)
 app.command("intake")(_cli_autopilot.intake_command)
 app.command("improve")(_cli_autopilot.improve_command)
@@ -199,6 +200,7 @@ feedback_list_command = _cli_self_improvement.feedback_list_command
 feedback_report_command = _cli_self_improvement.feedback_report_command
 feedback_doctor_command = _cli_self_improvement.feedback_doctor_command
 tools_task_create_command = _cli_self_improvement.tools_task_create_command
+start_command = _cli_autopilot.start_command
 ask_command = _cli_autopilot.ask_command
 intake_command = _cli_autopilot.intake_command
 improve_command = _cli_autopilot.improve_command

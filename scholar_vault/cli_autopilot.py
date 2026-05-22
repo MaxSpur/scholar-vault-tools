@@ -17,6 +17,7 @@ from .autopilot import (
     session_current,
     session_list,
     session_show,
+    start,
 )
 from .cli_common import JsonOutputArg, VaultArg, _print_json, _resolve_vault, console
 from .sessions import HANDOFF_KINDS
@@ -27,7 +28,9 @@ codex_app = typer.Typer(help="Codex handoff helpers.")
 QuestionArg = Annotated[str, typer.Argument(help="Research question text.")]
 SynthesisQuestionArg = Annotated[str, typer.Argument(help="Focused synthesis question.")]
 SessionIdArg = Annotated[str | None, typer.Argument(help="Session id.")]
+ProjectArg = Annotated[str, typer.Argument(help="Project slug.")]
 ProjectOption = Annotated[str | None, typer.Option("--project", help="Project slug.")]
+ProjectTitleOption = Annotated[str | None, typer.Option("--title", help="Project title.")]
 SlugOption = Annotated[str | None, typer.Option("--slug", help="Query note slug.")]
 SessionOption = Annotated[str | None, typer.Option("--session", help="Session id.")]
 CopyOption = Annotated[bool, typer.Option("--copy", help="Copy the selected prompt.")]
@@ -67,6 +70,14 @@ IntakeNewSessionOption = Annotated[
         "--new-session",
         help="Create a session from the export prompt instead of using the current session.",
     ),
+]
+PdfOnlyOption = Annotated[
+    bool,
+    typer.Option("--pdf-only", help="Import PDFs without a Scholar Labs JSON export."),
+]
+UiOption = Annotated[
+    bool,
+    typer.Option("--ui", help="Open a desktop UI to resolve staged PDF match blockers."),
 ]
 StagingOption = Annotated[
     Path | None,
@@ -163,12 +174,20 @@ def _print_intake(summary: dict[str, object]) -> None:
     console.print(f"Session: {session.get('id') if isinstance(session, dict) else ''}")
     console.print(f"Status: {session.get('status') if isinstance(session, dict) else ''}")
     console.print(f"Run: {imported.get('run') if isinstance(imported, dict) else '-'}")
-    console.print(
-        "Imported: "
-        f"selected={imported.get('selected', 0) if isinstance(imported, dict) else 0}, "
-        f"matched={imported.get('matched', 0) if isinstance(imported, dict) else 0}, "
-        f"unmatched={imported.get('unmatched', 0) if isinstance(imported, dict) else 0}"
-    )
+    if summary.get("pdf_only") and isinstance(imported, dict):
+        console.print(
+            "Imported: "
+            f"pdfs={imported.get('imported', imported.get('pdf_count', 0))}, "
+            f"created={imported.get('created', 0)}, "
+            f"updated={imported.get('updated_existing', 0)}"
+        )
+    else:
+        console.print(
+            "Imported: "
+            f"selected={imported.get('selected', 0) if isinstance(imported, dict) else 0}, "
+            f"matched={imported.get('matched', 0) if isinstance(imported, dict) else 0}, "
+            f"unmatched={imported.get('unmatched', 0) if isinstance(imported, dict) else 0}"
+        )
     console.print(f"Report: {report.get('path') if isinstance(report, dict) else '-'}")
     if blockers:
         console.print("Next: Resolve blockers, then rerun `scholar-vault intake`.")
@@ -176,6 +195,20 @@ def _print_intake(summary: dict[str, object]) -> None:
             console.print(f"- {blocker}")
     else:
         console.print('Next: Run `scholar-vault answer "synthesis question"`.')
+
+
+def _print_start(summary: dict[str, object]) -> None:
+    mode = summary.get("mode")
+    if mode == "ask":
+        console.print(str(summary.get("prompt") or ""))
+        console.print("")
+        console.print(f"Next: {summary.get('next_step')}")
+        return
+    intake_summary = summary.get("intake") or {}
+    if isinstance(intake_summary, dict):
+        _print_intake(intake_summary)
+    else:
+        console.print(f"Next: {summary.get('next_step')}")
 
 
 def _print_improve(summary: dict[str, object]) -> None:
@@ -204,6 +237,45 @@ def _print_answer(summary: dict[str, object]) -> None:
         return
     command = handoff.get("command") if isinstance(handoff, dict) else ""
     console.print(str(command))
+
+
+def start_command(
+    project: ProjectArg,
+    question: QuestionArg,
+    vault: VaultArg = None,
+    title: ProjectTitleOption = None,
+    slug: SlugOption = None,
+    export: ExportOption = None,
+    staging: StagingOption = None,
+    pdf_only: PdfOnlyOption = False,
+    seed_api: SeedApiOption = "none",
+    refresh_seeds: RefreshSeedsOption = False,
+    copy: CopyOption = False,
+    open_scholar: OpenScholarOption = False,
+    auto_enrich: AutoEnrichOption = True,
+    upgrade_pdfs: UpgradePdfsOption = True,
+    json_output: JsonOutputArg = False,
+) -> None:
+    summary = start(
+        _resolve_vault(vault),
+        project,
+        question,
+        title=title,
+        slug=slug,
+        export=export,
+        staging=staging,
+        pdf_only=pdf_only,
+        seed_api=_seed_api(seed_api),
+        refresh_seeds=refresh_seeds,
+        copy=copy,
+        open_scholar=open_scholar,
+        auto_enrich=auto_enrich,
+        upgrade_pdfs=upgrade_pdfs,
+    )
+    if json_output:
+        _print_json(summary)
+    else:
+        _print_start(summary)
 
 
 def ask_command(
@@ -246,6 +318,8 @@ def intake_command(
     project: ProjectOption = None,
     slug: SlugOption = None,
     new_session: IntakeNewSessionOption = False,
+    pdf_only: PdfOnlyOption = False,
+    ui: UiOption = False,
     dry_run: DryRunOption = False,
     auto_enrich: AutoEnrichOption = True,
     upgrade_pdfs: UpgradePdfsOption = True,
@@ -260,6 +334,8 @@ def intake_command(
         project=project,
         slug=slug,
         new_session=new_session,
+        pdf_only=pdf_only,
+        ui=ui,
         dry_run=dry_run,
         auto_enrich=auto_enrich,
         upgrade_pdfs=upgrade_pdfs,

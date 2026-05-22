@@ -152,11 +152,18 @@ scholar-vault improve --no-agent
 scholar-vault answer "focused synthesis question"
 ```
 
+For brand-new projects, `scholar-vault start <project-slug> "question"` can
+scaffold the project and then route to `ask`, Labs `intake`, or PDF-only
+intake depending on the options passed.
+
 If the user already ran Google Scholar Labs and has a JSON export, `ask` is not
 required for provenance. The JSON contains the exact prompt. Prefer
 `scholar-vault intake --export <json> --staging <pdf-folder> --project <slug>
 --slug <query-slug> --question "short query question" --new-session` to create
-the session/query from that export and link the run to the project context.
+the session/query from that export, record a used-prompt pack, and link the run
+to the project context. For PDFs without a Labs JSON, prefer
+`scholar-vault intake --pdf-only --staging <pdf-folder> --project <slug>
+--slug <query-slug> --question "short query question" --new-session`.
 
 Use the lower-level commands only when repairing blockers, inspecting a
 specific subsystem, or following a handoff.

@@ -149,15 +149,22 @@
 
 - `configure`: stores user-level defaults for the vault, staging folder, optional export folder, and code directory in `~/.config/scholar-vault/config.yaml`. `--ui` opens a native folder-picker dialog. `--folder-mode shared` omits `exports` so staging is used for PDFs and Scholar Labs JSON exports; `--folder-mode separate` records an explicit exports folder. Commands use these defaults unless explicit paths are passed.
 - `init`: creates the vault folder structure, generated starter docs, and a vault-specific `AGENTS.md` operating guide when those files do not already exist.
+- `start`: project-first autopilot entry point. It scaffolds the project and
+  routes to `ask`, Labs `intake`, or PDF-only `intake` based on whether the
+  user supplies an export or `--pdf-only`.
 - `ask` / `intake` / `improve` / `answer`: user-facing autopilot over the
   existing query, prompt-pack, import, digest, maintenance, lint, eval, rebuild,
   Bases, Obsidian, operation-log, and Codex handoff commands. `ask` never
   scrapes Scholar; it prints the selected prompt and next step. `intake`
   defaults to the current session and newest unused Labs JSON, but can also
   bootstrap a query/session from a self-run Scholar Labs export prompt when
-  given `--new-session`, `--project`, `--slug`, or `--question`. `answer`
-  writes a Codex handoff by default and only invokes Codex when `--agent codex`
-  is passed.
+  given `--new-session`, `--project`, `--slug`, or `--question`; self-run
+  exports get an exact used-prompt pack linked to the run. `intake --pdf-only`
+  imports PDFs, links the resulting cards to the query/project, scaffolds
+  digests, and writes a session report. `intake --ui` can open the staging
+  match resolver for blocker repair before retrying import. `answer` writes a
+  Codex handoff by default and only invokes Codex when `--agent codex` is
+  passed.
 - `session current/list/show/archive`: durable session state under
   `_sessions/` for the ask/intake/improve/answer lifecycle.
 - `codex handoff/run --kind post-import|improve|answer`: writes handoff prompts
@@ -294,6 +301,8 @@
   `tasks/scholar-labs-prompts/<pack-id>.md`, with frontmatter
   `type: scholar_labs_prompt_pack`, status, source context links, and linked
   run/task/synthesis/concept fields. Prompt text stays in the Markdown body.
+  Self-run Labs exports imported through autopilot store the exact JSON prompt
+  as a used prompt pack under the query-local `prompt-packs/` folder.
 - Discovery candidates: `tasks/discovery-candidates/<candidate-id>.yaml`.
   These are OpenAlex/Semantic Scholar metadata candidates with source, title,
   authors, DOI, URL, venue, abstract, cited-by count, seed citekey, query,

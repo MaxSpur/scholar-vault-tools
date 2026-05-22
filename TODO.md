@@ -99,6 +99,9 @@
   tutorial centered on ask -> intake -> answer.
 - [x] Let `intake` bootstrap a query/session from an existing Scholar Labs JSON
   prompt for after-the-fact self-run searches.
+- [x] Add exact used-prompt artifacts, `start`, PDF-only autopilot intake,
+  staging-match UI repair from `intake --ui`, and safer current-session
+  disambiguation for after-the-fact workflows.
 
 ## Obsidian usability and vault navigation
 

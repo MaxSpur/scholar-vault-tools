@@ -264,6 +264,15 @@ scholar-vault answer "focused synthesis question"
 The detailed commands still exist, but these four steps are the front door for
 normal use.
 
+For a brand-new project, `start` combines project scaffolding with either
+`ask` or `intake`:
+
+```fish
+scholar-vault start budgie-vocoder \
+  "Which acoustic evidence supports a budgerigar synthesizer?" \
+  --title "Budgerigar Vocoder"
+```
+
 1. Configure your defaults once:
 
 ```fish
@@ -330,7 +339,8 @@ syntheses, and the next user action.
 
 `intake` only blocks for real follow-up, such as staged PDF matches that need
 manual review. If that happens, resolve the blocker with the lower-level repair
-commands or the staging UI, then rerun `scholar-vault intake`.
+commands, or run `scholar-vault intake --ui` to open the staging match UI and
+retry the import after targeted matches are accepted.
 
 ### If You Already Ran Scholar Labs Yourself
 
@@ -339,13 +349,18 @@ Scholar Labs JSON export. The export includes the exact prompt under its
 top-level `prompt` field, and the imported run stores that prompt as run
 provenance.
 
-For a new project, first create the project lens:
+For a new project, the shortest path is:
 
 ```fish
-scholar-vault project scaffold budgie-vocoder --title "Budgerigar Vocoder"
+scholar-vault start budgie-vocoder \
+  "Which acoustic evidence supports a budgerigar synthesizer?" \
+  --title "Budgerigar Vocoder" \
+  --slug budgie-vocoder-scan \
+  --export ~/Downloads/scholar-labs-budgerigar.json \
+  --staging ~/Downloads/budgie-pdfs
 ```
 
-Then import the already-exported Labs JSON and the folder containing the PDFs:
+The equivalent explicit intake command is:
 
 ```fish
 scholar-vault intake \
@@ -369,8 +384,9 @@ also bootstrap from the JSON prompt without it.
 
 You can still run `ask` first when you want the vault to generate a prompt pack,
 copy/open Scholar for you, or create the query/session before you search. In
-the self-run path, `intake` creates the query/session from the JSON prompt and
-links the imported run to that query.
+the self-run path, `intake` creates the query/session from the JSON prompt,
+writes an exact used-prompt artifact under the query's `prompt-packs/` folder,
+and links the imported run to that query and prompt artifact.
 
 6. Optional: run a deterministic improvement pass before synthesis:
 
@@ -434,51 +450,41 @@ command catalog and lower-level workflows.
 Use this when you found or downloaded a paper yourself and do not have a
 Scholar Labs JSON export or prompt summary.
 
-If the PDFs belong to a new project or question, create the project/query first
-so the imported papers have a place to attach:
+Use this when you found or downloaded papers yourself and do not have a Scholar
+Labs JSON export.
+
+For a new project, use PDF-only autopilot:
 
 ```fish
-scholar-vault project scaffold budgie-vocoder --title "Budgerigar Vocoder"
-scholar-vault query create \
+scholar-vault start budgie-vocoder \
   "Which acoustic evidence supports a budgerigar synthesizer?" \
+  --title "Budgerigar Vocoder" \
+  --slug budgie-vocoder-pdf-seed \
+  --staging ~/Downloads/budgie-pdfs \
+  --pdf-only
+```
+
+The equivalent explicit command is:
+
+```fish
+scholar-vault intake \
+  --pdf-only \
   --project budgie-vocoder \
-  --slug budgie-vocoder-pdf-seed
+  --slug budgie-vocoder-pdf-seed \
+  --question "Which acoustic evidence supports a budgerigar synthesizer?" \
+  --staging ~/Downloads/budgie-pdfs \
+  --new-session
 ```
 
-For the desktop workflow, run:
+PDF-only intake imports the PDFs, links imported citekeys to the query and
+project, scaffolds paper digests, runs the deterministic checks, writes the
+session report, and logs the operation. The original downloaded PDFs stay where
+they are.
 
-```fish
-scholar-vault import-pdf --ui
-```
+The lower-level `import-pdf --ui` workflow remains available when you want a
+desktop file picker or need to import PDFs outside a session.
 
-The UI accepts multiple PDFs by drag-and-drop or file picker. It copies the
-PDFs into `pdfs/`, creates or updates canonical `papers/*.md` cards, runs
-citation, abstract, and publication-keyword enrichment by default, then opens a
-follow-up editor for unresolved metadata, missing abstracts, or missing
-keywords. The original downloaded PDFs stay where they are.
-
-For the terminal workflow, drop PDFs into the configured staging folder or pass
-the folder explicitly:
-
-```fish
-scholar-vault import-pdf --vault ~/Documents/Research/scholar-labs-vault --staging ~/Downloads/scholar-labs-staging
-```
-
-Use `--no-enrich` when you only want to copy PDFs and create cards quickly.
-The importer extracts metadata where possible, renames and copies PDFs into
-`pdfs/`, creates source cards, and leaves any unresolved citation, abstract, or
-keyword fields for `scholar-vault enrich --ui`.
-
-After direct PDF import, link each relevant imported citekey to the query and
-project:
-
-```fish
-scholar-vault query link-paper budgie-vocoder-pdf-seed <citekey>
-scholar-vault project link-paper budgie-vocoder <citekey>
-scholar-vault compile scaffold --citekey <citekey>
-```
-
-Then continue with:
+Then continue from the session:
 
 ```fish
 scholar-vault answer "focused synthesis question" --agent codex

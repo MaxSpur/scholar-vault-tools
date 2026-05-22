@@ -29,7 +29,14 @@ lower-level importer. The JSON export includes the exact top-level `prompt`;
 project/query metadata or `--new-session`:
 
 ```fish
-scholar-vault project scaffold budgie-vocoder --title "Budgerigar Vocoder"
+scholar-vault start budgie-vocoder \
+  "Which acoustic evidence supports a budgerigar synthesizer?" \
+  --title "Budgerigar Vocoder" \
+  --slug budgie-vocoder-scan \
+  --export ~/Downloads/scholar-labs-budgerigar.json \
+  --staging ~/Downloads/budgie-pdfs
+
+# Equivalent explicit form:
 scholar-vault intake \
   --project budgie-vocoder \
   --slug budgie-vocoder-scan \
@@ -40,7 +47,9 @@ scholar-vault intake \
 ```
 
 Here `budgie-vocoder` is the project slug and `budgie-vocoder-scan` is the
-query slug for `queries/budgie-vocoder-scan.md`.
+query slug for `queries/budgie-vocoder-scan.md`. `intake` records the exact
+JSON prompt as a used prompt pack under that query and links it to the imported
+run.
 
 Import a specific Labs export directly when bypassing `intake`:
 
@@ -90,11 +99,18 @@ Direct PDF imports copy PDFs into `pdfs/`, create or update canonical
 `papers/*.md` cards, run enrichment by default, and keep the original downloads
 where they are.
 
-When the PDFs belong to a query/project and there is no Labs JSON, create or
-reuse a query and link the imported citekeys explicitly:
+When the PDFs belong to a query/project and there is no Labs JSON, prefer
+PDF-only intake:
 
 ```fish
-scholar-vault query create "Which acoustic evidence supports a budgerigar synthesizer?" --project budgie-vocoder --slug budgie-vocoder-pdf-seed
+scholar-vault intake --pdf-only --project budgie-vocoder --slug budgie-vocoder-pdf-seed --question "Which acoustic evidence supports a budgerigar synthesizer?" --staging ~/Downloads/budgie-pdfs --new-session
+```
+
+This imports PDFs, links imported citekeys to the query/project, and scaffolds
+digests. Use lower-level linking only when repairing or curating existing
+imports:
+
+```fish
 scholar-vault query link-paper budgie-vocoder-pdf-seed <citekey>
 scholar-vault project link-paper budgie-vocoder <citekey>
 scholar-vault compile scaffold --citekey <citekey>

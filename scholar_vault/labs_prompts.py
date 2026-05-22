@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -949,6 +950,103 @@ def _refresh_prompt_navigation(paths: VaultPaths) -> None:
 
     rebuild_bases(paths.vault)
     _rebuild_indexes(paths)
+
+
+def record_used_prompt_pack(
+    vault: Path | str,
+    *,
+    query: str,
+    prompt: str,
+    project: str | None = None,
+    export_path: Path | str | None = None,
+    exported_at: str | None = None,
+) -> dict[str, Any]:
+    """Store an exact externally used Scholar Labs prompt as a prompt pack."""
+    from .importer import initialize_vault
+
+    paths = initialize_vault(vault, rebuild=False)
+    query_slug = _query_slug(query)
+    query_ref = f"queries/{query_slug}.md"
+    if not (paths.vault / query_ref).exists():
+        raise ValueError(f"Query does not exist: {query_ref}")
+    cleaned_prompt = clean_markdown_text(prompt)
+    if not cleaned_prompt:
+        raise ValueError("Prompt text must not be empty.")
+    exported = clean_markdown_text(exported_at) or ""
+    digest = hashlib.sha256(f"{query_ref}\n{exported}\n{cleaned_prompt}".encode()).hexdigest()[
+        :12
+    ]
+    pack_id = f"query-{query_slug}-used-scholar-labs-prompt-{digest}"
+    path = paths.queries / query_slug / "prompt-packs" / f"{pack_id}.md"
+    existing_frontmatter: dict[str, Any] = {}
+    if path.exists():
+        existing_frontmatter, _ = _load_prompt_pack_path(paths, path)
+    export_value = str(Path(export_path).expanduser()) if export_path else ""
+    now = _now_iso()
+    frontmatter = {
+        "type": "scholar_labs_prompt_pack",
+        "status": _normalize_status(existing_frontmatter.get("status") or "used"),
+        "query": query_ref,
+        "project": project or existing_frontmatter.get("project") or "",
+        "created_at": existing_frontmatter.get("created_at") or now,
+        "generated_from": sorted(
+            set(_as_string_list(existing_frontmatter.get("generated_from")) + [query_ref]),
+            key=str.casefold,
+        ),
+        "linked_runs": sorted(
+            set(_as_string_list(existing_frontmatter.get("linked_runs"))), key=str.casefold
+        ),
+        "linked_tasks": sorted(
+            set(_as_string_list(existing_frontmatter.get("linked_tasks"))), key=str.casefold
+        ),
+        "linked_syntheses": sorted(
+            set(_as_string_list(existing_frontmatter.get("linked_syntheses"))),
+            key=str.casefold,
+        ),
+        "linked_concepts": sorted(
+            set(_as_string_list(existing_frontmatter.get("linked_concepts"))),
+            key=str.casefold,
+        ),
+        "source": "google_scholar_labs_export",
+        "source_export": export_value,
+        "exported_at": exported,
+    }
+    context = {
+        "title": f"Used Scholar Labs prompt for {query_slug}",
+        "question": cleaned_prompt,
+        "query_ref": query_ref,
+        "project": frontmatter["project"],
+        "generated_from": [query_ref],
+        "linked_tasks": [],
+        "linked_syntheses_refs": [],
+        "linked_concepts_refs": [],
+    }
+    prompt_entry = PromptEntry(
+        id="used-export-prompt",
+        prompt_text=cleaned_prompt,
+        prompt_type="coverage_gap",
+        intended_use="Exact prompt already run by the user in Google Scholar Labs.",
+        expected_result_shape="Scholar Labs JSON export plus user-selected PDFs.",
+        followup_questions=[],
+        selection_guidance="Use the papers selected by the user from this export.",
+        import_instructions="Import with scholar-vault intake or import-labs.",
+    )
+    body = _render_prompt_pack(frontmatter, context, [prompt_entry], [])
+    before = path.read_text(encoding="utf-8") if path.exists() else None
+    _write_prompt_pack(path, frontmatter, body)
+    pack_ref = _prompt_pack_ref(paths, path)
+    query_changed = _update_query_prompt_pack(paths, query_slug, pack_ref)
+    _refresh_prompt_navigation(paths)
+    return {
+        "vault": str(paths.vault),
+        "id": pack_id,
+        "prompt_pack": pack_ref,
+        "status": frontmatter["status"],
+        "state": "unchanged" if before == path.read_text(encoding="utf-8") else "created"
+        if before is None
+        else "updated",
+        "query_updated": query_changed,
+    }
 
 
 def generate_prompt_pack(

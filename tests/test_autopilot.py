@@ -221,8 +221,13 @@ def test_intake_can_bootstrap_session_from_export_prompt(
     assert summary["session"]["project"] == "budgie-vocoder"
     assert summary["session"]["query_path"] == "queries/budgie-scan.md"
     assert calls["import"]["query"] == "budgie-scan"  # type: ignore[index]
-    assert calls["import"]["prompt_pack"] is None  # type: ignore[index]
+    prompt_pack = calls["import"]["prompt_pack"]  # type: ignore[index]
+    assert isinstance(prompt_pack, str)
+    assert prompt_pack.startswith("queries/budgie-scan/prompt-packs/")
     assert "budgie-vocoder" in (vault / "queries" / "budgie-scan.md").read_text()
+    assert "Find papers that measure budgerigar vocal acoustics" in (
+        vault / prompt_pack
+    ).read_text()
     assert len(_session_files(vault)) == 1
 
     second = autopilot.intake(
@@ -236,6 +241,90 @@ def test_intake_can_bootstrap_session_from_export_prompt(
 
     assert second["session"]["id"] == summary["session"]["id"]
     assert len(_session_files(vault)) == 1
+
+
+def test_intake_pdf_only_imports_links_and_scaffolds(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    initialize_vault(vault)
+    calls: dict[str, list[object]] = {
+        "query": [],
+        "project": [],
+        "scaffold": [],
+    }
+
+    monkeypatch.setattr(
+        autopilot,
+        "import_pdf_dropins",
+        lambda *args, **kwargs: {
+            "imported": 1,
+            "created": 1,
+            "updated_existing": 0,
+            "pdfs": [
+                {
+                    "citekey": "brittanpowell1997mechanisms",
+                    "paper": "papers/brittanpowell1997mechanisms.md",
+                    "title": "Mechanisms of vocal production in budgerigars",
+                    "pdf": "pdfs/brittanpowell1997mechanisms.pdf",
+                }
+            ],
+        },
+    )
+
+    def fake_query_link(vault_path, query_slug, citekey):
+        calls["query"].append((vault_path, query_slug, citekey))
+        return {"changed": True}
+
+    def fake_project_link(vault_path, project_slug, citekey):
+        calls["project"].append((vault_path, project_slug, citekey))
+        return {"changed": True}
+
+    def fake_scaffold(vault_path, **kwargs):
+        calls["scaffold"].append((vault_path, kwargs))
+        return {"changed": 1, "count": 1}
+
+    monkeypatch.setattr(autopilot, "query_link_paper", fake_query_link)
+    monkeypatch.setattr(autopilot, "project_link_paper", fake_project_link)
+    monkeypatch.setattr(autopilot, "compile_scaffold", fake_scaffold)
+    monkeypatch.setattr(autopilot, "_run_quality_checks", lambda *args, **kwargs: {})
+
+    summary = autopilot.intake(
+        vault,
+        staging=staging,
+        question="Which acoustic evidence supports a budgerigar synthesizer?",
+        project="budgie-vocoder",
+        slug="budgie-pdf-seed",
+        pdf_only=True,
+    )
+
+    assert summary["pdf_only"] is True
+    assert summary["session"]["status"] == "imported"
+    assert summary["session"]["query_path"] == "queries/budgie-pdf-seed.md"
+    assert calls["query"] == [(vault, "budgie-pdf-seed", "brittanpowell1997mechanisms")]
+    assert calls["project"] == [(vault, "budgie-vocoder", "brittanpowell1997mechanisms")]
+    assert calls["scaffold"][0][1] == {"citekey": "brittanpowell1997mechanisms"}
+
+
+def test_start_scaffolds_project_and_routes_to_ask(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    initialize_vault(vault)
+
+    summary = autopilot.start(
+        vault,
+        "budgie-vocoder",
+        "Which acoustic evidence supports a budgerigar synthesizer?",
+        title="Budgerigar Vocoder",
+        slug="budgie-vocoder-scan",
+    )
+
+    assert summary["mode"] == "ask"
+    assert (vault / "projects" / "budgie-vocoder" / "index.md").exists()
+    assert summary["session"]["project"] == "budgie-vocoder"
+    assert summary["session"]["query_path"] == "queries/budgie-vocoder-scan.md"
 
 
 def test_intake_marks_session_blocked_for_manual_pdf_matches(
