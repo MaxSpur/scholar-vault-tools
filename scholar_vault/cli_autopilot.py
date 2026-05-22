@@ -54,6 +54,20 @@ ExportOption = Annotated[
     Path | None,
     typer.Option("--export", exists=True, file_okay=True, dir_okay=False, resolve_path=True),
 ]
+IntakeQuestionOption = Annotated[
+    str | None,
+    typer.Option(
+        "--question",
+        help="Short query/session question when bootstrapping from an export prompt.",
+    ),
+]
+IntakeNewSessionOption = Annotated[
+    bool,
+    typer.Option(
+        "--new-session",
+        help="Create a session from the export prompt instead of using the current session.",
+    ),
+]
 StagingOption = Annotated[
     Path | None,
     typer.Option("--staging", exists=True, file_okay=False, dir_okay=True, resolve_path=True),
@@ -228,6 +242,10 @@ def intake_command(
     session_id: SessionOption = None,
     export: ExportOption = None,
     staging: StagingOption = None,
+    question: IntakeQuestionOption = None,
+    project: ProjectOption = None,
+    slug: SlugOption = None,
+    new_session: IntakeNewSessionOption = False,
     dry_run: DryRunOption = False,
     auto_enrich: AutoEnrichOption = True,
     upgrade_pdfs: UpgradePdfsOption = True,
@@ -238,6 +256,10 @@ def intake_command(
         session_id=session_id,
         export=export,
         staging=staging,
+        question=question,
+        project=project,
+        slug=slug,
+        new_session=new_session,
         dry_run=dry_run,
         auto_enrich=auto_enrich,
         upgrade_pdfs=upgrade_pdfs,

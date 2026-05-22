@@ -152,6 +152,12 @@ scholar-vault improve --no-agent
 scholar-vault answer "focused synthesis question"
 ```
 
+If the user already ran Google Scholar Labs and has a JSON export, `ask` is not
+required for provenance. The JSON contains the exact prompt. Prefer
+`scholar-vault intake --export <json> --staging <pdf-folder> --project <slug>
+--slug <query-slug> --question "short query question" --new-session` to create
+the session/query from that export and link the run to the project context.
+
 Use the lower-level commands only when repairing blockers, inspecting a
 specific subsystem, or following a handoff.
 

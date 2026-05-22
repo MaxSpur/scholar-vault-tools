@@ -97,6 +97,8 @@
 - [x] Add the user-facing autopilot layer with durable sessions, `ask`,
   `intake`, `improve`, `answer`, Codex handoffs, session reports, tests, and a
   tutorial centered on ask -> intake -> answer.
+- [x] Let `intake` bootstrap a query/session from an existing Scholar Labs JSON
+  prompt for after-the-fact self-run searches.
 
 ## Obsidian usability and vault navigation
 

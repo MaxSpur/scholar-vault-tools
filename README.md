@@ -332,6 +332,46 @@ syntheses, and the next user action.
 manual review. If that happens, resolve the blocker with the lower-level repair
 commands or the staging UI, then rerun `scholar-vault intake`.
 
+### If You Already Ran Scholar Labs Yourself
+
+You do not have to run `ask` before `intake` when you already have a Google
+Scholar Labs JSON export. The export includes the exact prompt under its
+top-level `prompt` field, and the imported run stores that prompt as run
+provenance.
+
+For a new project, first create the project lens:
+
+```fish
+scholar-vault project scaffold budgie-vocoder --title "Budgerigar Vocoder"
+```
+
+Then import the already-exported Labs JSON and the folder containing the PDFs:
+
+```fish
+scholar-vault intake \
+  --project budgie-vocoder \
+  --slug budgie-vocoder-scan \
+  --question "Which acoustic evidence supports a budgerigar synthesizer?" \
+  --export ~/Downloads/scholar-labs-budgerigar.json \
+  --staging ~/Downloads/budgie-pdfs \
+  --new-session
+```
+
+`budgie-vocoder` is the project slug. `budgie-vocoder-scan` is the query slug:
+the short stable filename for the research-query note at
+`queries/budgie-vocoder-scan.md`. A project can have many query slugs over
+time, for example one initial broad scan, one methods scan, and one negative
+evidence scan.
+
+Use `--new-session` when you are importing a self-run search and an older
+current session may still exist. If there is no current session, `intake` can
+also bootstrap from the JSON prompt without it.
+
+You can still run `ask` first when you want the vault to generate a prompt pack,
+copy/open Scholar for you, or create the query/session before you search. In
+the self-run path, `intake` creates the query/session from the JSON prompt and
+links the imported run to that query.
+
 6. Optional: run a deterministic improvement pass before synthesis:
 
 ```fish
@@ -394,6 +434,17 @@ command catalog and lower-level workflows.
 Use this when you found or downloaded a paper yourself and do not have a
 Scholar Labs JSON export or prompt summary.
 
+If the PDFs belong to a new project or question, create the project/query first
+so the imported papers have a place to attach:
+
+```fish
+scholar-vault project scaffold budgie-vocoder --title "Budgerigar Vocoder"
+scholar-vault query create \
+  "Which acoustic evidence supports a budgerigar synthesizer?" \
+  --project budgie-vocoder \
+  --slug budgie-vocoder-pdf-seed
+```
+
 For the desktop workflow, run:
 
 ```fish
@@ -417,6 +468,21 @@ Use `--no-enrich` when you only want to copy PDFs and create cards quickly.
 The importer extracts metadata where possible, renames and copies PDFs into
 `pdfs/`, creates source cards, and leaves any unresolved citation, abstract, or
 keyword fields for `scholar-vault enrich --ui`.
+
+After direct PDF import, link each relevant imported citekey to the query and
+project:
+
+```fish
+scholar-vault query link-paper budgie-vocoder-pdf-seed <citekey>
+scholar-vault project link-paper budgie-vocoder <citekey>
+scholar-vault compile scaffold --citekey <citekey>
+```
+
+Then continue with:
+
+```fish
+scholar-vault answer "focused synthesis question" --agent codex
+```
 
 ## Advanced Command Reference
 

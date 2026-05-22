@@ -16,6 +16,7 @@ from .evals import render_eval_report, run_evals
 from .importer import import_scholar_labs_run, initialize_vault
 from .labs_prompts import generate_prompt_pack, resolve_prompt_pack
 from .maintenance import maintenance_report
+from .models import ScholarLabsExport
 from .obsidian_setup import doctor_obsidian
 from .queries import query_create
 from .rebuild import rebuild_vault
@@ -231,6 +232,54 @@ def _current_or_named_session(paths: VaultPaths, session_id: str | None = None) 
     return session
 
 
+def _load_export_prompt(export_path: Path) -> str:
+    export = ScholarLabsExport.model_validate_json(export_path.read_text(encoding="utf-8"))
+    prompt = " ".join(export.prompt.split())
+    if not prompt:
+        raise ValueError(f"Scholar Labs export has no prompt: {export_path}")
+    return prompt
+
+
+def _intake_session(
+    paths: VaultPaths,
+    *,
+    session_id: str | None,
+    export_path: Path,
+    question: str | None,
+    project: str | None,
+    slug: str | None,
+    new_session: bool,
+) -> dict[str, Any]:
+    if session_id:
+        return load_session(paths, session_id)
+
+    explicit_bootstrap = bool(question or project or slug or new_session)
+    current = None if new_session else load_current_session(paths)
+    if current is not None:
+        if not explicit_bootstrap:
+            return current
+
+    export_prompt = _load_export_prompt(export_path)
+    session_question = " ".join((question or export_prompt).split())
+    query_summary = query_create(paths.vault, session_question, project=project, slug=slug)
+    query_path = str(query_summary["query"])
+    if (
+        current is not None
+        and current.get("query_path") == query_path
+        and current.get("question") == session_question
+        and current.get("project") == (project or "")
+    ):
+        return current
+    session, _created = create_or_reuse_session(
+        paths,
+        question=session_question,
+        project=project,
+        query_path=query_path,
+        new_session=new_session,
+    )
+    return update_session_status(paths, session, "waiting_for_labs_export")
+
+
 def _blockers_from_import(summary: dict[str, Any]) -> list[str]:
     decisions = summary.get("decision_summary") or {}
     blockers: list[str] = []
@@ -287,14 +336,26 @@ def intake(
     session_id: str | None = None,
     export: Path | None = None,
     staging: Path | None = None,
+    question: str | None = None,
+    project: str | None = None,
+    slug: str | None = None,
+    new_session: bool = False,
     dry_run: bool = False,
     auto_enrich: bool = True,
     upgrade_pdfs: bool = True,
 ) -> dict[str, Any]:
     paths = initialize_vault(vault, rebuild=False)
-    session = _current_or_named_session(paths, session_id)
     staging_path = _resolve_staging(staging)
     export_path = _resolve_export(export, staging=staging_path)
+    session = _intake_session(
+        paths,
+        session_id=session_id,
+        export_path=export_path,
+        question=question,
+        project=project,
+        slug=slug,
+        new_session=new_session,
+    )
     query_slug = Path(session["query_path"]).stem if session.get("query_path") else None
     prompt_pack = session.get("prompt_pack_path") or None
     import_summary = import_scholar_labs_run(

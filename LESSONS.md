@@ -140,3 +140,6 @@
 - README should teach the short user workflow first. Keep ask/intake/answer in
   the tutorial, and move command catalogs or repair sequences to docs reference
   pages so routine use is not buried under internal steps.
+- Intake should not require a vault-generated prompt when a Scholar Labs export
+  already carries the exact top-level prompt. Preserve that prompt on the run
+  and let users attach a shorter query slug/question for vault organization.

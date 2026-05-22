@@ -23,6 +23,25 @@ Prompt packs are discovery-planning artifacts. They may use OpenAlex or
 Semantic Scholar to improve wording, but those API candidates are not canonical
 sources.
 
+For a Scholar Labs search you already ran yourself, prefer `intake` over the
+lower-level importer. The JSON export includes the exact top-level `prompt`;
+`intake` can use that prompt to create the query/session when you provide
+project/query metadata or `--new-session`:
+
+```fish
+scholar-vault project scaffold budgie-vocoder --title "Budgerigar Vocoder"
+scholar-vault intake \
+  --project budgie-vocoder \
+  --slug budgie-vocoder-scan \
+  --question "Which acoustic evidence supports a budgerigar synthesizer?" \
+  --export ~/Downloads/scholar-labs-budgerigar.json \
+  --staging ~/Downloads/budgie-pdfs \
+  --new-session
+```
+
+Here `budgie-vocoder` is the project slug and `budgie-vocoder-scan` is the
+query slug for `queries/budgie-vocoder-scan.md`.
+
 Import a specific Labs export directly when bypassing `intake`:
 
 ```fish
@@ -70,6 +89,16 @@ scholar-vault import-doi --doi 10.1145/3544548.3580848
 Direct PDF imports copy PDFs into `pdfs/`, create or update canonical
 `papers/*.md` cards, run enrichment by default, and keep the original downloads
 where they are.
+
+When the PDFs belong to a query/project and there is no Labs JSON, create or
+reuse a query and link the imported citekeys explicitly:
+
+```fish
+scholar-vault query create "Which acoustic evidence supports a budgerigar synthesizer?" --project budgie-vocoder --slug budgie-vocoder-pdf-seed
+scholar-vault query link-paper budgie-vocoder-pdf-seed <citekey>
+scholar-vault project link-paper budgie-vocoder <citekey>
+scholar-vault compile scaffold --citekey <citekey>
+```
 
 ## Sessions And Codex Handoffs
 

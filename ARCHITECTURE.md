@@ -153,9 +153,11 @@
   existing query, prompt-pack, import, digest, maintenance, lint, eval, rebuild,
   Bases, Obsidian, operation-log, and Codex handoff commands. `ask` never
   scrapes Scholar; it prints the selected prompt and next step. `intake`
-  defaults to the current session and newest unused Labs JSON. `answer` writes
-  a Codex handoff by default and only invokes Codex when `--agent codex` is
-  passed.
+  defaults to the current session and newest unused Labs JSON, but can also
+  bootstrap a query/session from a self-run Scholar Labs export prompt when
+  given `--new-session`, `--project`, `--slug`, or `--question`. `answer`
+  writes a Codex handoff by default and only invokes Codex when `--agent codex`
+  is passed.
 - `session current/list/show/archive`: durable session state under
   `_sessions/` for the ask/intake/improve/answer lifecycle.
 - `codex handoff/run --kind post-import|improve|answer`: writes handoff prompts

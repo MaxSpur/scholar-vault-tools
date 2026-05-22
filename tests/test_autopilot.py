@@ -158,6 +158,86 @@ def test_intake_orchestrates_import_scaffold_checks_and_report(
     assert "20260522_tactile-maps" in (vault / "_sessions" / "current.yaml").read_text()
 
 
+def test_intake_can_bootstrap_session_from_export_prompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    export = staging / "labs.json"
+    export.write_text(
+        """
+{
+  "schema_version": "0.2",
+  "source": "google_scholar_labs",
+  "exported_at": "2026-05-22T12:00:00Z",
+  "prompt": "Find papers that measure budgerigar vocal acoustics for synthesis.",
+  "results": [
+    {
+      "rank": 1,
+      "title": "Mechanisms of vocal production in budgerigars",
+      "authors_preview": "EF Brittan-Powell, RJ Dooling",
+      "year": 1997,
+      "summary": "Measured contact calls."
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    initialize_vault(vault)
+    calls: dict[str, object] = {}
+
+    def fake_import(vault_path, export_path, staging_path, **kwargs):
+        calls["import"] = {
+            "vault": vault_path,
+            "export": export_path,
+            "staging": staging_path,
+            **kwargs,
+        }
+        return {
+            "run": "20260522_budgerigar-vocal-acoustics",
+            "selected": 1,
+            "matched": 1,
+            "unmatched": 0,
+            "decision_summary": {"commit_proposals_skipped": 0},
+        }
+
+    monkeypatch.setattr(autopilot, "import_scholar_labs_run", fake_import)
+    monkeypatch.setattr(autopilot, "compile_scaffold", lambda *args, **kwargs: {})
+    monkeypatch.setattr(autopilot, "_run_quality_checks", lambda *args, **kwargs: {})
+
+    summary = autopilot.intake(
+        vault,
+        export=export,
+        staging=staging,
+        project="budgie-vocoder",
+        slug="budgie-scan",
+        question="Which acoustic evidence supports a budgerigar synthesizer?",
+    )
+
+    assert summary["session"]["status"] == "imported"
+    assert summary["session"]["project"] == "budgie-vocoder"
+    assert summary["session"]["query_path"] == "queries/budgie-scan.md"
+    assert calls["import"]["query"] == "budgie-scan"  # type: ignore[index]
+    assert calls["import"]["prompt_pack"] is None  # type: ignore[index]
+    assert "budgie-vocoder" in (vault / "queries" / "budgie-scan.md").read_text()
+    assert len(_session_files(vault)) == 1
+
+    second = autopilot.intake(
+        vault,
+        export=export,
+        staging=staging,
+        project="budgie-vocoder",
+        slug="budgie-scan",
+        question="Which acoustic evidence supports a budgerigar synthesizer?",
+    )
+
+    assert second["session"]["id"] == summary["session"]["id"]
+    assert len(_session_files(vault)) == 1
+
+
 def test_intake_marks_session_blocked_for_manual_pdf_matches(
     tmp_path: Path,
     monkeypatch,
