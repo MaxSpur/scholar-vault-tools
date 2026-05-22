@@ -107,8 +107,9 @@ def _prompt_pack_dirs(paths: VaultPaths) -> list[Path]:
     return dirs
 
 
-def _prompt_pack_paths(paths: VaultPaths) -> list[Path]:
-    paths.tasks.joinpath("scholar-labs-prompts").mkdir(parents=True, exist_ok=True)
+def _prompt_pack_paths(paths: VaultPaths, *, ensure: bool = True) -> list[Path]:
+    if ensure:
+        paths.tasks.joinpath("scholar-labs-prompts").mkdir(parents=True, exist_ok=True)
     found: list[Path] = []
     for folder in _prompt_pack_dirs(paths):
         if folder.exists():
@@ -1144,8 +1145,12 @@ def list_prompt_packs(vault: Path | str) -> dict[str, Any]:
     from .importer import initialize_vault
 
     paths = initialize_vault(vault, rebuild=False)
+    return _list_prompt_packs_from_paths(paths, ensure=True)
+
+
+def _list_prompt_packs_from_paths(paths: VaultPaths, *, ensure: bool = False) -> dict[str, Any]:
     rows = []
-    for path in _prompt_pack_paths(paths):
+    for path in _prompt_pack_paths(paths, ensure=ensure):
         try:
             frontmatter, body = _load_prompt_pack_path(paths, path)
         except ValueError:
@@ -1320,7 +1325,7 @@ def retire_prompt_pack(vault: Path | str, prompt_pack_id: str) -> dict[str, Any]
 
 def render_prompt_packs_index(vault: Path | str) -> str:
     paths = VaultPaths.from_root(vault)
-    rows = list_prompt_packs(paths.vault)["prompt_packs"]
+    rows = _list_prompt_packs_from_paths(paths, ensure=False)["prompt_packs"]
     active = [row for row in rows if row["status"] not in {"imported", "retired"}]
     lines = [
         "# Scholar Labs Prompt Packs",

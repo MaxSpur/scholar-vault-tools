@@ -113,6 +113,7 @@
 - A previous abstract failure is not a durable reason to skip future attempts. Keep unresolved abstract cards eligible for another pass so improved extraction/provider logic can help.
 - Do not duplicate long prose in paper-card frontmatter and Markdown body. Keep abstract/summary text in readable sections, and keep YAML to compact metadata/provenance needed by tooling.
 - Maintenance commands should report what they touched. `rebuild` is safer to trust when it summarizes rewritten cards, normalized records, and regenerated derived outputs.
+- Vault migration dry-runs must be strictly read-only. Rendering helpers used for planning should not call initialization helpers or create convenience folders as a side effect.
 - Obsidian Graph uses Markdown file basenames, so generated run notes should not be named `index.md`. Use meaningful run filenames and keep machine state in `index.yaml`.
 - Keep run IDs and Obsidian run-note titles separate. The run ID is for idempotence and manifests; the short title is for human navigation and Graph labels.
 - When asking for a run title, show the full Scholar Labs prompt from the JSON. The title decision depends on the prompt context, so truncated prompt text is not enough.

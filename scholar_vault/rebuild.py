@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
 
-from .bibtex import write_library_bib
+from .bibtex import render_library_bib, write_library_bib
 from .citations import refresh_metadata_completeness
-from .dashboards import _write_dashboard_indexes
+from .dashboards import _dashboard_index_outputs, _write_dashboard_indexes
 from .labs_prompts import render_prompt_packs_index
 from .models import RunRecord, SourceCard
 from .neighbors import semantic_neighbors_export
@@ -26,7 +27,7 @@ from .render import (
     render_zotero_migration,
 )
 from .search_index import render_search_index
-from .self_improvement import write_self_improvement_dashboard
+from .self_improvement import render_self_improvement_dashboard, write_self_improvement_dashboard
 from .sources import (
     VaultPaths,
     ensure_relative,
@@ -276,6 +277,121 @@ def _rebuild_indexes(
 def rebuild_vault(vault: Path | str) -> dict[str, int]:
     paths = initialize_vault(vault, rebuild=False)
     return _rebuild_indexes(paths)
+
+
+def _normalized_output_text(text: str) -> str:
+    return text.rstrip() + "\n"
+
+
+def _generated_output_texts(paths: VaultPaths) -> dict[Path, str]:
+    runs = load_run_records(paths)
+    cards = load_source_cards(paths)
+    manifests = load_import_manifests(paths)
+    topic_cards = group_cards_by_topic(cards)
+    artifacts = _collect_research_artifacts(paths)
+
+    outputs: dict[Path, str] = {
+        paths.indexes / "prompts.md": render_prompts_index(runs),
+        paths.indexes / "scholar-labs-prompts.md": render_prompt_packs_index(paths.vault),
+        paths.indexes / "papers.md": render_papers_index(cards),
+        paths.indexes / "topics.md": render_topics_index(topic_cards),
+        paths.indexes / "missing-pdfs.md": render_missing_pdfs(runs),
+        paths.indexes / "unmatched.md": render_unmatched_index(manifests),
+        paths.indexes / "zotero-migration.md": render_zotero_migration(),
+    }
+    for folder, (title, empty_message) in ARTIFACT_INDEXES.items():
+        outputs[paths.indexes / f"{folder}.md"] = render_artifact_index(
+            title,
+            artifacts.get(folder) or [],
+            empty_message=empty_message,
+        )
+    for filename, content in _dashboard_index_outputs(
+        paths,
+        cards,
+        runs,
+        manifests,
+        artifacts,
+        topic_cards,
+    ).items():
+        outputs[paths.indexes / filename] = content
+    outputs[paths.indexes / "self-improvement.md"] = render_self_improvement_dashboard(
+        paths.vault
+    )
+    outputs[paths.indexes / "search-index.md"] = render_search_index(paths, cards)
+    outputs[paths.vault / "llms.txt"] = render_llms_txt()
+    outputs[paths.vault / "llms-full.txt"] = render_llms_full(
+        cards,
+        runs,
+        manifests,
+        artifacts,
+    )
+    outputs[paths.exports / "library.json"] = json.dumps(
+        _cards_to_library_json(cards),
+        ensure_ascii=False,
+        indent=2,
+    )
+    outputs[paths.exports / "library.csl.json"] = json.dumps(
+        _cards_to_csl_json(cards),
+        ensure_ascii=False,
+        indent=2,
+    )
+    outputs[paths.exports / "semantic-neighbors.json"] = json.dumps(
+        semantic_neighbors_export(cards),
+        ensure_ascii=False,
+        indent=2,
+    )
+    library_bib = paths.exports / "library.bib"
+    outputs[library_bib] = render_library_bib(
+        cards,
+        existing_text=library_bib.read_text(encoding="utf-8") if library_bib.exists() else "",
+        metadata_root=paths.raw_metadata,
+    )
+    for topic, topic_list in topic_cards.items():
+        outputs[paths.topics / f"{topic_slug(topic)}.md"] = render_topic_page(
+            topic,
+            topic_list,
+        )
+    return outputs
+
+
+def rebuild_generated_outputs(vault: Path | str, *, apply: bool = True) -> dict[str, Any]:
+    """Refresh generated vault outputs without rewriting canonical paper cards."""
+
+    paths = initialize_vault(vault, rebuild=False) if apply else VaultPaths.from_root(vault)
+    files: list[dict[str, Any]] = []
+    changed = 0
+    created = 0
+    updated = 0
+    for path, text in sorted(_generated_output_texts(paths).items(), key=lambda item: str(item[0])):
+        rendered = _normalized_output_text(text)
+        exists = path.exists()
+        before = path.read_text(encoding="utf-8") if exists else None
+        did_change = before != rendered
+        operation = "unchanged"
+        if did_change:
+            operation = "update" if exists else "create"
+            changed += 1
+            updated += int(exists)
+            created += int(not exists)
+            if apply:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(rendered, encoding="utf-8")
+        files.append(
+            {
+                "path": ensure_relative(path, paths.vault),
+                "changed": did_change,
+                "operation": operation,
+            }
+        )
+    return {
+        "vault": str(paths.vault),
+        "files": files,
+        "written": len(files) if apply else 0,
+        "changed": changed,
+        "created": created,
+        "updated": updated,
+        "applied": apply,
+    }
 
 
 def concept_index(vault: Path | str) -> dict[str, Any]:

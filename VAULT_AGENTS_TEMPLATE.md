@@ -109,6 +109,7 @@ Prefer structured commands for orientation:
 
 ```fish
 scholar-vault status --json
+scholar-vault migrate --dry-run --json
 scholar-vault pdf-doctor --json
 scholar-vault git-summary
 scholar-vault notes-missing --heading "PDF reading notes"
@@ -139,6 +140,13 @@ Use `scholar-vault obsidian setup --dry-run` to inspect safe Obsidian graph/app
 settings before changing `.obsidian/`. Use `--apply` only after reviewing the
 diff. The setup command backs up existing settings, hides generated scaffolding
 from the graph by default, and does not install plugins.
+
+For older vaults or after updating `scholar-vault-tools`, run
+`scholar-vault migrate --dry-run --json` before hand-creating missing folders or
+generated files. Apply with `scholar-vault migrate --apply` only after reviewing
+the proposed changes. Migration preserves existing `AGENTS.md` unless
+`--update-agents` is explicit, backfills only absent operational paper-card
+frontmatter, logs an operation, and runs the standard doctors.
 
 For one-card BibLaTeX while working from Obsidian, copy the card `citekey` and run:
 
@@ -207,6 +215,7 @@ Safe durable card edits:
 Preserve:
 
 - `discovered_in`, Scholar Labs provenance, summaries, and `summary_sources`.
+- Do not paste full Scholar Labs prompt text into paper cards; link the run note instead.
 - `raw/` inputs and provider caches.
 - Metadata locks, abstract locks, enrichment fingerprints, and retry state.
 - Generated section structure unless deliberately making a compatible card edit.

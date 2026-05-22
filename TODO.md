@@ -93,6 +93,7 @@
 - [x] Add reusable compact GUI builders and apply them to the active skill-sync and project-workspace screens.
 - [x] Move the leftover staging PDF match UI into a focused `gui_staging_match.py` module while preserving `scholar_vault.gui` compatibility imports.
 - [x] Move the direct PDF import picker into a focused `gui_pdf_import.py` module while preserving `scholar_vault.gui` compatibility imports.
+- [x] Add a safe `migrate` command for older vault layouts with dry-run/apply/json output, generated dashboards/Bases refresh, safe paper-frontmatter backfills, operation logging, and post-migration doctors.
 
 ## Obsidian usability and vault navigation
 

@@ -725,7 +725,7 @@ def _render_compile_dashboard(paths: VaultPaths, cards: list[SourceCard]) -> str
     return "\n".join(lines)
 
 
-def _write_dashboard_indexes(
+def _dashboard_index_outputs(
     paths: VaultPaths,
     cards: list[SourceCard],
     runs: list[RunRecord],
@@ -765,6 +765,25 @@ def _write_dashboard_indexes(
             topic_report,
         ),
     }
+    return outputs
+
+
+def _write_dashboard_indexes(
+    paths: VaultPaths,
+    cards: list[SourceCard],
+    runs: list[RunRecord],
+    manifests: list[ImportManifest],
+    artifacts: dict[str, list[dict[str, Any]]],
+    topic_cards: dict[str, list[SourceCard]],
+) -> int:
+    outputs = _dashboard_index_outputs(
+        paths,
+        cards,
+        runs,
+        manifests,
+        artifacts,
+        topic_cards,
+    )
     for filename, content in outputs.items():
         write_text(paths.indexes / filename, content)
     return len(outputs)

@@ -23,6 +23,7 @@ from . import cli_bases as _cli_bases
 from . import cli_compile as _cli_compile
 from . import cli_discovery as _cli_discovery
 from . import cli_labs_prompts as _cli_labs_prompts
+from . import cli_migration as _cli_migration
 from . import cli_obsidian as _cli_obsidian
 from . import cli_projects as _cli_projects
 from . import cli_queries as _cli_queries
@@ -110,10 +111,12 @@ app.add_typer(schema_app, name="schema")
 app.add_typer(skills_app, name="skills")
 app.add_typer(tools_task_app, name="tools-task")
 app.command("lint-wiki")(_cli_semantic.lint_wiki_command)
+app.command("migrate")(_cli_migration.migrate_command)
 console = Console()
 
 # Compatibility names for callers that imported command functions from scholar_vault.cli.
 lint_wiki_command = _cli_semantic.lint_wiki_command
+migrate_command = _cli_migration.migrate_command
 eval_list_command = _cli_semantic.eval_list_command
 eval_run_command = _cli_semantic.eval_run_command
 eval_report_command = _cli_semantic.eval_report_command

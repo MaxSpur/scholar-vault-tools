@@ -132,6 +132,7 @@ scholar-vault import-pdf --ui
 scholar-vault rerun --commit
 scholar-vault status
 scholar-vault maintenance-report
+scholar-vault migrate --dry-run
 scholar-vault rebuild
 scholar-vault enrich --ui
 ```
@@ -219,6 +220,23 @@ scholar-labs-vault/
     semantic-neighbors.json
     eval-history.json
 ```
+
+## Upgrade An Existing Vault
+
+Use `migrate` for vaults created by older versions of this tool:
+
+```fish
+scholar-vault migrate --vault ~/Documents/Research/scholar-labs-vault --dry-run
+scholar-vault migrate --vault ~/Documents/Research/scholar-labs-vault --json
+scholar-vault migrate --vault ~/Documents/Research/scholar-labs-vault --apply
+```
+
+Dry-run mode reports every proposed directory, starter file, generated output,
+Base, paper-frontmatter backfill, and operation-log change without writing. Apply
+mode creates missing managed folders, refreshes generated dashboards and Bases,
+adds only absent safe operational paper-card frontmatter fields, logs an
+operation, then runs `doctor`, `compile doctor`, `bases doctor`, and `lint-wiki`.
+Existing `AGENTS.md` files are preserved unless `--update-agents` is passed.
 
 `AGENTS.md` is initialized with the vault-specific agent operating rules from
 `VAULT_AGENTS_TEMPLATE.md`. Existing vault-level `AGENTS.md` files are preserved
@@ -637,6 +655,8 @@ Inspect vault health for an agent or for manual triage:
 scholar-vault status --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault status --vault ~/Documents/Research/scholar-labs-vault --json
 scholar-vault doctor --vault ~/Documents/Research/scholar-labs-vault
+scholar-vault migrate --vault ~/Documents/Research/scholar-labs-vault --dry-run
+scholar-vault migrate --vault ~/Documents/Research/scholar-labs-vault --apply
 scholar-vault git-summary --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault maintenance-report --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault lint-wiki --vault ~/Documents/Research/scholar-labs-vault

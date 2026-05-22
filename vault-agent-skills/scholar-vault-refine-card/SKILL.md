@@ -50,6 +50,7 @@ Do not overwrite or clear these without explicit evidence and intent:
 - `metadata_lock: true`, `abstract_lock: true`, `citation_status: verified`, and `abstract_status: manual_lock`.
 - `doi_*`, `citation_*`, `abstract_*`, `enrichment_*`, and retry/fingerprint fields managed by enrichment.
 - Scholar Labs summaries and `summary_sources`; those are prompt-specific provenance, not general notes.
+- Do not paste full Scholar Labs prompt text into paper cards; link the run note instead.
 
 ## Prefer CLI Commands
 

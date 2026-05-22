@@ -67,6 +67,7 @@ Prefer the configured CLI when it answers the question faster than manual parsin
 ```fish
 conda activate scholar-vault
 scholar-vault status --json
+scholar-vault migrate --dry-run --json
 scholar-vault configure
 scholar-vault runs
 scholar-vault query list --json
@@ -90,6 +91,11 @@ scholar-vault match-staging
 Use `scholar-vault obsidian setup --dry-run` before changing `.obsidian/`.
 Only run `obsidian setup --apply` after reviewing the diff; it backs up
 existing settings and does not install plugins.
+
+Use `scholar-vault migrate --dry-run --json` when a vault appears to be missing
+current managed folders, generated dashboards, or Bases. Only apply migration
+after reviewing the proposed changes; it preserves existing `AGENTS.md` by
+default and backfills only absent operational paper-card frontmatter.
 
 Use `scholar-vault rebuild` only after actual manual edits to canonical cards. Orientation should normally be read-only.
 Use `scholar-vault query rename`, `query archive`, or `query doctor --fix`

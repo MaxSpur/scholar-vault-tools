@@ -30,6 +30,8 @@
   Obsidian vault setup and doctor checks. It dry-runs by default, applies only
   explicit configuration merges, and delegates mutation planning to
   `obsidian_setup.py`.
+- `scholar_vault/cli_migration.py`: top-level `migrate` command wiring for
+  dry-run/apply/json vault layout upgrades.
 - `scholar_vault/cli_compile.py`: `compile ...` command group for durable
   paper digest scaffolding, status, project queues, marking, and doctor
   validation.
@@ -47,6 +49,10 @@
 - `scholar_vault/matcher.py`: PDF extraction, metadata inference, and fuzzy matching helpers using DOI, extracted title, filename, and compact first-page text evidence.
 - `scholar_vault/importer.py`: import-focused workflows for `init`, Scholar Labs imports/reruns/resumes, direct PDF/BibTeX/DOI imports, run manifests, staging PDF matching and archive behavior, undo, PDF attachment, manual field corrections, and post-import enrichment coordination. It keeps compatibility wrappers for older imports, but new feature families should not be added here.
 - `scholar_vault/rebuild.py`: derived-view rebuild orchestration. It loads canonical cards/runs/manifests, normalizes generated records, repairs conservative run/card/PDF links, rerenders paper and run Markdown, and coordinates index/export regeneration.
+- `scholar_vault/migration.py`: safe vault migration planning and apply logic.
+  It creates missing managed folders, starter files, generated dashboards/Bases,
+  and absent paper-card operational frontmatter while preserving existing prose
+  and existing vault-local `AGENTS.md` unless explicitly requested.
 - `scholar_vault/digests.py`: PDF-grounded compile workflow helpers for
   `paper-digests/<citekey>.md`. The module scaffolds templates, tracks status
   on paper cards, validates digest frontmatter/sections, and builds compile
@@ -134,6 +140,13 @@
 
 - `configure`: stores user-level defaults for the vault, staging folder, optional export folder, and code directory in `~/.config/scholar-vault/config.yaml`. `--ui` opens a native folder-picker dialog. `--folder-mode shared` omits `exports` so staging is used for PDFs and Scholar Labs JSON exports; `--folder-mode separate` records an explicit exports folder. Commands use these defaults unless explicit paths are passed.
 - `init`: creates the vault folder structure, generated starter docs, and a vault-specific `AGENTS.md` operating guide when those files do not already exist.
+- `migrate`: upgrades existing vaults to the current managed layout. `--dry-run`
+  and `--json` report every proposed change without writing; `--apply` creates
+  missing managed folders and starter files, refreshes generated dashboards and
+  Bases, backfills only absent safe paper-card frontmatter fields, logs an
+  operation, and runs `doctor`, `compile doctor`, `bases doctor`, and
+  `lint-wiki`. Existing vault `AGENTS.md` files are preserved unless
+  `--update-agents` is passed.
 - `runs` / `list-runs`: lists previous Scholar Labs run records with the run ID, exported date, selected/result counts, unresolved count, and title. `install-fish-completion` writes a Fish completion file directly, while `install-zsh-completion` writes a canonical zsh `_scholar-vault` completion function for `fpath`. Both delegate command, option, `--run`, `--citekey`, `--only`, and `--folder-mode` completion back to Typer so custom callbacks use the explicit or configured vault.
 - `status` / `doctor`: read-only vault health reports for humans and agents. The command summarizes canonical-card issues, run records, topic noise, optional candidate discovery backlog, historical unmatched manifest entries, active staging counts, and PDF inventory issues, with `--json` for Codex-friendly structured output. Candidate results without cards are not defects in the selected-only workflow.
 - `pdf-doctor`: read-only PDF inventory report for `pdfs/` and the optional staging folder. It flags orphan vault PDFs, missing card PDF files, duplicate hashes, duplicate-style filenames, repeated historical unmatched staged filenames, staged files already present in the vault by hash, and non-duplicate PDFs still actionable in staging.

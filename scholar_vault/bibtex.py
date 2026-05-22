@@ -803,17 +803,15 @@ def _split_bibtex_entries(text: str) -> dict[str, str]:
     return entries
 
 
-def write_library_bib(
+def render_library_bib(
     cards: list[SourceCard],
-    path: Path,
     *,
+    existing_text: str = "",
     metadata_root: Path | None = None,
     include_vault_note: bool = True,
     include_local_fields: bool = True,
-) -> Path:
-    existing_entries = (
-        _split_bibtex_entries(path.read_text(encoding="utf-8")) if path.exists() else {}
-    )
+) -> str:
+    existing_entries = _split_bibtex_entries(existing_text) if existing_text else {}
     current_keys = {card.citekey or card.slug for card in cards}
     entries_by_key = {
         key: entry for key, entry in existing_entries.items() if key in current_keys
@@ -828,6 +826,25 @@ def write_library_bib(
         ):
             entries_by_key[key] = entry
     entries = [entries_by_key[key] for key in sorted(entries_by_key)]
+    return "\n\n".join(entries).rstrip() + "\n"
+
+
+def write_library_bib(
+    cards: list[SourceCard],
+    path: Path,
+    *,
+    metadata_root: Path | None = None,
+    include_vault_note: bool = True,
+    include_local_fields: bool = True,
+) -> Path:
+    existing_text = path.read_text(encoding="utf-8") if path.exists() else ""
+    rendered = render_library_bib(
+        cards,
+        existing_text=existing_text,
+        metadata_root=metadata_root,
+        include_vault_note=include_vault_note,
+        include_local_fields=include_local_fields,
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n\n".join(entries).rstrip() + "\n", encoding="utf-8")
+    path.write_text(rendered, encoding="utf-8")
     return path

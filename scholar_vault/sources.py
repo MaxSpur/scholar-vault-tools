@@ -160,8 +160,8 @@ class VaultPaths:
             feedback_ratings=root / "_feedback" / "ratings",
         )
 
-    def ensure(self) -> None:
-        for path in (
+    def managed_directories(self) -> tuple[Path, ...]:
+        return (
             self.vault,
             self.raw,
             self.raw_scholar_labs,
@@ -192,7 +192,10 @@ class VaultPaths:
             self.operation_runs,
             self.feedback,
             self.feedback_ratings,
-        ):
+        )
+
+    def ensure(self) -> None:
+        for path in self.managed_directories():
             path.mkdir(parents=True, exist_ok=True)
 
 
