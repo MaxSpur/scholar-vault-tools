@@ -29,9 +29,12 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 1. Confirm the current folder is a vault root or locate it by finding `config.yaml`, `papers/`, `runs/`, and `llms.txt`.
 2. Read `AGENTS.md` first, then `llms.txt`, then the relevant parts of `llms-full.txt`.
 3. Use `_indexes/papers.md`, `_indexes/topics.md`, `_indexes/missing-pdfs.md`, `_indexes/unmatched.md`, `_indexes/scholar-labs-prompts.md`, and `_indexes/self-improvement.md` as navigation surfaces. Do not scan every PDF.
-4. Use `rg` over `papers/`, `runs/`, `_indexes/`, and `syntheses/` for user-provided terms, author names, citekeys, topics, and methods.
-5. Read only the paper cards and run notes needed for the question. Prefer canonical `papers/*.md` for source state and `runs/**/*.md` or `runs/**/index.yaml` for Scholar Labs prompt provenance.
-6. Return a concise orientation report with file links, not a long literature review.
+4. Check `scholar-vault session current --json` when the user is continuing an
+   ask/intake/answer workflow; use `_sessions/` and the query session report as
+   coordination state, not evidence.
+5. Use `rg` over `papers/`, `runs/`, `_indexes/`, and `syntheses/` for user-provided terms, author names, citekeys, topics, and methods.
+6. Read only the paper cards and run notes needed for the question. Prefer canonical `papers/*.md` for source state and `runs/**/*.md` or `runs/**/index.yaml` for Scholar Labs prompt provenance.
+7. Return a concise orientation report with file links, not a long literature review.
 
 ## Vault Model
 
@@ -57,6 +60,10 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 - Typed queue, operation, and feedback records under `tasks/queue/`,
   `_operations/`, and `_feedback/` are process state. They help future agents
   choose and audit work, but they are not scientific evidence.
+- Autopilot sessions under `_sessions/`, handoffs under `_handoffs/`, and
+  session reports under `queries/<slug>/session-report.md` or `_reports/` track
+  the user-facing `ask -> intake -> answer` workflow. They are coordination
+  state, not scientific evidence.
 - Historical unmatched manifest entries are actionable only when matching non-duplicate PDFs still exist in staging.
 - `enrichment_status: missing` is a diagnostic/stale-or-not-yet-complete state, not automatically a follow-up issue. Prefer `status --json` issue counts and `enrich --ui` actionable rows.
 
@@ -67,6 +74,8 @@ Prefer the configured CLI when it answers the question faster than manual parsin
 ```fish
 conda activate scholar-vault
 scholar-vault status --json
+scholar-vault session current --json
+scholar-vault session list --json
 scholar-vault migrate --dry-run --json
 scholar-vault configure
 scholar-vault runs
@@ -110,6 +119,8 @@ When orienting, include:
 - Relevant runs, with run note links and the user-facing run titles.
 - Relevant prompt packs, with status and linked runs when the user is planning
   Scholar Labs follow-up.
+- Current session status, query, prompt pack, run, blockers, and session report
+  when the user is continuing an autopilot workflow.
 - Relevant queue items or feedback records when the user is planning,
   auditing, or continuing vault improvement work.
 - Relevant canonical papers, with paper-card links, PDF status, enrichment status, abstract status, and topics.

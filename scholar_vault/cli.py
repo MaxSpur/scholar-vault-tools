@@ -19,6 +19,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 from typer.completion import get_completion_script
 
+from . import cli_autopilot as _cli_autopilot
 from . import cli_bases as _cli_bases
 from . import cli_compile as _cli_compile
 from . import cli_discovery as _cli_discovery
@@ -81,6 +82,7 @@ from .topics import apply_topic_map, topic_map_report, topic_preset_mapping
 
 app = typer.Typer(help="Local-first research source wiki and vault manager.")
 bases_app = _cli_bases.bases_app
+codex_app = _cli_autopilot.codex_app
 compile_app = _cli_compile.compile_app
 discovery_app = _cli_discovery.discovery_app
 eval_app = _cli_semantic.eval_app
@@ -93,9 +95,11 @@ proposal_sprint_app = typer.Typer(help="Proposal sprint workspace helpers.")
 queue_app = _cli_self_improvement.queue_app
 query_app = _cli_queries.query_app
 schema_app = _cli_schema.schema_app
+session_app = _cli_autopilot.session_app
 skills_app = _cli_skills.skills_app
 tools_task_app = _cli_self_improvement.tools_task_app
 app.add_typer(bases_app, name="bases")
+app.add_typer(codex_app, name="codex")
 app.add_typer(compile_app, name="compile")
 app.add_typer(discovery_app, name="discover")
 app.add_typer(eval_app, name="eval")
@@ -108,8 +112,13 @@ app.add_typer(proposal_sprint_app, name="proposal-sprint")
 app.add_typer(queue_app, name="queue")
 app.add_typer(query_app, name="query")
 app.add_typer(schema_app, name="schema")
+app.add_typer(session_app, name="session")
 app.add_typer(skills_app, name="skills")
 app.add_typer(tools_task_app, name="tools-task")
+app.command("ask")(_cli_autopilot.ask_command)
+app.command("intake")(_cli_autopilot.intake_command)
+app.command("improve")(_cli_autopilot.improve_command)
+app.command("answer")(_cli_autopilot.answer_command)
 app.command("lint-wiki")(_cli_semantic.lint_wiki_command)
 app.command("migrate")(_cli_migration.migrate_command)
 console = Console()
@@ -190,6 +199,16 @@ feedback_list_command = _cli_self_improvement.feedback_list_command
 feedback_report_command = _cli_self_improvement.feedback_report_command
 feedback_doctor_command = _cli_self_improvement.feedback_doctor_command
 tools_task_create_command = _cli_self_improvement.tools_task_create_command
+ask_command = _cli_autopilot.ask_command
+intake_command = _cli_autopilot.intake_command
+improve_command = _cli_autopilot.improve_command
+answer_command = _cli_autopilot.answer_command
+session_current_command = _cli_autopilot.session_current_command
+session_list_command = _cli_autopilot.session_list_command
+session_show_command = _cli_autopilot.session_show_command
+session_archive_command = _cli_autopilot.session_archive_command
+codex_handoff_command = _cli_autopilot.codex_handoff_command
+codex_run_command = _cli_autopilot.codex_run_command
 
 
 def _fish_completion_path() -> Path:

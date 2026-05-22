@@ -23,6 +23,10 @@ These instructions apply inside this research vault. They are for agents working
   `_feedback/` tracks work, runs, and ratings. It is process context, not
   scientific evidence or a replacement for paper cards, PDFs, concepts, or
   syntheses.
+- Autopilot sessions under `_sessions/`, handoffs under `_handoffs/`, and
+  session reports under `queries/<slug>/session-report.md` or `_reports/` track
+  the user-facing `ask -> intake -> answer` workflow. They are coordination
+  state, not evidence.
 - Canonical files are `papers/`, `paper-digests/`, `pdfs/`, run
   YAML/manifests under `runs/`, `raw/` inputs, `concepts/`, `syntheses/`,
   `tasks/`, `queries/`, `projects/`, and `proposals/`.
@@ -108,6 +112,8 @@ vault-only skills into `.sync-backups/` instead of deleting them.
 Prefer structured commands for orientation:
 
 ```fish
+scholar-vault session current --json
+scholar-vault session list --json
 scholar-vault status --json
 scholar-vault migrate --dry-run --json
 scholar-vault pdf-doctor --json
@@ -135,6 +141,19 @@ scholar-vault schema export --json
 scholar-vault project list
 scholar-vault runs
 ```
+
+For ordinary user-facing work, prefer the autopilot flow over manual command
+chains:
+
+```fish
+scholar-vault ask "question"
+scholar-vault intake
+scholar-vault improve --no-agent
+scholar-vault answer "focused synthesis question"
+```
+
+Use the lower-level commands only when repairing blockers, inspecting a
+specific subsystem, or following a handoff.
 
 Use `scholar-vault obsidian setup --dry-run` to inspect safe Obsidian graph/app
 settings before changing `.obsidian/`. Use `--apply` only after reviewing the

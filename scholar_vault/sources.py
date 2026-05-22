@@ -120,6 +120,9 @@ class VaultPaths:
     operation_runs: Path
     feedback: Path
     feedback_ratings: Path
+    sessions: Path
+    handoffs: Path
+    reports: Path
 
     @classmethod
     def from_root(cls, vault: Path | str) -> VaultPaths:
@@ -158,6 +161,9 @@ class VaultPaths:
             operation_runs=root / "_operations" / "runs",
             feedback=root / "_feedback",
             feedback_ratings=root / "_feedback" / "ratings",
+            sessions=root / "_sessions",
+            handoffs=root / "_handoffs",
+            reports=root / "_reports",
         )
 
     def managed_directories(self) -> tuple[Path, ...]:
@@ -192,6 +198,9 @@ class VaultPaths:
             self.operation_runs,
             self.feedback,
             self.feedback_ratings,
+            self.sessions,
+            self.handoffs,
+            self.reports,
         )
 
     def ensure(self) -> None:

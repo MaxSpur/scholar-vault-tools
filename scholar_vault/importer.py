@@ -612,6 +612,9 @@ def reset_vault(vault: Path | str) -> dict[str, int]:
         paths.bases,
         paths.indexes,
         paths.exports,
+        paths.sessions,
+        paths.handoffs,
+        paths.reports,
     ):
         removed += _clear_directory(path)
 

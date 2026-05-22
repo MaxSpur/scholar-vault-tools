@@ -6,6 +6,9 @@ description: Create Obsidian-ready literature syntheses from a Scholar Vault, us
 # Scholar Vault Synthesize
 
 Use this skill to turn a research question or theme into a durable synthesis note grounded in the vault's selected PDFs and their paper cards.
+For ordinary current-session work, `scholar-vault answer "question"` creates the
+preferred Codex handoff. Use this skill directly when the user asks for a manual
+synthesis pass or when the answer handoff invokes it.
 
 ## CLI Environment
 
@@ -26,14 +29,18 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 
 ## Workflow
 
-1. Orient first: read `AGENTS.md`, `llms.txt`, relevant `llms-full.txt` entries, and targeted `_indexes/` files.
+1. Orient first: read `AGENTS.md`, `llms.txt`, relevant `llms-full.txt` entries,
+   `scholar-vault session current --json` when a current session exists, and
+   targeted `_indexes/` files.
 2. Find candidate evidence with `rg` across `papers/`, `runs/`, `topics/`, and existing `syntheses/`.
 3. Read `papers/*.md` for source metadata, PDF links, abstracts, keywords, notes, and provenance.
 4. Read linked PDFs for the claims that matter. Use `$scholar-vault-read-pdf` when the synthesis depends on methods, findings, limitations, definitions, or exact distinctions not already captured in notes.
 5. Read relevant `runs/**/*.md` only to understand the original Scholar Labs prompt, ranking, rationale, and run-specific summary. Do not treat run candidates without paper cards as canonical evidence unless explicitly labeled.
 6. Write the synthesis into `syntheses/<short-slug>.md`. Create `syntheses/` if it does not exist.
 7. Link claims to paper cards with relative Markdown links and mention when evidence comes from a PDF read.
-8. When the user needs APA-style bibliography text, run `scholar-vault reference <citekey>` for individual sources or `scholar-vault references` for the whole vault instead of hand-formatting references.
+8. If working from a query/session, link the synthesis back with
+   `scholar-vault query link-synthesis <query> <synthesis>`.
+9. When the user needs APA-style bibliography text, run `scholar-vault reference <citekey>` for individual sources or `scholar-vault references` for the whole vault instead of hand-formatting references.
 
 ## Source Rules
 

@@ -137,3 +137,6 @@
   query paths across prompt packs, runs, queue items, discovery candidates, and
   Bases-visible paper fields; archive should preserve paths by setting status
   instead of moving notes.
+- README should teach the short user workflow first. Keep ask/intake/answer in
+  the tutorial, and move command catalogs or repair sequences to docs reference
+  pages so routine use is not buried under internal steps.

@@ -5,7 +5,12 @@ description: "Run PDF-grounded Scholar Vault improvement cycles. Use when Codex 
 
 # Scholar Vault Research Loop
 
-Use this skill for post-import research work, not maintenance triage. The goal is to make future broad vault queries better by reading PDFs and adding durable, evidence-grounded structure.
+Use this skill for post-import research work, not maintenance triage. For the
+normal user-facing path, prefer `scholar-vault answer "question"` because it
+writes a session-linked Codex handoff. Use this skill when a user directly asks
+for a manual research loop or when you are already inside that handoff. The
+goal is to make future broad vault queries better by reading PDFs and adding
+durable, evidence-grounded structure.
 
 ## CLI Environment
 
@@ -26,7 +31,8 @@ Do not retry plain `scholar-vault` commands without one of these environment pat
 
 ## Research Cycle
 
-1. Orient with `$scholar-vault-orient`, `AGENTS.md`, `llms.txt`, and `scholar-vault status --json`.
+1. Orient with `$scholar-vault-orient`, `AGENTS.md`, `llms.txt`,
+   `scholar-vault session current --json`, and `scholar-vault status --json`.
 2. Choose a focused question, concept, method, dataset, or cluster of related selected sources.
 3. Build a reading set from `papers/*.md` cards with attached PDFs. Use `scholar-vault notes-missing --heading "PDF reading notes"` when you need the unread selected-card queue. Do not treat unselected Scholar Labs candidates as evidence.
 4. For each source that matters, use `$scholar-vault-read-pdf`: extract full text, inspect relevant rendered pages/figures/tables, and note exact evidence from the PDF.
@@ -90,4 +96,7 @@ sources:
 - Do not bulk-read every PDF when the user asked for a focused research question; build a defensible reading set.
 - Do not create concept cards for one-off labels that are better as card notes.
 - Do not edit generated folders. Use `rebuild` after durable edits.
+- Keep query/session links current when working from an autopilot handoff; link
+  syntheses back to the query and update the session report through the CLI
+  workflow when available.
 - Keep final synthesis coordinated in the main thread. Subagents can be useful for parallel read-only PDF passes only when the active environment and user instructions allow them.

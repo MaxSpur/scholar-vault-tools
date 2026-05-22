@@ -94,6 +94,9 @@
 - [x] Move the leftover staging PDF match UI into a focused `gui_staging_match.py` module while preserving `scholar_vault.gui` compatibility imports.
 - [x] Move the direct PDF import picker into a focused `gui_pdf_import.py` module while preserving `scholar_vault.gui` compatibility imports.
 - [x] Add a safe `migrate` command for older vault layouts with dry-run/apply/json output, generated dashboards/Bases refresh, safe paper-frontmatter backfills, operation logging, and post-migration doctors.
+- [x] Add the user-facing autopilot layer with durable sessions, `ask`,
+  `intake`, `improve`, `answer`, Codex handoffs, session reports, tests, and a
+  tutorial centered on ask -> intake -> answer.
 
 ## Obsidian usability and vault navigation
 
