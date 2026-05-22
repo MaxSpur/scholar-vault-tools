@@ -362,6 +362,35 @@ def write_session_report(
                     "status": status,
                 }
             )
+    project_slug = str(session.get("project") or "")
+    project_path = paths.projects / project_slug / "index.md" if project_slug else None
+    if project_path and project_path.exists():
+        project_frontmatter, _project_body = read_frontmatter_markdown(project_path)
+        for paper_ref in _as_string_list(project_frontmatter.get("related_papers")):
+            if paper_ref in seen_papers:
+                continue
+            card = cards.get(paper_ref) or cards.get(Path(paper_ref).stem)
+            if card is None:
+                continue
+            seen_papers.add(paper_ref)
+            pdf = card.pdf or ""
+            status, digest_ref = _digest_status(paths, card)
+            imported.append(
+                {
+                    "paper": paper_ref,
+                    "title": card.title,
+                    "pdf": pdf,
+                }
+            )
+            if pdf:
+                pdfs.append(pdf)
+            digest_rows.append(
+                {
+                    "paper": paper_ref,
+                    "digest": digest_ref or "(not scaffolded)",
+                    "status": status,
+                }
+            )
 
     path = session_report_path(paths, session)
     prompt_pack = session.get("prompt_pack_path") or "(none)"

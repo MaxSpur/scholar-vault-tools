@@ -102,6 +102,9 @@
 - [x] Add exact used-prompt artifacts, `start`, PDF-only autopilot intake,
   staging-match UI repair from `intake --ui`, and safer current-session
   disambiguation for after-the-fact workflows.
+- [x] Make project-scoped autopilot handle multi-export workflows by linking
+  Labs runs/papers to projects, supporting project-scoped improve/answer
+  handoffs, and documenting the Bird Vocoder tutorial.
 
 ## Obsidian usability and vault navigation
 

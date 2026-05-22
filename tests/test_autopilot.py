@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import yaml
 from typer.testing import CliRunner
@@ -309,6 +310,95 @@ def test_intake_pdf_only_imports_links_and_scaffolds(
     assert calls["scaffold"][0][1] == {"citekey": "brittanpowell1997mechanisms"}
 
 
+def test_labs_intake_links_selected_run_and_papers_to_project(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    export = staging / "labs.json"
+    export.write_text(
+        """
+{
+  "schema_version": "0.2",
+  "source": "google_scholar_labs",
+  "exported_at": "2026-05-22T12:00:00Z",
+  "prompt": "Find papers about budgerigar vocal production.",
+  "results": [{"rank": 1, "title": "Mechanisms of vocal production in budgerigars"}]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    initialize_vault(vault)
+    calls: dict[str, list[object]] = {"runs": [], "papers": []}
+
+    monkeypatch.setattr(
+        autopilot,
+        "import_scholar_labs_run",
+        lambda *args, **kwargs: {
+            "run": "20260522_budgerigar-vocal-production",
+            "selected": 1,
+            "matched": 1,
+            "unmatched": 0,
+            "decision_summary": {"commit_proposals_skipped": 0},
+        },
+    )
+    monkeypatch.setattr(autopilot, "compile_scaffold", lambda *args, **kwargs: {})
+    monkeypatch.setattr(autopilot, "_run_quality_checks", lambda *args, **kwargs: {})
+    monkeypatch.setattr(
+        autopilot,
+        "load_run_records",
+        lambda paths: [
+            SimpleNamespace(
+                slug="20260522_budgerigar-vocal-production",
+                results=[
+                    SimpleNamespace(
+                        status="selected",
+                        paper_card="papers/brittanpowell1997mechanisms.md",
+                    )
+                ],
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        autopilot,
+        "load_source_cards",
+        lambda paths: [
+            SimpleNamespace(
+                slug="brittanpowell1997mechanisms",
+                citekey="brittanpowell1997mechanisms",
+            )
+        ],
+    )
+
+    def fake_project_link_run(vault_path, project_slug, run_id):
+        calls["runs"].append((vault_path, project_slug, run_id))
+        return {"changed": True}
+
+    def fake_project_link_paper(vault_path, project_slug, citekey):
+        calls["papers"].append((vault_path, project_slug, citekey))
+        return {"changed": True}
+
+    monkeypatch.setattr(autopilot, "project_link_run", fake_project_link_run)
+    monkeypatch.setattr(autopilot, "project_link_paper", fake_project_link_paper)
+
+    summary = autopilot.intake(
+        vault,
+        export=export,
+        staging=staging,
+        project="bird-vocoder",
+        slug="bird-vocoder-scan-1",
+        question="Which papers support a psittacine vocoder?",
+        new_session=True,
+    )
+
+    assert summary["project_links"]["linked_run"] is True
+    assert summary["project_links"]["linked_papers"] == 1
+    assert calls["runs"] == [(vault, "bird-vocoder", "20260522_budgerigar-vocal-production")]
+    assert calls["papers"] == [(vault, "bird-vocoder", "brittanpowell1997mechanisms")]
+
+
 def test_start_scaffolds_project_and_routes_to_ask(tmp_path: Path) -> None:
     vault = tmp_path / "vault"
     initialize_vault(vault)
@@ -421,6 +511,31 @@ def test_answer_writes_handoff_without_agent_and_prints_command(tmp_path: Path) 
     assert "Before making scientific claims, open and read the linked PDFs" in text
     current = yaml.safe_load((vault / "_sessions" / "current.yaml").read_text())
     assert current["status"] == "waiting_for_labs_export"
+
+
+def test_answer_can_create_project_scoped_handoff(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    initialize_vault(vault)
+    result = runner.invoke(
+        app,
+        [
+            "answer",
+            "--vault",
+            str(vault),
+            "--project",
+            "bird-vocoder",
+            "--budget-papers",
+            "3",
+            "How should the dossier model psittacine vocal tracts?",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    handoff = next((vault / "_handoffs").glob("*.md"))
+    text = handoff.read_text()
+    assert "Project: `projects/bird-vocoder/index.md`" in text
+    assert "focus on at most 3 paper(s)" in text
+    assert "linked project papers and runs" in text
 
 
 def test_answer_with_mocked_codex_marks_session_answered(tmp_path: Path) -> None:

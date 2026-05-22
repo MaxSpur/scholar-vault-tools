@@ -123,6 +123,8 @@ scholar-vault session current
 scholar-vault session list
 scholar-vault session show <session-id>
 scholar-vault session archive <session-id>
+scholar-vault improve --project bird-vocoder --agent codex --budget-papers 6
+scholar-vault answer --project bird-vocoder --budget-papers 8 "What does the project evidence support?"
 scholar-vault codex handoff --kind post-import
 scholar-vault codex handoff --kind improve --budget-papers 5
 scholar-vault codex handoff --kind answer --question "What evidence supports this claim?"

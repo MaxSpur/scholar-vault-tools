@@ -162,9 +162,11 @@
   exports get an exact used-prompt pack linked to the run. `intake --pdf-only`
   imports PDFs, links the resulting cards to the query/project, scaffolds
   digests, and writes a session report. `intake --ui` can open the staging
-  match resolver for blocker repair before retrying import. `answer` writes a
-  Codex handoff by default and only invokes Codex when `--agent codex` is
-  passed.
+  match resolver for blocker repair before retrying import. Labs `intake` links
+  selected papers and runs onto the project when a project is set. `improve
+  --project` and `answer --project` scope handoffs to all linked project papers
+  and runs. `answer` writes a Codex handoff by default and only invokes Codex
+  when `--agent codex` is passed.
 - `session current/list/show/archive`: durable session state under
   `_sessions/` for the ask/intake/improve/answer lifecycle.
 - `codex handoff/run --kind post-import|improve|answer`: writes handoff prompts

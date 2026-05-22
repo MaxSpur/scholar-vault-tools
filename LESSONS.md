@@ -146,3 +146,7 @@
 - Autopilot should avoid hidden current-session surprises. When users pass
   explicit project, slug, or question metadata that conflicts with the current
   session, require `--new-session` or `--session` instead of guessing.
+- Multi-export research topics should be project-scoped. Import sessions can be
+  per prompt/query, but Labs runs and selected papers need to link back to the
+  project so later synthesis can cover the whole topic rather than only the
+  latest session.

@@ -273,6 +273,9 @@ scholar-vault start budgie-vocoder \
   --title "Budgerigar Vocoder"
 ```
 
+For a concrete multi-prompt project walkthrough, see
+[Bird Vocoder Autopilot Tutorial](docs/tutorials/bird-vocoder-autopilot.md).
+
 1. Configure your defaults once:
 
 ```fish

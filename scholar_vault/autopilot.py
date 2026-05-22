@@ -24,7 +24,7 @@ from .labs_prompts import generate_prompt_pack, record_used_prompt_pack, resolve
 from .maintenance import maintenance_report
 from .models import ScholarLabsExport
 from .obsidian_setup import doctor_obsidian
-from .projects import project_link_paper, project_scaffold
+from .projects import project_link_paper, project_link_run, project_scaffold
 from .queries import _query_slug, query_create, query_link_paper
 from .rebuild import rebuild_vault
 from .self_improvement import log_operation, write_self_improvement_dashboard
@@ -48,6 +48,7 @@ from .sources import (
     dump_frontmatter,
     ensure_relative,
     load_run_records,
+    load_source_cards,
     read_frontmatter_markdown,
     write_text,
     write_yaml,
@@ -58,6 +59,16 @@ NEXT_AFTER_ASK = (
     "then run `scholar-vault intake`."
 )
 SCHOLAR_URL = "https://scholar.google.com/"
+
+
+def _as_string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
 
 
 def _copy_to_clipboard(text: str) -> str:
@@ -306,6 +317,32 @@ def _current_or_named_session(paths: VaultPaths, session_id: str | None = None) 
     if session is None:
         raise ValueError("No current session is active. Run `scholar-vault ask \"...\"` first.")
     return session
+
+
+def _current_or_project_session(
+    paths: VaultPaths,
+    *,
+    session_id: str | None = None,
+    project: str | None = None,
+) -> dict[str, Any]:
+    if session_id:
+        return load_session(paths, session_id)
+    current = load_current_session(paths)
+    if project:
+        project_scaffold(paths.vault, project)
+        if current and current.get("project") == project:
+            return current
+        session, _created = create_or_reuse_session(
+            paths,
+            question=f"Project synthesis: {project}",
+            project=project,
+            query_path="",
+            new_session=True,
+        )
+        return update_session_status(paths, session, "imported")
+    if current is None:
+        raise ValueError("No current session is active. Run `scholar-vault ask \"...\"` first.")
+    return current
 
 
 def _load_export(export_path: Path) -> ScholarLabsExport:
@@ -631,6 +668,51 @@ def _link_pdf_imports(
     }
 
 
+def _link_labs_imports_to_project(
+    paths: VaultPaths,
+    session: dict[str, Any],
+    import_summary: dict[str, Any],
+) -> dict[str, Any]:
+    project_slug = str(session.get("project") or "")
+    run_id = str(import_summary.get("run") or "")
+    if not project_slug or not run_id:
+        return {"project": project_slug, "run": run_id, "linked_run": False, "linked_papers": 0}
+    run_record = next((run for run in load_run_records(paths) if run.slug == run_id), None)
+    if run_record is None:
+        return {
+            "project": project_slug,
+            "run": run_id,
+            "linked_run": False,
+            "linked_papers": 0,
+            "missing_run": True,
+        }
+    linked_run = bool(project_link_run(paths.vault, project_slug, run_id).get("changed"))
+    linked_papers = 0
+    rows: list[dict[str, Any]] = []
+    source_cards = {}
+    for card in load_source_cards(paths):
+        source_cards[f"papers/{card.slug}.md"] = card
+        source_cards[card.slug] = card
+        if card.citekey:
+            source_cards[card.citekey] = card
+    for result in run_record.results:
+        if result.status != "selected" or not result.paper_card:
+            continue
+        card = source_cards.get(result.paper_card) or source_cards.get(Path(result.paper_card).stem)
+        citekey = card.citekey if card and card.citekey else Path(result.paper_card).stem
+        project_summary = project_link_paper(paths.vault, project_slug, citekey)
+        changed = bool(project_summary.get("changed"))
+        linked_papers += int(changed)
+        rows.append({"citekey": citekey, "paper": result.paper_card, "changed": changed})
+    return {
+        "project": project_slug,
+        "run": run_id,
+        "linked_run": linked_run,
+        "linked_papers": linked_papers,
+        "items": rows,
+    }
+
+
 def _intake_pdf_only(
     paths: VaultPaths,
     *,
@@ -809,9 +891,11 @@ def intake(
             blockers = _blockers_from_import(import_summary)
             run_id = str(import_summary.get("run") or run_id)
     scaffold_summary = {}
+    project_link_summary: dict[str, Any] = {}
     checks: dict[str, Any] = {}
     if not dry_run and run_id:
         scaffold_summary = compile_scaffold(paths.vault, run_id=run_id, selected_only=True)
+        project_link_summary = _link_labs_imports_to_project(paths, session, import_summary)
         status = "blocked" if blockers else "imported"
         session = update_session_status(paths, session, status, blockers=blockers, run_id=run_id)
         checks = _run_quality_checks(paths, staging_path=staging_path)
@@ -842,6 +926,7 @@ def intake(
             "import": import_summary,
             "prompt_pack": prompt_pack_summary,
             "scaffold": scaffold_summary,
+            "project_links": project_link_summary,
             "ui": ui_summary,
             "report": report,
             "blockers": blockers,
@@ -857,6 +942,7 @@ def intake(
         "import": import_summary,
         "prompt_pack": prompt_pack_summary,
         "scaffold": scaffold_summary,
+        "project_links": project_link_summary,
         "ui": ui_summary,
         "checks": checks,
         "report": report,
@@ -881,6 +967,15 @@ def _session_refs(paths: VaultPaths, session: dict[str, Any]) -> dict[str, set[s
             if result.paper_card:
                 refs["papers"].add(result.paper_card)
                 refs["papers"].add(Path(result.paper_card).stem)
+    project_slug = str(session.get("project") or "")
+    project_path = paths.projects / project_slug / "index.md" if project_slug else None
+    if project_path and project_path.exists():
+        project_frontmatter, _ = read_frontmatter_markdown(project_path)
+        for run_ref in _as_string_list(project_frontmatter.get("related_runs")):
+            refs["runs"].add(Path(run_ref).name if run_ref.startswith("runs/") else run_ref)
+        for paper_ref in _as_string_list(project_frontmatter.get("related_papers")):
+            refs["papers"].add(paper_ref)
+            refs["papers"].add(Path(paper_ref).stem)
     return {key: {value for value in values if value} for key, values in refs.items()}
 
 
@@ -939,6 +1034,10 @@ def build_handoff_prompt(
 ) -> str:
     question = synthesis_question or session.get("question") or ""
     run_line = f"- Run: `{session.get('run_id')}`" if session.get("run_id") else "- Run: none yet"
+    project_slug = str(session.get("project") or "")
+    project_line = (
+        f"- Project: `projects/{project_slug}/index.md`" if project_slug else "- Project: none"
+    )
     budget_line = (
         f"- Paper budget: focus on at most {budget_papers} paper(s) first."
         if budget_papers
@@ -961,6 +1060,7 @@ def build_handoff_prompt(
             f"- Session: `{session['id']}`",
             f"- User question: {session.get('question')}",
             f"- Query: `{session.get('query_path') or ''}`",
+            project_line,
             f"- Prompt pack: `{session.get('prompt_pack_path') or ''}`",
             run_line,
             budget_line,
@@ -978,7 +1078,16 @@ def build_handoff_prompt(
             "- Keep page, figure, or table evidence in digest notes where possible.",
             (
                 "- Draft or update focused syntheses under `syntheses/` and link them back "
-                "to the query."
+                "to the query and project when applicable."
+            ),
+            (
+                "- If a project is listed, use the project page as the scope: include all "
+                "linked project papers and runs, not only the most recent run."
+            ),
+            (
+                "- If the requested synthesis exceeds the context budget, process the most "
+                "relevant unread papers first, write durable digests/notes for what you read, "
+                "and leave an explicit next-pass task listing the next papers to read."
             ),
             (
                 "- Run validation after edits: "
@@ -1011,6 +1120,7 @@ def improve(
     vault: Path | str,
     *,
     session_id: str | None = None,
+    project: str | None = None,
     dry_run: bool = False,
     no_agent: bool = False,
     agent: str | None = None,
@@ -1018,7 +1128,7 @@ def improve(
     codex_runner: CodexRunner | None = None,
 ) -> dict[str, Any]:
     paths = initialize_vault(vault, rebuild=False)
-    session = _current_or_named_session(paths, session_id)
+    session = _current_or_project_session(paths, session_id=session_id, project=project)
     checks: dict[str, Any] = {}
     prioritized = {"matched": 0, "changed": 0, "items": []}
     if dry_run:
@@ -1115,16 +1225,19 @@ def answer(
     synthesis_question: str,
     *,
     session_id: str | None = None,
+    project: str | None = None,
     agent: str | None = None,
+    budget_papers: int | None = None,
     codex_runner: CodexRunner | None = None,
 ) -> dict[str, Any]:
     paths = initialize_vault(vault, rebuild=False)
-    session = _current_or_named_session(paths, session_id)
+    session = _current_or_project_session(paths, session_id=session_id, project=project)
     prompt = build_handoff_prompt(
         paths,
         session,
         kind="answer",
         synthesis_question=synthesis_question,
+        budget_papers=budget_papers,
     )
     handoff = write_handoff(
         paths,
@@ -1160,7 +1273,9 @@ def answer(
             inputs={
                 "session": session["id"],
                 "synthesis_question": synthesis_question,
+                "project": project,
                 "agent": agent,
+                "budget_papers": budget_papers,
             },
             outputs={"handoff": handoff, "codex": codex, "report": report},
             result=session["status"],
@@ -1177,7 +1292,12 @@ def answer(
             kind="autopilot_answer_handoff",
             message=f"Wrote answer handoff for session `{session['id']}`.",
             command="scholar-vault answer",
-            inputs={"session": session["id"], "synthesis_question": synthesis_question},
+            inputs={
+                "session": session["id"],
+                "synthesis_question": synthesis_question,
+                "project": project,
+                "budget_papers": budget_papers,
+            },
             outputs={"handoff": handoff, "report": report},
             result="handoff-ready",
         )

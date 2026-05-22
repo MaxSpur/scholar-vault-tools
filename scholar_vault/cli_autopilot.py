@@ -349,6 +349,7 @@ def intake_command(
 def improve_command(
     vault: VaultArg = None,
     session_id: SessionOption = None,
+    project: ProjectOption = None,
     dry_run: DryRunOption = False,
     no_agent: NoAgentOption = False,
     agent: AgentOption = None,
@@ -358,6 +359,7 @@ def improve_command(
     summary = improve(
         _resolve_vault(vault),
         session_id=session_id,
+        project=project,
         dry_run=dry_run,
         no_agent=no_agent,
         agent=_agent(agent),
@@ -373,14 +375,18 @@ def answer_command(
     synthesis_question: SynthesisQuestionArg,
     vault: VaultArg = None,
     session_id: SessionOption = None,
+    project: ProjectOption = None,
     agent: AgentOption = None,
+    budget_papers: BudgetPapersOption = None,
     json_output: JsonOutputArg = False,
 ) -> None:
     summary = answer(
         _resolve_vault(vault),
         synthesis_question,
         session_id=session_id,
+        project=project,
         agent=_agent(agent),
+        budget_papers=budget_papers,
     )
     if json_output:
         _print_json(summary)

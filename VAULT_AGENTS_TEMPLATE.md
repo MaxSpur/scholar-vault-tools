@@ -164,6 +164,9 @@ the session/query from that export, record a used-prompt pack, and link the run
 to the project context. For PDFs without a Labs JSON, prefer
 `scholar-vault intake --pdf-only --staging <pdf-folder> --project <slug>
 --slug <query-slug> --question "short query question" --new-session`.
+For project-wide synthesis across multiple imports, prefer
+`scholar-vault answer --project <slug> --budget-papers <N> "question"` so the
+handoff covers all linked project papers and runs.
 
 Use the lower-level commands only when repairing blockers, inspecting a
 specific subsystem, or following a handoff.
