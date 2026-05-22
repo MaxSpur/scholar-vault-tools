@@ -2,6 +2,9 @@
 
 - Keep the paper card body sections parseable and stable. Rebuild depends on section headings, so cosmetic heading changes need matching parser updates.
 - Obsidian's core search and graph are poor defaults for this vault unless generated scaffolding is filtered. Keep prompt text, topic pages, run pages, and index pages from dominating paper discovery surfaces.
+- Treat `.obsidian/` as user-owned configuration. Obsidian setup helpers should
+  dry-run with a diff, merge narrow graph/app settings, back up existing files
+  before mutation, and never install plugins implicitly.
 - Search-facing paper cards should privilege title, abstract, summary, keywords, PDF reading notes, and concise provenance. Full Scholar Labs prompts belong on run pages, with paper cards linking to those runs.
 - Generated maintenance dashboards should stay plugin-free Markdown first. Dataview or Bases can be layered later, but rebuild output must remain useful in plain Obsidian and CLI contexts.
 - Semantic-neighbor exports are navigation hints only. Keep deterministic reasons visible and repeat the PDF evidence warning so shared metadata is not mistaken for evidence.

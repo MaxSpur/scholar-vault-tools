@@ -126,6 +126,7 @@ scholar-vault labs-prompts list
 scholar-vault labs-prompts doctor --json
 scholar-vault discover list
 scholar-vault discover doctor --json
+scholar-vault obsidian doctor --json
 scholar-vault queue list --json
 scholar-vault operations list --json
 scholar-vault feedback report --json
@@ -133,6 +134,11 @@ scholar-vault schema export --json
 scholar-vault project list
 scholar-vault runs
 ```
+
+Use `scholar-vault obsidian setup --dry-run` to inspect safe Obsidian graph/app
+settings before changing `.obsidian/`. Use `--apply` only after reviewing the
+diff. The setup command backs up existing settings, hides generated scaffolding
+from the graph by default, and does not install plugins.
 
 For one-card BibLaTeX while working from Obsidian, copy the card `citekey` and run:
 

@@ -121,8 +121,8 @@
 - [x] Port the hardening changes into `VAULT_AGENTS_TEMPLATE.md` and
   repository-owned vault-agent skills so vault-local agents see query lifecycle,
   compile readiness, schema export, and manual runbook guidance.
-- [ ] Add an Obsidian setup command that writes safe default graph/search settings, including graph filters that hide generated run/topic/index scaffolding by default.
-- [ ] Reduce paper-card search noise by moving full Scholar Labs prompts out of generated paper cards while preserving run links and run-local provenance.
+- [x] Add an Obsidian setup command that writes safe default graph/search settings, including graph filters that hide generated run/topic/index scaffolding by default.
+- [x] Reduce paper-card search noise by moving full Scholar Labs prompts out of generated paper cards while preserving run links and run-local provenance.
 - [x] Add a search-facing plain-text index over paper titles, abstracts, summaries, keywords, PDF reading notes, concepts, syntheses, tasks, projects, and proposals without full PDF text.
 - [x] Add a recurring vault-maintenance report that summarizes topic noise, unread attached papers, metadata issues, orphan/duplicate PDFs, stale candidates, and suggested cleanup commands.
 - [x] Add a topic cleanup preset that removes prompt boilerplate labels such as `Find`, `Papers`, `Peer Reviewed`, `Important`, and `That`, then rebuilds derived topic pages.

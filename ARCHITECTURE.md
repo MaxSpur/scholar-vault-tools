@@ -26,6 +26,10 @@
   self-improvement state.
 - `scholar_vault/cli_bases.py`: `bases ...` command group for generated
   Obsidian Bases initialization, rebuild, and doctor validation.
+- `scholar_vault/cli_obsidian.py`: `obsidian ...` command group for safe
+  Obsidian vault setup and doctor checks. It dry-runs by default, applies only
+  explicit configuration merges, and delegates mutation planning to
+  `obsidian_setup.py`.
 - `scholar_vault/cli_compile.py`: `compile ...` command group for durable
   paper digest scaffolding, status, project queues, marking, and doctor
   validation.
@@ -91,6 +95,9 @@
   query-linked candidate clusters into Scholar Labs prompt packs.
 - `scholar_vault/bases.py`: deterministic `.base` YAML generation under
   `bases/` plus read-only validation for required Base files and views.
+- `scholar_vault/obsidian_setup.py`: safe `.obsidian/` configuration planning,
+  dry-run diffs, backups, graph filter/group merges, and doctor diagnostics.
+  It does not install plugins or overwrite user settings wholesale.
 - `scholar_vault/schema.py`: JSON-schema export helpers for queue items,
   operations, feedback, prompt packs, discovery candidates, paper digests, and
   eval specs.
@@ -191,6 +198,14 @@
   `bases/scholar-labs-workbench.base`, and `bases/self-improvement.base`.
   `doctor --json` checks that those files parse as YAML and contain required
   views; it does not require Obsidian to be open.
+- `obsidian setup/doctor`: safely creates or updates `.obsidian/graph.json`
+  and `.obsidian/app.json` for this vault. `setup` is a dry-run by default and
+  shows a diff; `--apply` writes changes after backing up existing settings
+  under `.obsidian/.scholar-vault-backups/`. Graph filters hide generated
+  scaffolding such as `_indexes/`, `_exports/`, `topics/`, generated run notes,
+  and generated project maps by default. Optional graph color groups cover
+  papers, paper digests, concepts, syntheses, queries, projects, and proposals.
+  No plugins are installed.
 - `compile status/scaffold/queue/mark/doctor`: durable single-paper digest
   workflow under `paper-digests/`. `scaffold` creates stable templates for one
   citekey or selected papers from a run, `queue --project` lists linked project

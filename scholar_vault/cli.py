@@ -23,6 +23,7 @@ from . import cli_bases as _cli_bases
 from . import cli_compile as _cli_compile
 from . import cli_discovery as _cli_discovery
 from . import cli_labs_prompts as _cli_labs_prompts
+from . import cli_obsidian as _cli_obsidian
 from . import cli_projects as _cli_projects
 from . import cli_queries as _cli_queries
 from . import cli_schema as _cli_schema
@@ -85,6 +86,7 @@ eval_app = _cli_semantic.eval_app
 feedback_app = _cli_self_improvement.feedback_app
 labs_prompts_app = _cli_labs_prompts.labs_prompts_app
 operations_app = _cli_self_improvement.operations_app
+obsidian_app = _cli_obsidian.obsidian_app
 project_app = _cli_projects.project_app
 proposal_sprint_app = typer.Typer(help="Proposal sprint workspace helpers.")
 queue_app = _cli_self_improvement.queue_app
@@ -99,6 +101,7 @@ app.add_typer(eval_app, name="eval")
 app.add_typer(feedback_app, name="feedback")
 app.add_typer(labs_prompts_app, name="labs-prompts")
 app.add_typer(operations_app, name="operations")
+app.add_typer(obsidian_app, name="obsidian")
 app.add_typer(project_app, name="project")
 app.add_typer(proposal_sprint_app, name="proposal-sprint")
 app.add_typer(queue_app, name="queue")
@@ -177,6 +180,8 @@ operations_log_command = _cli_self_improvement.operations_log_command
 operations_list_command = _cli_self_improvement.operations_list_command
 operations_show_command = _cli_self_improvement.operations_show_command
 operations_doctor_command = _cli_self_improvement.operations_doctor_command
+obsidian_setup_command = _cli_obsidian.obsidian_setup_command
+obsidian_doctor_command = _cli_obsidian.obsidian_doctor_command
 feedback_rate_command = _cli_self_improvement.feedback_rate_command
 feedback_list_command = _cli_self_improvement.feedback_list_command
 feedback_report_command = _cli_self_improvement.feedback_report_command

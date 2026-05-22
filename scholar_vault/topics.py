@@ -42,6 +42,10 @@ NOISY_TOPIC_KEYS = {
 }
 
 
+def is_prompt_boilerplate_topic(topic: str) -> bool:
+    return normalize_title(topic) in NOISY_TOPIC_KEYS
+
+
 def _save_card(paths: VaultPaths, card: SourceCard) -> None:
     write_text(paths.papers / f"{card.slug}.md", render_paper_markdown(card))
 
@@ -57,7 +61,7 @@ def _topic_report(cards: list[SourceCard], *, limit: int = 30) -> dict[str, Any]
     noisy = [
         {"topic": topic, "count": count}
         for topic, count in counts.most_common()
-        if normalize_title(topic) in NOISY_TOPIC_KEYS
+        if is_prompt_boilerplate_topic(topic)
     ]
     return {
         "topic_count": len(counts),

@@ -22,6 +22,15 @@ def markdown_link(path: str, label: str) -> str:
     return f"[{label}]({path})"
 
 
+def run_ref_label(ref: str | None) -> str:
+    if not ref:
+        return "Imported summary"
+    path = Path(ref)
+    if path.name == "index.md" and path.parent.name:
+        return path.parent.name
+    return path.stem or ref
+
+
 def card_for_run_result(result: object, cards_by_slug: dict[str, SourceCard]) -> SourceCard | None:
     paper_card = getattr(result, "paper_card", None)
     if not paper_card:
@@ -37,7 +46,7 @@ def doi_url(doi: str | None) -> str | None:
 
 def render_paper_markdown(card: SourceCard) -> str:
     template = ENVIRONMENT.get_template("paper.md.j2")
-    body = template.render(card=card).strip()
+    body = template.render(card=card, run_ref_label=run_ref_label).strip()
     frontmatter = dump_frontmatter(card.frontmatter()).strip()
     return f"---\n{frontmatter}\n---\n\n{body}\n"
 

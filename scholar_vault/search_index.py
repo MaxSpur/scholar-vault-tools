@@ -12,6 +12,7 @@ from .obsidian import (
     _should_index_artifact_path,
 )
 from .sources import VaultPaths, ensure_relative, read_frontmatter_markdown
+from .topics import is_prompt_boilerplate_topic
 
 
 def _pdf_reading_notes_snippet(card: SourceCard) -> str:
@@ -63,6 +64,9 @@ def render_search_index(paths: VaultPaths, cards: list[SourceCard]) -> str:
     if not cards:
         lines.extend(["No paper cards found.", ""])
     for card in cards:
+        indexed_topics = [
+            topic for topic in card.topics if not is_prompt_boilerplate_topic(topic)
+        ]
         lines.extend(
             [
                 f"### {_card_id(card)} - {card.title}",
@@ -71,7 +75,7 @@ def render_search_index(paths: VaultPaths, cards: list[SourceCard]) -> str:
                 f"- citekey: {_card_id(card)}",
                 f"- year: {card.year or ''}",
                 f"- doi: {card.doi or ''}",
-                f"- topics: {', '.join(card.topics)}",
+                f"- topics: {', '.join(indexed_topics)}",
                 f"- publication_keywords: {', '.join(card.keywords)}",
                 f"- abstract: {_compact_text(card.abstract, limit=900)}",
                 f"- scholar_labs_summary: {_compact_text(card.summary, limit=900)}",

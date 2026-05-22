@@ -36,10 +36,7 @@ No publication keywords listed in the source.
 ### Run-specific Scholar Labs summaries
 {% if card.summary_sources %}
 {% for source in card.summary_sources -%}
-#### {% if source.run %}[{{ source.run }}](<../{{ source.run }}>){% else %}Imported summary{% endif %}
-{% if source.prompt %}
-- Prompt: {{ source.prompt }}
-{% endif %}
+#### {% if source.run %}[{{ run_ref_label(source.run) }}](<../{{ source.run }}>){% else %}Imported summary{% endif %}
 {% if source.rank %}
 - Result rank: {{ source.rank }}
 {% endif %}
@@ -104,7 +101,7 @@ No run-specific summaries captured yet.
 ## Provenance
 {% if card.discovered_in %}
 {% for item in card.discovered_in -%}
-- [{{ item }}](<../{{ item }}>)
+- [{{ run_ref_label(item) }}](<../{{ item }}>)
 {% endfor %}
 {% else %}
 - Created manually or imported without run provenance.

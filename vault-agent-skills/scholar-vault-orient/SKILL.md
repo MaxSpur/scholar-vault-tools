@@ -75,6 +75,7 @@ scholar-vault labs-prompts list
 scholar-vault labs-prompts doctor --json
 scholar-vault discover list
 scholar-vault discover doctor --json
+scholar-vault obsidian doctor --json
 scholar-vault lint-wiki --json
 scholar-vault eval list
 scholar-vault eval report --json
@@ -85,6 +86,10 @@ scholar-vault notes-missing --heading "PDF reading notes"
 scholar-vault enrich --dry-run
 scholar-vault match-staging
 ```
+
+Use `scholar-vault obsidian setup --dry-run` before changing `.obsidian/`.
+Only run `obsidian setup --apply` after reviewing the diff; it backs up
+existing settings and does not install plugins.
 
 Use `scholar-vault rebuild` only after actual manual edits to canonical cards. Orientation should normally be read-only.
 Use `scholar-vault query rename`, `query archive`, or `query doctor --fix`

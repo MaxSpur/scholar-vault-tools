@@ -54,6 +54,25 @@ def main() -> None:
         if first_bases is None:
             raise SystemExit("Bases rebuild did not return JSON.")
 
+        obsidian_setup = _run(
+            ["obsidian", "setup", *vault_arg, "--apply", "--json"],
+            json_output=True,
+        )
+        if obsidian_setup is None or obsidian_setup.get("changed", 0) < 1:
+            raise SystemExit("Obsidian setup did not write settings.")
+        obsidian_second = _run(
+            ["obsidian", "setup", *vault_arg, "--json"],
+            json_output=True,
+        )
+        if obsidian_second and obsidian_second.get("changed") != 0:
+            raise SystemExit("Repeated Obsidian setup was not deterministic.")
+        obsidian_doctor = _run(
+            ["obsidian", "doctor", *vault_arg, "--json"],
+            json_output=True,
+        )
+        if not obsidian_doctor or not obsidian_doctor.get("ok"):
+            raise SystemExit("Obsidian doctor did not pass after setup.")
+
         queue = _run(
             [
                 "queue",

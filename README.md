@@ -653,6 +653,9 @@ scholar-vault query link-run --vault ~/Documents/Research/scholar-labs-vault col
 scholar-vault query status --vault ~/Documents/Research/scholar-labs-vault collaborative-map-workbenches
 scholar-vault bases rebuild --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault bases doctor --vault ~/Documents/Research/scholar-labs-vault --json
+scholar-vault obsidian setup --vault ~/Documents/Research/scholar-labs-vault --dry-run
+scholar-vault obsidian setup --vault ~/Documents/Research/scholar-labs-vault --apply
+scholar-vault obsidian doctor --vault ~/Documents/Research/scholar-labs-vault --json
 scholar-vault project ui --vault ~/Documents/Research/scholar-labs-vault
 scholar-vault project scaffold --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation
 scholar-vault project link-paper --vault ~/Documents/Research/scholar-labs-vault map-lens-deformation Schottler2021_GeospatialNetworks
@@ -802,6 +805,20 @@ workbench notes, and `_indexes/` / `bases/` are deterministic navigation layers.
 See `docs/obsidian-bases-acceptance.md` for the manual Obsidian acceptance
 checklist, including `this.file`, linked query paths, and wikilink-vs-path
 frontmatter behavior.
+
+`obsidian setup` configures only safe local Obsidian settings for the vault. It
+is a dry-run by default and prints a diff for `.obsidian/graph.json` and
+`.obsidian/app.json`; use `--apply` only after reviewing that diff. Existing
+settings are merged, not replaced, and changed files are backed up under
+`.obsidian/.scholar-vault-backups/<timestamp>/` before writing. The graph query
+hides generated noise by default: `_indexes/`, `_exports/`, `topics/`, generated
+run notes under `runs/`, and generated `project-map` files. Setup also adds
+optional graph color groups for papers, paper digests, concepts, syntheses,
+queries, projects, and proposals, and keeps `_exports/` out of Obsidian's
+general file/search surfaces when supported. It never installs plugins.
+
+Run `obsidian doctor --json` to check whether the required graph filters are in
+place and whether optional graph groups or app ignore filters are missing.
 
 `project scaffold <slug>` creates `projects/<slug>/index.md`. A project is a
 lightweight lens over shared papers, runs, concepts, syntheses, tasks, and

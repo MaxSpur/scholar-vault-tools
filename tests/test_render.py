@@ -15,6 +15,12 @@ from scholar_vault.render import (
     render_unmatched_index,
 )
 
+LONG_SCHOLAR_LABS_PROMPT = (
+    "Find peer reviewed studies about local-first research vaults with agent-readable "
+    "source cards. Include this sentinel prompt boilerplate ONLY-ON-RUN-NOTES-2026 "
+    "and prioritize systematic evidence workflows."
+)
+
 
 def test_render_paper_markdown_contains_required_sections() -> None:
     card = SourceCard(
@@ -71,9 +77,45 @@ def test_render_paper_markdown_contains_required_sections() -> None:
     assert "## Why this source matters" in rendered
     assert "[pdfs/smith2024rag.pdf](../pdfs/smith2024rag.pdf)" in rendered
     assert (
-        "[runs/2026-04-22_rag/2026-04-22_rag.md]"
+        "[2026-04-22_rag]"
         "(<../runs/2026-04-22_rag/2026-04-22_rag.md>)" in rendered
     )
+
+
+def test_paper_markdown_omits_full_summary_source_prompt() -> None:
+    card = SourceCard(
+        slug="smith2026vaults",
+        citekey="smith2026vaults",
+        title="Local-First Research Vaults",
+        source_kind="scholar_labs",
+        discovered_in=["runs/2026-05-22_vaults/Focused Vault Search.md"],
+        summary="Concise Scholar Labs summary.",
+        summary_sources=[
+            SummarySource(
+                run="runs/2026-05-22_vaults/Focused Vault Search.md",
+                prompt=LONG_SCHOLAR_LABS_PROMPT,
+                rank=1,
+                summary="Run-specific concise summary.",
+                rationale_points=[
+                    RationalePoint(
+                        label="Evidence",
+                        text="Useful as a compact provenance example.",
+                    )
+                ],
+            )
+        ],
+    )
+
+    rendered = render_paper_markdown(card)
+
+    assert LONG_SCHOLAR_LABS_PROMPT not in rendered
+    assert "Prompt:" not in rendered
+    assert (
+        "[Focused Vault Search](<../runs/2026-05-22_vaults/Focused Vault Search.md>)"
+        in rendered
+    )
+    assert "Run-specific concise summary." in rendered
+    assert "Useful as a compact provenance example." in rendered
 
 
 def test_render_run_markdown_separates_selected_and_candidate_results() -> None:
@@ -138,6 +180,42 @@ def test_render_run_markdown_separates_selected_and_candidate_results() -> None:
     assert "Metadata: `incomplete` (missing venue)" in rendered
     assert "[pdfs/smith2024rag.pdf](../../pdfs/smith2024rag.pdf)" in rendered
     assert "Grounded Generation from Local Knowledge Stores" in rendered
+
+
+def test_run_markdown_keeps_full_scholar_labs_prompt() -> None:
+    result = RunResultRecord(
+        rank=1,
+        title="Local-First Research Vaults",
+        authors_preview="Jane Smith",
+        summary="Short run-local summary.",
+        status="selected",
+        pdf_status="attached",
+        paper_card="papers/smith2026vaults.md",
+    )
+    run = RunRecord(
+        slug="2026-05-22_vaults",
+        date="2026-05-22",
+        prompt=LONG_SCHOLAR_LABS_PROMPT,
+        title="Focused Vault Search",
+        exported_at="2026-05-22T10:00:00+02:00",
+        export_file="/tmp/export.json",
+        raw_export_file="raw/scholar-labs/run.json",
+        staging_folder="/tmp/staging",
+        result_count=1,
+        results=[result],
+    )
+    card = SourceCard(
+        slug="smith2026vaults",
+        title=result.title,
+        source_kind="scholar_labs",
+        pdf="pdfs/smith2026vaults.pdf",
+    )
+
+    rendered = render_run_markdown(run, {"smith2026vaults": card})
+
+    assert LONG_SCHOLAR_LABS_PROMPT in rendered
+    assert "prompt: Find peer reviewed studies" in rendered
+    assert "## Prompt" in rendered
 
 
 def test_generated_maintenance_indexes_label_optional_and_historical_queues() -> None:

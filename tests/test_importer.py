@@ -1373,6 +1373,66 @@ def test_rebuild_writes_dashboards_search_index_and_semantic_neighbors(tmp_path:
         assert path.read_text(encoding="utf-8") == snapshots[path]
 
 
+def test_import_rebuild_keeps_long_prompt_out_of_paper_cards_and_search_index(
+    tmp_path: Path,
+) -> None:
+    vault = tmp_path / "vault"
+    staging = tmp_path / "staging"
+    exports = tmp_path / "exports"
+    staging.mkdir()
+    exports.mkdir()
+    prompt = (
+        "Find peer reviewed studies about local-first research vaults with agent-readable "
+        "source cards. Include this sentinel prompt boilerplate ONLY-ON-RUN-NOTES-2026 "
+        "and prioritize systematic evidence workflows."
+    )
+    export_path = _write_export(
+        exports / "sample.json",
+        1,
+        prompt=prompt,
+        title="Focused Vault Search",
+    )
+    _write_pdf_with_title(staging / "paper-1.pdf", "Result Paper 1")
+
+    summary = import_scholar_labs_run(vault, export_path, staging, commit=True)
+    run_id = str(summary["run"])
+    run_yaml = _run_yaml(vault, run_id)
+    run_note_path_value = _run_note_path(vault, run_id)
+    run_note = (vault / run_note_path_value).read_text(encoding="utf-8")
+    paper_card_path = vault / run_yaml["results"][0]["paper_card"]
+    paper_card = paper_card_path.read_text(encoding="utf-8")
+    raw_export = json.loads((vault / run_yaml["raw_export_file"]).read_text(encoding="utf-8"))
+    search_index_path = vault / "_indexes" / "search-index.md"
+    search_index = search_index_path.read_text(encoding="utf-8")
+
+    assert run_yaml["prompt"] == prompt
+    assert raw_export["prompt"] == prompt
+    assert prompt in run_note
+    assert prompt not in paper_card
+    assert "Prompt:" not in paper_card
+    assert prompt not in search_index
+    assert "Result Paper 1" in search_index
+    assert "Summary for result 1." in search_index
+    assert "- topics: Test\n" in search_index
+    assert "- topics: Test, Find, Peer, Reviewed" not in search_index
+    assert "publication_keywords:" in search_index
+    assert "pdf_reading_notes" not in search_index
+
+    generated_files = [
+        vault / run_note_path_value,
+        paper_card_path,
+        search_index_path,
+        vault / "llms-full.txt",
+    ]
+    rebuild_vault(vault)
+    snapshots = {path: path.read_text(encoding="utf-8") for path in generated_files}
+    second_summary = rebuild_vault(vault)
+
+    assert second_summary["paper_cards_written"] == 0
+    for path in generated_files:
+        assert path.read_text(encoding="utf-8") == snapshots[path]
+
+
 def test_notes_missing_reports_attached_cards_without_heading(tmp_path: Path) -> None:
     from scholar_vault.importer import _save_card  # noqa: PLC0415
 
